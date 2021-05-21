@@ -1,7 +1,7 @@
 module Jot
 
 # IMPORTS
-using ArgParse, JSON, Parameters
+using JSON, Parameters
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception 
