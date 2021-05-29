@@ -152,10 +152,13 @@ function get_dockerfile(def::Definition)::String
   get_julia_image_dockerfile(def)
 end
 
-function build_image(dockerfile::String; config::Config, no_cache::Bool=false)
-  build_cmd = get_dockerfile_build_cmd(config, no_cache)
-  run(build_cmd)
-  write(stdin, dockerfile)
+function build_image(dockerfile::String, config::Config; no_cache::Bool=false)
+  build_cmd = get_dockerfile_build_cmd(dockerfile, config, no_cache)
+  run(build_cmd, wait=false)
+  @info writing
+  open(stdin, "w") do io
+    write(io, dockerfile)
+  end
 end
 
 Base.@kwdef struct InvocationResponse

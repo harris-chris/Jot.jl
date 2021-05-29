@@ -61,12 +61,20 @@ function get_julia_image_dockerfile(def::Definition)::String
   ]; init = "")
 end
 
-function get_dockerfile_build_cmd(config::Config, no_cache::Bool)::Cmd
+function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
+  `
+  docker build - 
+  `
+end
+
+function ttt()
   `
   docker build \\
     --rm $(no_cache ? "--no-cache" : "") \\
     --tag $(get_image_uri_string(config)) \\
-    \ - < Dockerfile
+    - \<\<EOF 
+    $dockerfile 
+    EOF
   `
 end
 
