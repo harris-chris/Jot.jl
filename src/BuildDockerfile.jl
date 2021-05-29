@@ -1,3 +1,6 @@
+const runtime_path = "/var/runtime"
+const julia_depot_path = "/var/julia_depot"
+
 function dockerfile_add_julia_image(config::Config)::String
   """
   FROM julia:$(config.image.julia_version)
@@ -9,6 +12,22 @@ function dockerfile_add_utilities()::String
   RUN apt-get update && apt-get install -y \\
     gcc
   """
+end
+
+function dockerfile_add_runtime_directories()::String
+  """
+  RUN mkdir -p $runtime_path
+  ENV JULIA_DEPOT_PATH=$julia_depot_path
+  RUN mkdir -p $runtime_path
+  WORKDIR $runtime_path
+  """
+end
+
+function dockerfile_add_module(mod::Module)::String
+  module_path = Base.moduleroot(mod) |> pathof
+  package_path = joinpath(splitpath(module_path)[begin:end-2]...)
+  add_module_script = "import Pkg; Pkg.add(path=\\\"$package_path\\\")"
+  "RUN julia -e \"$add_module_script\""
 end
 
 function dockerfile_runtime_files(config::Config, package::Bool)::String
@@ -56,33 +75,16 @@ function get_julia_image_dockerfile(def::Definition)::String
     *, [
     dockerfile_add_julia_image(def.config),
     dockerfile_add_utilities(),
-    # dockerfile_runtime_files(config, package),
-    # dockerfile_add_permissions(config),
+    dockerfile_add_runtime_directories(),
+    dockerfile_add_module(def.mod),
   ]; init = "")
 end
 
 function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
-  `docker build -`
-end
-
-function ttt()
-  `
-  docker build \\
-    --rm $(no_cache ? "--no-cache" : "") \\
-    --tag $(get_image_uri_string(config)) \\
-    - \<\<EOF 
-    $dockerfile 
-    EOF
+  `docker build 
+  --rm$(no_cache ? " --no-cache" : "")
+  --tag $(get_image_uri_string(config))
+  -
   `
 end
 
-function get_dockerfile_build_script(config::Config, no_cache::Bool)::String
-  contents = """
-  #!/bin/bash
-  DIR="\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-  docker build \\
-    --rm $(no_cache ? "--no-cache" : "") \\
-    --tag $(get_image_uri_string(config)) \\
-    \$DIR/.
-  """
-end
