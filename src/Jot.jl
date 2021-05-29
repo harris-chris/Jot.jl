@@ -3,11 +3,12 @@ module Jot
 # IMPORTS
 using JSON3
 using StructTypes
-include("BuildDockerfile.jl")
+using Parameters
 
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
+export get_config, get_dockerfile
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception 
@@ -18,6 +19,7 @@ end
   account_id::Union{Missing, String} = missing
   region::Union{Missing, String} = missing
 end
+StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()  
 
 @with_kw mutable struct ImageConfig
   name::Union{Missing, String} = missing
@@ -26,6 +28,7 @@ end
   julia_version::String = "1.6.0"
   julia_cpu_target::String = "x86-64"
 end
+StructTypes.StructType(::Type{ImageConfig}) = StructTypes.Mutable()  
 
 @with_kw mutable struct LambdaFunctionConfig
   name::Union{Missing, String} = missing
@@ -33,27 +36,25 @@ end
   timeout::Int = 30
   memory_size::Int = 1000
 end
+StructTypes.StructType(::Type{LambdaFunctionConfig}) = StructTypes.Mutable()  
 
 @with_kw mutable struct Config
   aws::AWSConfig = AWSConfig()
   image::ImageConfig = ImageConfig()
   lambda_function::LambdaFunctionConfig = LambdaFunctionConfig()
 end
+StructTypes.StructType(::Type{Config}) = StructTypes.Mutable()  
 
-StructTypes.StructType(::Type{Config}) = StrucTypes.Mutable()  
-
-function get_config(
-    config_fpath::String;
-  )::Config
-  
-  config = Config()
-  open(fname, "r") do f
-    json_string = read(f, String)
-    JSON3.read!(json_string, config)
-    config
-  end
-  @show config
+struct Definition
+  mod::Union{Nothing, Module}
+  func_name::String
+  config::Config
 end
+
+struct Image
+  name::String
+end
+
 
 function interpolate_string_with_config(
     str::String,
@@ -100,38 +101,61 @@ function interpolate_string_with_config(
   str
 end
 
-function Config(
-  aws_account_id::String,
-  aws_region::String,
-  function_name::String,
-)::Config
-  Config(
-    AWSConfig(account_id = aws_account_id, region = aws_region),
-    ImageConfig(name = function_name),
-    LambdaFunctionConfig(name = function_name), 
-  )
+function get_image_uri_string(config::Config)::String
+  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name):$(config.image.tag)"
 end
 
-function buildDefinition(mod::Module, func_name::String)
+function get_role_arn_string(config::Config)::String
+  "arn:aws:iam::$(config.aws.account_id):role/$(config.aws.role)"
+end
+
+function get_function_uri_string(config::Config)::String
+  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name)"
+end
+
+function get_function_arn_string(config::Config)::String
+  "arn:aws:lambda:$(config.aws.region):$(config.aws.account_id):function:$(config.lambda_function.name)"
+end
+
+function get_ecr_arn_string(config::Config)::String
+  "arn:aws:ecr:$(config.aws.region):$(config.aws.account_id):repository/$(config.lambda_function.name)"
+end
+
+function get_ecr_uri_string(config::Config)::String
+  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.lambda_function.name)"
+end
+
+include("BuildDockerfile.jl")
+
+function get_config(
+    config_fpath::String;
+  )::Config
+  
+  config = Config()
+  open(config_fpath, "r") do f
+    json_string = read(f, String)
+    JSON3.read!(json_string, config)
+    @info "Config file successfully loaded"
+    config
+  end
+end
+
+function buildDefinition(mod::Module, func_name::String)::Definition
   mod_names = names(mod, all=true)
-  
-  # check that func_name is in mod_names
-  
 end
 
 function buildImage(def::Definition)::Image
-     
+   
 end
 
-function getDockerfile(def::Definition)::String
-    
+function get_dockerfile(def::Definition)::String
+  get_julia_image_dockerfile(def)
 end
 
-struct Definition
-  mod::Union{Nothing, Module}
-  func_name::String
-  config::Config
-  dockerfile::String
+function build_image(dockerfile::String; config::Config, no_cache::Bool=false)
+  build_cmd = get_dockerfile_build_cmd(config, no_cache)
+  run(build_cmd)
+  write(stdin, dockerfile)
 end
 
 Base.@kwdef struct InvocationResponse
