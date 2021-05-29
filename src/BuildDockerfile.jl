@@ -23,11 +23,14 @@ function dockerfile_add_runtime_directories()::String
   """
 end
 
+
 function dockerfile_add_module(mod::Module)::String
-  module_path = Base.moduleroot(mod) |> pathof
-  package_path = joinpath(splitpath(module_path)[begin:end-2]...)
-  add_module_script = "import Pkg; Pkg.add(path=\\\"$package_path\\\")"
-  "RUN julia -e \"$add_module_script\""
+  package_name = get_package_name(mod)
+  add_module_script = "import Pkg; Pkg.add(path=\\\"$runtime_path/$package_name\\\")"
+  """
+  COPY ./$package_name ./
+  RUN julia -e \"$add_module_script\"
+  """
 end
 
 function dockerfile_runtime_files(config::Config, package::Bool)::String

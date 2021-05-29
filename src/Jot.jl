@@ -4,6 +4,7 @@ module Jot
 using JSON3
 using StructTypes
 using Parameters
+using Base.Filesystem
 
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
@@ -55,6 +56,14 @@ struct Image
   name::String
 end
 
+function get_package_path(mod::Module)::String
+  module_path = Base.moduleroot(mod) |> pathof
+  joinpath(splitpath(module_path)[begin:end-2]...)
+end
+
+function get_package_name(mod::Module)::String
+  splitpath(get_package_path(mod))[end]
+end
 
 function interpolate_string_with_config(
     str::String,
@@ -152,7 +161,18 @@ function get_dockerfile(def::Definition)::String
   get_julia_image_dockerfile(def)
 end
 
-function build_image(dockerfile::String, config::Config; no_cache::Bool=false)
+function move_to_temporary_build_directory(mod::Module)
+  build_dir = mktempdir()
+  cd(build_dir)
+  p_path = get_package_path(mod)
+  p_name = get_package_name(mod)
+  @show build_dir
+  Base.Filesystem.cp(p_path, joinpath(build_dir, p_name))
+end
+
+function build_image(def::Definition, config::Config; no_cache::Bool=false)
+  move_to_temporary_build_directory(def.mod)
+  dockerfile = get_dockerfile(def)
   build_cmd = get_dockerfile_build_cmd(dockerfile, config, no_cache)
   build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
   run(build_with_dockerfile)
