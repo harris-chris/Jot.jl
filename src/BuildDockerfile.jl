@@ -28,7 +28,8 @@ function dockerfile_add_module(mod::Module)::String
   package_name = get_package_name(mod)
   add_module_script = "import Pkg; Pkg.add(path=\\\"$runtime_path/$package_name\\\")"
   """
-  COPY ./$package_name ./
+  RUN mkdir ./$package_name
+  COPY ./$package_name ./$package_name
   RUN julia -e \"$add_module_script\"
   """
 end
@@ -87,7 +88,7 @@ function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::
   `docker build 
   --rm$(no_cache ? " --no-cache" : "")
   --tag $(get_image_uri_string(config))
-  -
+  .
   `
 end
 

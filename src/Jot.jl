@@ -168,14 +168,19 @@ function move_to_temporary_build_directory(mod::Module)
   p_name = get_package_name(mod)
   @show build_dir
   Base.Filesystem.cp(p_path, joinpath(build_dir, p_name))
+  build_dir
 end
 
 function build_image(def::Definition, config::Config; no_cache::Bool=false)
-  move_to_temporary_build_directory(def.mod)
+  build_dir = move_to_temporary_build_directory(def.mod)
   dockerfile = get_dockerfile(def)
+  open(joinpath(build_dir, "Dockerfile"), "w") do f
+    write(f, dockerfile)
+  end
+  @info run(`ls`)
   build_cmd = get_dockerfile_build_cmd(dockerfile, config, no_cache)
-  build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
-  run(build_with_dockerfile)
+  # build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
+  run(build_cmd)
 end
 
 Base.@kwdef struct InvocationResponse
