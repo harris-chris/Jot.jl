@@ -154,11 +154,8 @@ end
 
 function build_image(dockerfile::String, config::Config; no_cache::Bool=false)
   build_cmd = get_dockerfile_build_cmd(dockerfile, config, no_cache)
-  run(build_cmd, wait=false)
-  @info writing
-  open(stdin, "w") do io
-    write(io, dockerfile)
-  end
+  build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
+  run(build_with_dockerfile)
 end
 
 Base.@kwdef struct InvocationResponse

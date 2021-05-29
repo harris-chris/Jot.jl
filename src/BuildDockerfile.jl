@@ -62,9 +62,7 @@ function get_julia_image_dockerfile(def::Definition)::String
 end
 
 function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
-  `
-  docker build - 
-  `
+  `docker build -`
 end
 
 function ttt()
