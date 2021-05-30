@@ -41,6 +41,14 @@ function dockerfile_add_jot()::String
   """
 end
 
+function dockerfile_add_aws_rie()::String
+  """
+  RUN curl -Lo ./aws-lambda-rie \\
+  https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie
+  RUN chmod +x ./aws-lambda-rie
+  """
+end
+
 function dockerfile_runtime_files(config::Config, package::Bool)::String
   """
   RUN mkdir -p $(config.image.julia_depot_path)
@@ -89,6 +97,7 @@ function get_julia_image_dockerfile(def::Definition)::String
     dockerfile_add_runtime_directories(),
     dockerfile_add_module(def.mod),
     dockerfile_add_jot(),
+    dockerfile_add_aws_rie(),
   ]; init = "")
 end
 
