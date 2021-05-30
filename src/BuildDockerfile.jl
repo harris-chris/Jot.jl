@@ -26,7 +26,7 @@ end
 
 function dockerfile_add_module(mod::Module)::String
   package_name = get_package_name(mod)
-  add_module_script = "import Pkg; Pkg.add(path=\\\"$runtime_path/$package_name\\\")"
+  add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$package_name\\\")"
   """
   RUN mkdir ./$package_name
   COPY ./$package_name ./$package_name
