@@ -135,6 +135,7 @@ function get_ecr_uri_string(config::Config)::String
 end
 
 include("BuildDockerfile.jl")
+include("Runtime.jl")
 
 function get_config(
     config_fpath::String;

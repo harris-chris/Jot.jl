@@ -1,5 +1,6 @@
 const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/julia_depot"
+const jot_github_url = "https://github.com/harris-chris/Jot.jl#master"
 
 function dockerfile_add_julia_image(config::Config)::String
   """
@@ -31,6 +32,12 @@ function dockerfile_add_module(mod::Module)::String
   RUN mkdir ./$package_name
   COPY ./$package_name ./$package_name
   RUN julia -e \"$add_module_script\"
+  """
+end
+
+function dockerfile_add_jot()::String
+  """
+  RUN julia -e "using Pkg; Pkg.add(url=\\\"$jot_github_url\\\")"
   """
 end
 
@@ -81,6 +88,7 @@ function get_julia_image_dockerfile(def::Definition)::String
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
     dockerfile_add_module(def.mod),
+    dockerfile_add_jot(),
   ]; init = "")
 end
 
