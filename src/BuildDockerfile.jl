@@ -73,6 +73,28 @@ function dockerfile_runtime_files(config::Config, package::Bool)::String
   """
 end
 
+function dockerfile_add_bootstrap()::String
+  bootstrap_script = raw"""
+  #!/bin/bash
+  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+    LOCAL="127.0.0.1:9001"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
+    exec aws-lambda-rie /usr/local/julia/bin/julia -e "using JuliaLambdaRuntime; start_runtime(\"$LOCAL\")"
+  else
+    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
+    exec /usr/local/julia/bin/julia -e "using JuliaLambdaRuntime; start_runtime(\"$AWS_LAMBDA_RUNTIME_API\")"
+  fi
+  """
+
+  bootstrap_script_by_line = reduce(*, l * " /" for l in eachline(IOBuffer(bootstrap_script)))
+
+  docker_entry = """
+  RUN echo '$bootstrap_script_by_line' > bootstrap
+  """
+
+  @show docker_entry
+end
+
 function dockerfile_add_permissions(config::Config)::String
   """
   # RUN chmod 644 \$(find $(config.image.runtime_path) -type f)
@@ -98,8 +120,10 @@ function get_julia_image_dockerfile(def::Definition)::String
     dockerfile_add_module(def.mod),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
+    dockerfile_add_bootstrap(),
   ]; init = "")
 end
+
 
 function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
   `docker build 
