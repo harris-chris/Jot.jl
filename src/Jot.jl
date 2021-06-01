@@ -9,7 +9,7 @@ using Base.Filesystem
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
-export get_config, get_dockerfile
+export get_config, get_dockerfile, build_definition, build_image
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception 
@@ -150,12 +150,8 @@ function get_config(
   end
 end
 
-function buildDefinition(mod::Module, func_name::String)::Definition
+function build_definition(mod::Module, func_name::String)::Definition
   mod_names = names(mod, all=true)
-end
-
-function buildImage(def::Definition)::Image
-   
 end
 
 function get_dockerfile(def::Definition)::String
@@ -172,25 +168,17 @@ function move_to_temporary_build_directory(mod::Module)
   build_dir
 end
 
-function build_image(def::Definition, config::Config; no_cache::Bool=false)
+function build_image(def::Definition; no_cache::Bool=false)
   build_dir = move_to_temporary_build_directory(def.mod)
   dockerfile = get_dockerfile(def)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
   @info run(`ls`)
-  build_cmd = get_dockerfile_build_cmd(dockerfile, config, no_cache)
+  build_cmd = get_dockerfile_build_cmd(dockerfile, def.config, no_cache)
   # build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
   run(build_cmd)
 end
 
-Base.@kwdef struct InvocationResponse
-  response::String
-end
-
-Base.@kwdef struct InvocationError
-  errorType::String
-  errorMessage::String
-end
 
 end

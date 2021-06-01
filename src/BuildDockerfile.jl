@@ -90,6 +90,8 @@ function dockerfile_add_bootstrap()::String
 
   docker_entry = """
   RUN echo '$bootstrap_script_by_line' > bootstrap
+  RUN chmod +x ./bootstrap
+  ENTRYPOINT ["/var/runtime/bootstrap"]
   """
 
   @show docker_entry
