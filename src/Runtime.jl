@@ -42,11 +42,11 @@ function start_runtime(host::String, react_function::Function)
 
   while true
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
-    body_raw = http.body
+    body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
 
     body = try
-      JSON3.parse(body_raw)
+      JSON3.read(body_raw)
     catch e
       body_sample = length(body_raw) > 50 ? "$(body_raw[start:50])..." : body_raw
       lambda_error("Unable to parse input JSON $body_sample", endpoint, request_id)
