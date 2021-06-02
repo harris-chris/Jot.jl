@@ -149,6 +149,7 @@ end
 
 include("BuildDockerfile.jl")
 include("Runtime.jl")
+include("Scripts.jl")
 
 function get_config(
     config_fpath::String;
@@ -171,7 +172,7 @@ function get_dockerfile(def::Definition)::String
   get_julia_image_dockerfile(def)
 end
 
-function move_to_temporary_build_directory(mod::Module)
+function move_to_temporary_build_directory(mod::Module)::String
   build_dir = mktempdir()
   cd(build_dir)
   p_path = get_package_path(mod)
@@ -181,8 +182,16 @@ function move_to_temporary_build_directory(mod::Module)
   build_dir
 end
 
+function write_bootstrap_to_build_directory(path::String)
+  open(joinpath(path, "bootstrap"), "w") do f
+    write(f, bootstrap_script)
+  end
+end
+
 function build_image(def::Definition; no_cache::Bool=false)
   build_dir = move_to_temporary_build_directory(def.mod)
+  write_bootstrap_to_build_directory(build_dir)
+  @show readdir()
   dockerfile = get_dockerfile(def)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
@@ -204,13 +213,12 @@ function start_image_locally(image::Image)
 end
 
 function send_local_request(request::String)
-  curl = curl_easy_init()
-  curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:9000/2015-03-31/functions/function/invocations")
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request)
-  res = curl_easy_perform(curl)
-  @show res
-  curl_easy_cleanup(curl)
-
+  endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
+  @show HTTP.post(
+            "http://localhost:9000/2015-03-31/functions/function/invocations",
+            [],
+            request
+           )
 end
 
 end

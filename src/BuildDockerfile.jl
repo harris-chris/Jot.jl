@@ -74,32 +74,9 @@ function dockerfile_runtime_files(config::Config, package::Bool)::String
 end
 
 function dockerfile_add_bootstrap(def::Definition)::String
-  bootstrap_script = raw"""
-  #!/bin/bash
-  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
-    LOCAL="127.0.0.1:9001"
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-    exec aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; start_runtime(\\\"$LOCAL\\\", \\\"$FUNC_NAME\\\")"
-  else
-    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-    exec /usr/local/julia/bin/julia -e "using Jot; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", \\\"$FUNC_NAME\\\")"
-  fi
-  """
-
-  bootstrap_script = raw"""
-  #!/bin/bash
-  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE"
-  else
-    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-  end
-  """
-
-  bootstrap_script_by_line = reduce(*, l * "\n" for l in eachline(IOBuffer(bootstrap_script)))
-
   docker_entry = """
   ENV FUNC_NAME=$(get_response_function_name(def))
-  RUN echo '$bootstrap_script_by_line' > bootstrap
+  COPY ./bootstrap ./
   RUN chmod +x ./bootstrap
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """

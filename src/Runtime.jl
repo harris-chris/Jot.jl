@@ -32,6 +32,10 @@ function lambda_error(error::String, endpoint::String, aws_request_id::String)
   )
 end
 
+function start_runtime(host::String, func_name::String)
+  start_runtime(host, eval(Meta.parse(func_name)))
+end
+
 function start_runtime(host::String, react_function::Function)
   endpoint = get_endpoint(host)
   println("Starting runtime at $endpoint")
