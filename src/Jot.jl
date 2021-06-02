@@ -53,7 +53,10 @@ struct Definition
 end
 
 struct Image
+  definition::Definition
   name::String
+  tag::String
+  image_id::String
 end
 
 function get_package_path(mod::Module)::String
@@ -174,11 +177,10 @@ function build_image(def::Definition; no_cache::Bool=false)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
-  @info run(`ls`)
   build_cmd = get_dockerfile_build_cmd(dockerfile, def.config, no_cache)
   # build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
-  run(build_cmd)
+  out = run(build_cmd)
+  @show out
 end
-
 
 end

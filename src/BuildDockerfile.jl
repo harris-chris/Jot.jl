@@ -128,10 +128,8 @@ end
 
 
 function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
-  `docker build 
-  --rm$(no_cache ? " --no-cache" : "")
-  --tag $(get_image_uri_string(config))
-  .
-  `
+  options = ["--rm", "--tag", "$(get_image_uri_string(config))"]
+  no_cache && push!(options, "--no-cache")
+  `docker build $options .`
 end
 
