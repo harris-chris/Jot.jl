@@ -5,6 +5,7 @@ using JSON3
 using StructTypes
 using Parameters
 using Base.Filesystem
+using LibCURL
 
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
@@ -50,6 +51,7 @@ struct Definition
   mod::Union{Nothing, Module}
   func_name::String
   config::Config
+  test::Union{Nothing, Tuple{String, String}}
 end
 
 struct Image
@@ -113,8 +115,16 @@ function interpolate_string_with_config(
   str
 end
 
+function get_image_name(config::Config)::String
+  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name)"
+end
+
+function get_image_tag(config::Config)::String
+  "$(config.image.tag)"
+end
+
 function get_image_uri_string(config::Config)::String
-  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name):$(config.image.tag)"
+  "$(get_image_name(config)):$(get_image_tag(config))"
 end
 
 function get_role_arn_string(config::Config)::String
@@ -153,8 +163,8 @@ function get_config(
   end
 end
 
-function build_definition(mod::Module, func_name::String)::Definition
-  mod_names = names(mod, all=true)
+function get_response_function_name(def::Definition)::String
+  "$(get_package_name(def.mod)).$(def.func_name)"
 end
 
 function get_dockerfile(def::Definition)::String
@@ -178,9 +188,29 @@ function build_image(def::Definition; no_cache::Bool=false)
     write(f, dockerfile)
   end
   build_cmd = get_dockerfile_build_cmd(dockerfile, def.config, no_cache)
-  # build_with_dockerfile = pipeline(`echo $dockerfile`, build_cmd)
-  out = run(build_cmd)
-  @show out
+  run(build_cmd)
+  image_id = open("id", "r") do f String(read(f)) end
+  return Image(
+    def,
+    get_image_name(def.config),
+    get_image_tag(def.config),
+    image_id
+  )
+end
+
+function start_image_locally(image::Image)
+  args = ["-p", "9000:8080", "$(get_image_uri_string(image.definition.config))"]
+  run(`docker run $args`)
+end
+
+function send_local_request(request::String)
+  curl = curl_easy_init()
+  curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:9000/2015-03-31/functions/function/invocations")
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request)
+  res = curl_easy_perform(curl)
+  @show res
+  curl_easy_cleanup(curl)
+
 end
 
 end

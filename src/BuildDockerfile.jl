@@ -73,28 +73,36 @@ function dockerfile_runtime_files(config::Config, package::Bool)::String
   """
 end
 
-function dockerfile_add_bootstrap()::String
+function dockerfile_add_bootstrap(def::Definition)::String
   bootstrap_script = raw"""
   #!/bin/bash
   if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-    exec aws-lambda-rie /usr/local/julia/bin/julia -e "using JuliaLambdaRuntime; start_runtime(\"$LOCAL\")"
+    exec aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; start_runtime(\\\"$LOCAL\\\", \\\"$FUNC_NAME\\\")"
   else
     echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-    exec /usr/local/julia/bin/julia -e "using JuliaLambdaRuntime; start_runtime(\"$AWS_LAMBDA_RUNTIME_API\")"
+    exec /usr/local/julia/bin/julia -e "using Jot; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", \\\"$FUNC_NAME\\\")"
   fi
   """
 
-  bootstrap_script_by_line = reduce(*, l * " /" for l in eachline(IOBuffer(bootstrap_script)))
+  bootstrap_script = raw"""
+  #!/bin/bash
+  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE"
+  else
+    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
+  end
+  """
+
+  bootstrap_script_by_line = reduce(*, l * "\n" for l in eachline(IOBuffer(bootstrap_script)))
 
   docker_entry = """
+  ENV FUNC_NAME=$(get_response_function_name(def))
   RUN echo '$bootstrap_script_by_line' > bootstrap
   RUN chmod +x ./bootstrap
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """
-
-  @show docker_entry
 end
 
 function dockerfile_add_permissions(config::Config)::String
@@ -122,14 +130,15 @@ function get_julia_image_dockerfile(def::Definition)::String
     dockerfile_add_module(def.mod),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
-    dockerfile_add_bootstrap(),
+    dockerfile_add_bootstrap(def),
   ]; init = "")
 end
 
 
 function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
-  options = ["--rm", "--tag", "$(get_image_uri_string(config))"]
+  options = ["--rm", "--iidfile", "id", "--tag", "$(get_image_uri_string(config))"]
   no_cache && push!(options, "--no-cache")
+  @show options
   `docker build $options .`
 end
 
