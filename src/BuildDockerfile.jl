@@ -75,6 +75,7 @@ end
 
 function dockerfile_add_bootstrap(def::Definition)::String
   docker_entry = """
+  ENV PKG_NAME=$(get_package_name(def.mod))
   ENV FUNC_NAME=$(get_response_function_name(def))
   COPY ./bootstrap ./
   RUN chmod +x ./bootstrap
