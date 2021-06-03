@@ -231,7 +231,7 @@ function start_image_locally(image::Image, detached::Bool)::Container
 end
 
 function stop_container(con::Container)
-  run(`docker container stop $(con.id)`)
+  run(`docker container stop $(con.container_id)`)
 end
 
 function send_local_request(request::String)
@@ -239,7 +239,7 @@ function send_local_request(request::String)
   HTTP.post(
             "http://localhost:9000/2015-03-31/functions/function/invocations",
             [],
-            request
+            "\"$request\""
            )
 end
 
