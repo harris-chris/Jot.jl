@@ -214,7 +214,9 @@ end
 
 function test_image_locally(image::Image)::Bool
   con = start_image_locally(image, true)
-  send_local_request(image.definition.test[1])
+  actual = send_local_request(image.definition.test[1])
+  expected = image.definition.test[2]
+  actual == expected
 end
 
 function start_image_locally(image::Image, detached::Bool)::Container
