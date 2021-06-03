@@ -244,7 +244,7 @@ function send_local_request(request::String)
             [],
             "\"$request\""
            )
-  http.body
+  String(http.body)
 end
 
 end
