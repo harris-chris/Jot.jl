@@ -11,6 +11,7 @@ Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 StructTypes = "856f2bd8-1eba-4b0a-8007-ebc267875bd4"
 
 [compat]
+StructTypes = "1"
 julia = "1.5"
 
 [extras]
