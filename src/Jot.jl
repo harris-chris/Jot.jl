@@ -239,11 +239,12 @@ end
 
 function send_local_request(request::String)
   endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
-  HTTP.post(
+  http = HTTP.post(
             "http://localhost:9000/2015-03-31/functions/function/invocations",
             [],
             "\"$request\""
            )
+  http.body
 end
 
 end
