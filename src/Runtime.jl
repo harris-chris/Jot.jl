@@ -24,6 +24,7 @@ function lambda_respond(response::String, endpoint::String, aws_request_id::Stri
 end
 
 function lambda_error(error::String, endpoint::String, aws_request_id::String)
+  @show response
   HTTP.request(
     "POST", 
     "$(endpoint)$(aws_request_id)/error", 
