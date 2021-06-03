@@ -216,12 +216,14 @@ function test_image_locally(image::Image)::Bool
   con = start_image_locally(image, true)
   actual = send_local_request(image.definition.test[1])
   expected = image.definition.test[2]
-  @show actual
-  @show expected
   stop_container(con)
-  out = actual == expected
-  @show out
-  out
+  if actual == expected
+    @info "Test passed"
+  else
+    @info "Test failed"
+    @info "Actual: $actual"
+    @info "Expected: $expected"
+  end
 end
 
 function start_image_locally(image::Image, detached::Bool)::Container
@@ -233,7 +235,6 @@ function start_image_locally(image::Image, detached::Bool)::Container
 end
 
 function stop_container(con::Container)
-  @show con.container_id
   run(`docker stop $(con.container_id)`)
 end
 
