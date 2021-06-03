@@ -43,7 +43,11 @@ function start_runtime(host::String, react_function::Function)
 
   while true
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
+    @show http.body
+    @info typeof(http.body)
     body_raw = String(http.body)
+    @show body_raw
+    @info typeof(body_raw)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
 
     body = try
