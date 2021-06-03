@@ -98,10 +98,6 @@ function interpolate_string_with_config(
     raw"$(lambda_function.name)" => config.lambda_function.name,
     raw"$(lambda_function.timeout)" => config.lambda_function.timeout,
     raw"$(lambda_function.memory_size)" => config.lambda_function.memory_size,
-    raw"$(lambda_function.test_invocation_body)" => get_test_invocation_body(
-       joinpath(builtins.function_path, "function.jl")),
-    raw"$(lambda_function.test_invocation_response)" => get_test_invocation_response(
-       joinpath(builtins.function_path, "function.jl")),
   )
   aws_matches = map(x -> x.match, eachmatch(r"\$\(aws.[a-z\_]+\)", str))
   image_matches = map(x -> x.match, eachmatch(r"\$\(image.[a-z\_]+\)", str))
