@@ -51,7 +51,7 @@ struct Definition
   mod::Union{Nothing, Module}
   func_name::String
   config::Config
-  test::Union{Nothing, Tuple{String, String}}
+  test::Union{Nothing, Tuple{Any, Any}}
 end
 
 struct Image
@@ -244,7 +244,7 @@ function send_local_request(request::String)
             [],
             "\"$request\""
            )
-  String(http.body)
+  JSON3.read(http.body)
 end
 
 end
