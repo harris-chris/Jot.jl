@@ -86,7 +86,7 @@ function interpolate_string_with_config(
     raw"$(aws.role_arn_string)" => get_role_arn_string(config),
     raw"$(image.name)" => config.image.name,
     raw"$(image.tag)" => config.image.tag,
-    raw"$(image.base)" => config.image.base,
+    raw"$(image.julia_version)" => config.image.julia_version,
     raw"$(image.runtime_path)" => config.image.runtime_path,
     raw"$(image.julia_depot_path)" => config.image.julia_depot_path,
     raw"$(image.julia_cpu_target)" => config.image.julia_cpu_target,
