@@ -28,7 +28,7 @@ function lambda_error(error::String, endpoint::String, aws_request_id::String)
     "POST", 
     "$(endpoint)$(aws_request_id)/error", 
     [("Lambda-Runtime-Function-Error-Type", "Unhandled")], 
-    JSON.write(error),
+    JSON3.write(error),
   )
 end
 
