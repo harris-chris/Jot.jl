@@ -216,6 +216,8 @@ function test_image_locally(image::Image)::Bool
   con = start_image_locally(image, true)
   actual = send_local_request(image.definition.test[1])
   expected = image.definition.test[2]
+  @show actual
+  @show expected
   actual == expected
 end
 
