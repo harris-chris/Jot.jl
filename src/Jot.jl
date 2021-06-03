@@ -219,7 +219,9 @@ function test_image_locally(image::Image)::Bool
   @show actual
   @show expected
   stop_container(con)
-  actual == expected
+  out = actual == expected
+  @show out
+  out
 end
 
 function start_image_locally(image::Image, detached::Bool)::Container
@@ -231,7 +233,7 @@ function start_image_locally(image::Image, detached::Bool)::Container
 end
 
 function stop_container(con::Container)
-  run(`docker container stop $(con.container_id)`)
+  run(`docker stop $(con.container_id)`)
 end
 
 function send_local_request(request::String)
