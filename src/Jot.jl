@@ -228,7 +228,7 @@ function start_image_locally(image::Image, detached::Bool)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
   image_uri = get_image_uri_string(image.definition.config)
-  id = readchomp(`docker run $args $image_uri`, String)
+  id = readchomp(`docker run $args $image_uri`)
   Container(image, id)
 end
 
