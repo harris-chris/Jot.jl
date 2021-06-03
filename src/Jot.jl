@@ -226,6 +226,15 @@ function test_image_locally(image::Image)::Bool
   end
 end
 
+function test_image_remotely(image::Image)::Bool
+
+end
+
+function login_to_ecr(def::Definition)
+  interp = interpolate_string_with_config(ecr_login, def.config)
+  run(`$interp`)
+end
+
 function start_image_locally(image::Image, detached::Bool)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
