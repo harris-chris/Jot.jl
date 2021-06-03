@@ -218,6 +218,7 @@ function test_image_locally(image::Image)::Bool
   expected = image.definition.test[2]
   @show actual
   @show expected
+  stop_container(con)
   actual == expected
 end
 
