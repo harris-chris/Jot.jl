@@ -10,7 +10,7 @@ else
 fi
 """
 
-ecr_login = """
+ecr_login = raw"""
 aws ecr get-login-password --region $(aws.region) \
   | docker login \
   --username AWS \
