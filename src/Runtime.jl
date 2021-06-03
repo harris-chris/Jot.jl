@@ -50,6 +50,7 @@ function start_runtime(host::String, react_function::Function)
       JSON3.read(body_raw)
     catch e
       body_sample = length(body_raw) > 50 ? "$(body_raw[start:50])..." : body_raw
+      @show body_sample
       lambda_error("Unable to parse input JSON $body_sample", endpoint, request_id)
       continue
     end
