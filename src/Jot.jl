@@ -133,7 +133,7 @@ function get_image_uri_string(config::Config)::String
 end
 
 function get_role_arn_string(config::Config)::String
-  "arn:aws:iam::$(config.aws.account_id):role/$(config.aws.role)"
+  "arn:aws:iam::$(config.aws.account_id):role/$(config.lambda_function.role)"
 end
 
 function get_function_uri_string(config::Config)::String
