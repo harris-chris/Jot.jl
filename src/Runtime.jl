@@ -71,7 +71,7 @@ function start_runtime(host::String, react_function::Function)
     end
 
     reaction_json = try
-      JSON3.pretty(JSON3.write(reaction))
+      JSON3.write(reaction)
     catch e
       err("Unable to parse function return value $(reaction) to JSON")
       continue
