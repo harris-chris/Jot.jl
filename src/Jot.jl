@@ -61,6 +61,11 @@ struct Image
   image_id::String
 end
 
+struct Container
+  image::Image
+  container_id::String
+end
+
 function get_package_path(mod::Module)::String
   module_path = Base.moduleroot(mod) |> pathof
   joinpath(splitpath(module_path)[begin:end-2]...)
@@ -207,16 +212,26 @@ function build_image(def::Definition; no_cache::Bool=false)
   )
 end
 
-function start_image_locally(image::Image, detached::Bool)
+function test_image_locally(image::Image)::Bool
+  con = start_image_locally(image, true)
+  send_local_request(image.def.test[1])
+end
+
+function start_image_locally(image::Image, detached::Bool)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
   image = get_image_uri_string(image.definition.config)
-  read(`docker run $args $image`, String)
+  id = read(`docker run $args $image`, String)
+  Container(image, id)
+end
+
+function stop_container(con::Container)
+  run(`docker container stop $(con.id)`)
 end
 
 function send_local_request(request::String)
   endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
-  @show HTTP.post(
+  HTTP.post(
             "http://localhost:9000/2015-03-31/functions/function/invocations",
             [],
             request
