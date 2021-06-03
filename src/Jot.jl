@@ -233,6 +233,7 @@ function start_image_locally(image::Image, detached::Bool)::Container
 end
 
 function stop_container(con::Container)
+  @show con.container_id
   run(`docker stop $(con.container_id)`)
 end
 
