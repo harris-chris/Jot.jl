@@ -207,7 +207,7 @@ function build_image(def::Definition; no_cache::Bool=false)
   )
 end
 
-function start_image_locally(image::Image, detached::Bool)::String
+function start_image_locally(image::Image, detached::Bool)
   args = ["-p", "9000:8080", "$(get_image_uri_string(image.definition.config))"]
   detached && push!(args, "-d")
   run(`docker run $args`, wait=false)  
