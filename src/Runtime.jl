@@ -58,8 +58,8 @@ function start_runtime(host::String, react_function::Function)
       continue
     end
 
-    try
-      reaction = react_function(body)
+    reaction = try
+      react_function(body)
     catch e
       err(msg) = lambda_error(msg, endpoint, request_id)
       if isa(e, MethodError) && e.f == String(Symbol(react_function))
