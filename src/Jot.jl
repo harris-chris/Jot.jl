@@ -10,7 +10,7 @@ using LibCURL
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
-export get_config, get_dockerfile, build_definition, build_image
+export get_config, get_dockerfile, build_definition, build_image, delete_image
 export test_image_locally, test_image_remotely
 
 # EXCEPTIONS
@@ -53,6 +53,9 @@ struct Definition
   func_name::String
   config::Config
   test::Union{Nothing, Tuple{Any, Any}}
+
+
+
 end
 
 struct Image
@@ -209,8 +212,12 @@ function build_image(def::Definition; no_cache::Bool=false)
   )
 end
 
+function delete_image(image::Image)
+  run(`docker image rm $(image.image_id)`)
+end
 
 function test_image_locally(image::Image)::Bool
+  isnothing(image.definition.test) && error("No test defined in image definition")
   con = start_image_locally(image, true)
   actual = send_local_request(image.definition.test[1])
   expected = image.definition.test[2]
@@ -248,12 +255,14 @@ function stop_container(con::Container)
 end
 
 function send_local_request(request::String)
+  @debug request
   endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
   http = HTTP.post(
             "http://localhost:9000/2015-03-31/functions/function/invocations",
             [],
             "\"$request\""
            )
+  @debug http.body
   JSON3.read(http.body)
 end
 
