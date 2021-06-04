@@ -11,6 +11,7 @@ using LibCURL
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
 export get_config, get_dockerfile, build_definition, build_image
+export test_image_locally, test_image_remotely
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception 
@@ -207,6 +208,7 @@ function build_image(def::Definition; no_cache::Bool=false)
     image_id
   )
 end
+
 
 function test_image_locally(image::Image)::Bool
   con = start_image_locally(image, true)
