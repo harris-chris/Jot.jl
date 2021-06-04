@@ -215,13 +215,15 @@ function test_image_locally(image::Image)::Bool
   actual = send_local_request(image.definition.test[1])
   expected = image.definition.test[2]
   stop_container(con)
-  if actual == expected
+  passed = actual == expected
+  if passed
     @info "Test passed"
   else
     @info "Test failed"
     @info "Actual: $actual"
     @info "Expected: $expected"
   end
+  passed
 end
 
 function test_image_remotely(image::Image)::Bool
