@@ -6,6 +6,7 @@ using StructTypes
 using Parameters
 using Base.Filesystem
 using LibCURL
+using Dates
 
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
@@ -76,6 +77,18 @@ Base.:(==)(a::Image, b::Image) = a.image_id[1:docker_hash_limit] == b.image_id[1
   ports::Union{Missing, String} = missing
   names::Union{Missing, String} = missing
 end
+
+@with_kw mutable struct AWSRepository
+  repositoryArn::Union{Missing, String} = missing
+  registryId::Union{Missing, String} = missing
+  repositoryName::Union{Missing, String} = missing
+  repositoryUri::Union{Missing, String} = missing
+  createdAt::Union{Missing, String} = missing
+  imageTagMutability::Union{Missing, String} = missing
+  imageScanningConfiguration::Union{Missing, Any} = missing
+  encryptionConfiguration::Union{Missing, Any} = missing
+end
+StructTypes.StructType(::Type{AWSRepository}) = StructTypes.Mutable()  
 
 Base.:(==)(a::Container, b::Container) = a.container_id[1:docker_hash_limit] == b.container_id[1:docker_hash_limit]
 
@@ -306,9 +319,21 @@ function test_image_remotely(image::Image)::Bool
 
 end
 
-function login_to_ecr(def::Definition)
-  interp = interpolate_string_with_config(ecr_login, def.config)
-  run(`$interp`)
+function login_to_ecr(config::Config)
+  interp = interpolate_string_with_config(ecr_login, config)
+  run(`bash -c $interp`)
+end
+
+function get_repositories(config::Config)::Vector{AWSRepository}
+  all_repos = read(`aws ecr describe-repositories`, String)
+  @debug all_repos
+  all = JSON3.read(all_repos, Dict{String, Vector{AWSRepository}})
+  all["repositories"]
+end
+
+function does_ecr_repository_exist(config::Config)::Bool
+  ecr_uri = get_ecr_uri_string(config)
+  any([repo.repositoryUri == ecr_uri for repo in get_repositories(config)])
 end
 
 function run_image_locally(image::Image; detached::Bool=true)::Container
