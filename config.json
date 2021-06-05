@@ -1,0 +1,22 @@
+{
+  "aws": {
+    "account_id": "513118378795",
+    "region": "ap-northeast-1",
+    "role": "lambda-role"
+  },
+  "image": {
+    "name": "julia-lambda",
+    "tag": "latest",
+    "base": "1.6.0",
+    "dependencies": [],
+    "runtime_path": "/var/runtime",
+    "julia_depot_path": "/var/julia",
+    "julia_cpu_target": "x86-64"
+  },
+  "lambda_function": {
+    "name": "test-function",
+    "timeout": 30,
+    "memory_size": 1000
+  }
+}
+

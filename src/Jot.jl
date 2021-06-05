@@ -10,13 +10,17 @@ using LibCURL
 # EXPORTS
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
-export get_config, get_dockerfile, build_definition, build_image, delete_image
-export test_image_locally, test_image_remotely
+export get_config, get_dockerfile, build_definition
+export run_image_locally, build_image, delete_image
+export run_local_test, run_remote_test
 
 # EXCEPTIONS
-struct InterpolationNotFoundException <: Exception 
-  interpolation::String
-end
+struct InterpolationNotFoundException <: Exception interpolation::String end
+
+# CONSTANTS
+const docker_hash_limit = 12
+const docker_image_ls_headers = ("repository", "tag", "image id", "created", "size")
+const docker_ps_headers = ("container id", "image", "command", "created", "status", "ports", "names")
 
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
@@ -53,22 +57,26 @@ struct Definition
   func_name::String
   config::Config
   test::Union{Nothing, Tuple{Any, Any}}
-
-
-
 end
 
-struct Image
-  definition::Definition
-  name::String
+@with_kw struct Image
+  repository::String
   tag::String
   image_id::String
+  created::Union{Missing, String} = missing
+  size::Union{Missing, String} = missing
 end
 
-struct Container
-  image::Image
+@with_kw struct Container
   container_id::String
+  image::Image
+  command::Union{Missing, String} = missing
+  created::Union{Missing, String} = missing
+  ports::Union{Missing, String} = missing
+  name::Union{Missing, String} = missing
 end
+
+struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
 function get_package_path(mod::Module)::String
   module_path = Base.moduleroot(mod) |> pathof
@@ -177,6 +185,17 @@ function get_dockerfile(def::Definition)::String
   get_julia_image_dockerfile(def)
 end
 
+function is_container_running(con::Container)::Bool
+  running_containers = get_containers()
+  con.container_id[begin:docker_hash_limit] in map(c -> running_containers.container_id)
+end
+
+function stop_container(con::Container)
+  if is_container_running(con)
+    run(`docker stop $(con.container_id)`)
+  end
+end
+
 function move_to_temporary_build_directory(mod::Module)::String
   build_dir = mktempdir()
   cd(build_dir)
@@ -205,30 +224,76 @@ function build_image(def::Definition; no_cache::Bool=false)
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end
   return Image(
-    def,
-    get_image_name(def.config),
-    get_image_tag(def.config),
-    image_id
+    repository = get_image_name(def.config),
+    tag = get_image_tag(def.config),
+    image_id = image_id,
   )
 end
 
-function delete_image(image::Image)
+function split_line_by_whitespace(l::AbstractString)::Vector{String}
+  filter(x -> x != "", [strip(wrd) for wrd in split(l, "   ")])
+end
+
+function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
+  image_ls_output = split(read(`docker image ls $args`, String), "\n")
+  headers = map(lowercase, split_line_by_whitespace(image_ls_output[1]))
+  as_strings = image_ls_output[2:end]
+  as_vec_string = filter(!isempty, map(split_line_by_whitespace, as_strings))
+  @debug headers
+  if !all([length(strs) == length(headers) for strs in as_vec_string])
+    error("Unable to match docker image ls output with headers")
+  end
+  as_dict = [Dict(kw => str for (kw, str) in zip(headers, str)) for str in as_vec_string]
+  @debug as_dict
+  image_kws = [
+               Dict(field => dict[replace(String(field), "_" => " ")] for field in fieldnames(Image))
+               for dict in as_dict
+              ]
+  @debug image_kws
+  images = [Image(values(kws)...) for kws in image_kws]
+end
+
+function get_containers(args::Vector{String} = Vector{String}())::Vector{Container}
+  as_strings = split(read(`docker ps $args`, String), "\n")[2:end]
+  as_vec_string = [split(cd, "\t") for cd in as_strings]
+  as_dict = [Dict(kw => str for (kw, str) in zip(docker_ps_headers, str)) for str in as_vec_string]
+  as_dict["image"] = findfirst(img -> img.image_id == as_dict["image"], get_images())
+  @debug as_dict
+  containers = [Container(kws...) for kws in as_dict]
+  @debug containers
+  containers
+end
+
+function get_containers(image::Image)::Vector{Container}
+  get_containers(["--filter", "ancestor=$(image.image_id[begin:docker_hash_limit])"])
+end
+
+function delete_image(image::Image; force::Bool=false)
+  containers = get_containers(image)
+  if length(containers) > 0
+    if force
+      for con in containers
+        stop_container(con) 
+      end
+    else
+      throw(ContainersStillRunning(containers))
+    end
+  end
   run(`docker image rm $(image.image_id)`)
 end
 
-function test_image_locally(image::Image)::Bool
-  isnothing(image.definition.test) && error("No test defined in image definition")
-  con = start_image_locally(image, true)
-  actual = send_local_request(image.definition.test[1])
-  expected = image.definition.test[2]
-  stop_container(con)
-  passed = actual == expected
+function run_local_test(image::Image, test_input::Any, expected_test_response::Any)::Bool
+  running = get_containers(image)
+  con = length(running) == 0 ? run_image_locally(image, true) : nothing
+  actual = send_local_request(test_input)
+  !isnothing(con) && stop_container(con)
+  passed = actual == expected_test_response
   if passed
     @info "Test passed"
   else
     @info "Test failed"
     @info "Actual: $actual"
-    @info "Expected: $expected"
+    @info "Expected: $expected_test_response"
   end
   passed
 end
@@ -242,16 +307,11 @@ function login_to_ecr(def::Definition)
   run(`$interp`)
 end
 
-function start_image_locally(image::Image, detached::Bool)::Container
+function run_image_locally(image::Image; detached::Bool=true)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
-  image_uri = get_image_uri_string(image.definition.config)
-  id = readchomp(`docker run $args $image_uri`)
-  Container(image, id)
-end
-
-function stop_container(con::Container)
-  run(`docker stop $(con.container_id)`)
+  container_id = readchomp(`docker run $args $(image.image_id)`)
+  Container(container_id=container_id, image=image)
 end
 
 function send_local_request(request::String)
