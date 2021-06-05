@@ -11,8 +11,9 @@ using LibCURL
 export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
 export Definition, Image
 export get_config, get_dockerfile, build_definition
-export run_image_locally, build_image, delete_image
+export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
+export stop_container, is_container_running, get_containers
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -65,6 +66,8 @@ end
   size::Union{Missing, String} = missing
 end
 
+Base.:(==)(a::Image, b::Image) = a.image_id[1:docker_hash_limit] == b.image_id[1:docker_hash_limit]
+
 @with_kw struct Container
   container_id::String
   image::Image
@@ -73,6 +76,8 @@ end
   ports::Union{Missing, String} = missing
   names::Union{Missing, String} = missing
 end
+
+Base.:(==)(a::Container, b::Container) = a.container_id[1:docker_hash_limit] == b.container_id[1:docker_hash_limit]
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -185,7 +190,7 @@ end
 
 function is_container_running(con::Container)::Bool
   running_containers = get_containers()
-  con.container_id[begin:docker_hash_limit] in map(c -> running_containers.container_id)
+  con in running_containers
 end
 
 function stop_container(con::Container)
@@ -260,7 +265,6 @@ function get_containers(args::Vector{String} = Vector{String}())::Vector{Contain
   container_args = [[fn == "image" ? get_image(dict["image"]) : dict[fn]
                      for fn in container_field_names]
                     for dict in as_dicts]
-  @debug container_args
   containers = [Container(c_args...) for c_args in container_args]
 end
 
@@ -284,7 +288,7 @@ end
 
 function run_local_test(image::Image, test_input::Any, expected_test_response::Any)::Bool
   running = get_containers(image)
-  con = length(running) == 0 ? run_image_locally(image, true) : nothing
+  con = length(running) == 0 ? run_image_locally(image) : nothing
   actual = send_local_request(test_input)
   !isnothing(con) && stop_container(con)
   passed = actual == expected_test_response

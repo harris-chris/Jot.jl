@@ -20,14 +20,14 @@ using Random
   jt1_image = build_image(jt1_def)
   # Test that container runs
   jt1_cont = run_image_locally(jt1_image)
-  @test Jot.is_container_running(jt1_cont)
-  jt1_conts = Jot.get_containers(jt1_image)
+  @test is_container_running(jt1_cont)
+  jt1_conts = get_containers(jt1_image)
   @test length(jt1_conts) == 1
   for cont in jt1_conts
     stop_container(cont)
   end
   # Check container has stopped
-  @test length(Jot.get_containers(jt1_image)) == 0
+  @test length(get_containers(jt1_image)) == 0
   # Run local test of container
   @test run_local_test(jt1_image, jt1_def.test...)
   
