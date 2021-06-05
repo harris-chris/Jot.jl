@@ -19,8 +19,6 @@ struct InterpolationNotFoundException <: Exception interpolation::String end
 
 # CONSTANTS
 const docker_hash_limit = 12
-const docker_image_ls_headers = ("repository", "tag", "image id", "created", "size")
-const docker_ps_headers = ("container id", "image", "command", "created", "status", "ports", "names")
 
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
@@ -73,7 +71,7 @@ end
   command::Union{Missing, String} = missing
   created::Union{Missing, String} = missing
   ports::Union{Missing, String} = missing
-  name::Union{Missing, String} = missing
+  names::Union{Missing, String} = missing
 end
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
@@ -234,34 +232,36 @@ function split_line_by_whitespace(l::AbstractString)::Vector{String}
   filter(x -> x != "", [strip(wrd) for wrd in split(l, "   ")])
 end
 
-function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
-  image_ls_output = split(read(`docker image ls $args`, String), "\n")
-  headers = map(lowercase, split_line_by_whitespace(image_ls_output[1]))
-  as_strings = image_ls_output[2:end]
+function docker_output_to_vec_dict(raw_output::String)::Vector{Dict{String, Any}}
+  by_line = split(raw_output, "\n")
+  headers = map(lowercase, split_line_by_whitespace(by_line[1]))
+  as_strings = by_line[2:end]
   as_vec_string = filter(!isempty, map(split_line_by_whitespace, as_strings))
-  @debug headers
   if !all([length(strs) == length(headers) for strs in as_vec_string])
     error("Unable to match docker image ls output with headers")
   end
   as_dict = [Dict(kw => str for (kw, str) in zip(headers, str)) for str in as_vec_string]
-  @debug as_dict
-  image_kws = [
-               Dict(field => dict[replace(String(field), "_" => " ")] for field in fieldnames(Image))
-               for dict in as_dict
-              ]
-  @debug image_kws
-  images = [Image(values(kws)...) for kws in image_kws]
+end
+
+function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
+  image_ls_output = read(`docker image ls $args`, String)
+  as_dicts = docker_output_to_vec_dict(image_ls_output)
+  image_field_names = map(x -> String(x) |> x -> replace(x, "_" => " "), fieldnames(Image))
+  image_args = [[dict[fn] for fn in image_field_names] for dict in as_dicts]
+  images = [Image(i_args...) for i_args in image_args]
 end
 
 function get_containers(args::Vector{String} = Vector{String}())::Vector{Container}
-  as_strings = split(read(`docker ps $args`, String), "\n")[2:end]
-  as_vec_string = [split(cd, "\t") for cd in as_strings]
-  as_dict = [Dict(kw => str for (kw, str) in zip(docker_ps_headers, str)) for str in as_vec_string]
-  as_dict["image"] = findfirst(img -> img.image_id == as_dict["image"], get_images())
-  @debug as_dict
-  containers = [Container(kws...) for kws in as_dict]
-  @debug containers
-  containers
+  docker_ps_output = read(`docker ps $args`, String)
+  as_dicts = docker_output_to_vec_dict(docker_ps_output)
+  container_field_names = map(x -> String(x) |> x -> replace(x, "_" => " "), fieldnames(Container))
+  images = get_images()
+  get_image(img_id) = images[findfirst(x -> x.image_id == img_id, images)]
+  container_args = [[fn == "image" ? get_image(dict["image"]) : dict[fn]
+                     for fn in container_field_names]
+                    for dict in as_dicts]
+  @debug container_args
+  containers = [Container(c_args...) for c_args in container_args]
 end
 
 function get_containers(image::Image)::Vector{Container}
