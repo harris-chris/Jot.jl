@@ -52,6 +52,11 @@ StructTypes.StructType(::Type{LambdaFunctionConfig}) = StructTypes.Mutable()
 end
 StructTypes.StructType(::Type{Config}) = StructTypes.Mutable()  
 
+struct Function
+  mod::Union{Nothing, Module}
+  func_name::String
+end
+
 struct Definition
   mod::Union{Nothing, Module}
   func_name::String
