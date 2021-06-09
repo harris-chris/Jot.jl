@@ -9,8 +9,8 @@ using LibCURL
 using Dates
 
 # EXPORTS
-export AWSConfig, ImageConfig, LambdaFunctionConfig, Config
-export Definition, Image
+export AWSConfig, LambdaFunctionConfig, Config
+export ResponseFunction, Image
 export get_config, get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
@@ -52,16 +52,30 @@ StructTypes.StructType(::Type{LambdaFunctionConfig}) = StructTypes.Mutable()
 end
 StructTypes.StructType(::Type{Config}) = StructTypes.Mutable()  
 
-struct Function
-  mod::Union{Nothing, Module}
-  func_name::String
-end
+struct ResponseFunction
+  name::String
+  mod::Module
+  response_function::Symbol
 
-struct Definition
-  mod::Union{Nothing, Module}
-  func_name::String
-  config::Config
-  test::Union{Nothing, Tuple{Any, Any}}
+  function ResponseFunction(
+      name::String, 
+      mod::Module, 
+      response_function::String,
+  )::ResponseFunction
+    ResponseFunction(name, mod, Symbol(response_function))
+  end
+
+  function ResponseFunction(
+      name::String,
+      mod::Module,
+      response_function::Symbol,
+  )::ResponseFunction
+    if (response_function in names(mod, all=true))
+      new(name, mod, response_function)
+    else
+      throw(UndefVarError("Cannot find function $response_function in module $mod"))
+    end
+  end
 end
 
 @with_kw struct Image
@@ -149,36 +163,46 @@ function interpolate_string_with_config(
   str
 end
 
-function get_image_name(config::Config)::String
-  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name)"
+function get_registry(aws_config::AWSConfig)::String
+  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com"
 end
 
-function get_image_tag(config::Config)::String
-  "$(config.image.tag)"
+function get_image_full_name(
+    aws_config::AWSConfig, 
+    image_suffix::String,
+  )::String
+  "$(get_registry(aws_config))/$image_suffix"
 end
 
-function get_image_uri_string(config::Config)::String
-  "$(get_image_name(config)):$(get_image_tag(config))"
+function get_image_full_name_plus_tag(
+    aws_config::AWSConfig, 
+    image_suffix::String, 
+    image_tag::String,
+  )::String
+  "$(get_image_full_name(aws_config, image_suffix)):$image_tag"
 end
 
-function get_role_arn_string(config::Config)::String
-  "arn:aws:iam::$(config.aws.account_id):role/$(config.lambda_function.role)"
+function get_role_arn_string(
+    aws_config::AWSConfig, 
+    role_name::String,
+  )::String
+  "arn:aws:iam::$(aws_config.account_id):role/$role_name"
 end
 
-function get_function_uri_string(config::Config)::String
-  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.image.name)"
+function get_function_uri_string(aws_config::AWSConfig, function_name::String)::String
+  "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com/$function_name"
 end
 
-function get_function_arn_string(config::Config)::String
-  "arn:aws:lambda:$(config.aws.region):$(config.aws.account_id):function:$(config.lambda_function.name)"
+function get_function_arn_string(aws_config::AWSConfig, function_name::String)::String
+  "arn:aws:lambda:$(aws_config.region):$(aws_config.account_id):function:$function_name"
 end
 
-function get_ecr_arn_string(config::Config)::String
-  "arn:aws:ecr:$(config.aws.region):$(config.aws.account_id):repository/$(config.lambda_function.name)"
+function get_ecr_arn_string(aws_config::AWSConfig, image_suffix::String)::String
+  "arn:aws:ecr:$(aws_config.region):$(aws_config.account_id):repository/$image_suffix"
 end
 
-function get_ecr_uri_string(config::Config)::String
-  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com/$(config.lambda_function.name)"
+function get_ecr_uri_string(aws_config::AWSConfig, image_suffix::String)::String
+  "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com/$image_suffix"
 end
 
 include("BuildDockerfile.jl")
@@ -198,12 +222,12 @@ function get_config(
   end
 end
 
-function get_response_function_name(def::Definition)::String
-  "$(get_package_name(def.mod)).$(def.func_name)"
+function get_response_function_name(rf::ResponseFunction)::String
+  "$(get_package_name(rf.mod)).$(rf.response_function)"
 end
 
-function get_dockerfile(def::Definition)::String
-  get_julia_image_dockerfile(def)
+function get_dockerfile(rf::ResponseFunction)::String
+  get_julia_image_dockerfile(rf)
 end
 
 function is_container_running(con::Container)::Bool
@@ -233,11 +257,18 @@ function write_bootstrap_to_build_directory(path::String)
   end
 end
 
-function build_image(def::Definition; no_cache::Bool=false)
-  build_dir = move_to_temporary_build_directory(def.mod)
+function build_image(
+    name::String,
+    rf::ResponseFunction,
+    aws_config::AWSConfig; 
+    tag::String = "latest",
+    no_cache::Bool = false,
+    julia_base_version::String = "1.6.1",
+    julia_cpu_target::String = "x86-64",
+  )::Image
+  build_dir = move_to_temporary_build_directory(rf.mod)
   write_bootstrap_to_build_directory(build_dir)
-  @show readdir()
-  dockerfile = get_dockerfile(def)
+  dockerfile = get_dockerfile(rf)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end

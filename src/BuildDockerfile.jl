@@ -2,9 +2,9 @@ const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/julia_depot"
 const jot_github_url = "https://github.com/harris-chris/Jot.jl#master"
 
-function dockerfile_add_julia_image(config::Config)::String
+function dockerfile_add_julia_image(image_config::ImageConfig)::String
   """
-  FROM julia:$(config.image.julia_version)
+  FROM julia:$(image_config.julia_version)
   """
 end
 
@@ -73,10 +73,10 @@ function dockerfile_runtime_files(config::Config, package::Bool)::String
   """
 end
 
-function dockerfile_add_bootstrap(def::Definition)::String
+function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   docker_entry = """
-  ENV PKG_NAME=$(get_package_name(def.mod))
-  ENV FUNC_NAME=$(get_response_function_name(def))
+  ENV PKG_NAME=$(get_package_name(rf.mod))
+  ENV FUNC_NAME=$(get_response_function_name(rf))
   COPY ./bootstrap ./
   RUN chmod +x ./bootstrap
   ENTRYPOINT ["/var/runtime/bootstrap"]
@@ -99,22 +99,25 @@ function get_dependencies_json(config::Config)::String
   json(all_deps)
 end
 
-function get_julia_image_dockerfile(def::Definition)::String
+function get_julia_image_dockerfile(rf::ResponseFunction, image_config::ImageConfig)::String
   foldl(
     *, [
-    dockerfile_add_julia_image(def.config),
+    dockerfile_add_julia_image(image_config),
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
-    dockerfile_add_module(def.mod),
+    dockerfile_add_module(rf.mod),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
-    dockerfile_add_bootstrap(def),
+    dockerfile_add_bootstrap(rf),
   ]; init = "")
 end
 
-
-function get_dockerfile_build_cmd(dockerfile::String, config::Config, no_cache::Bool)::Cmd
-  options = ["--rm", "--iidfile", "id", "--tag", "$(get_image_uri_string(config))"]
+function get_dockerfile_build_cmd(
+    dockerfile::String, 
+    image_full_name_plus_tag::String, 
+    no_cache::Bool,
+  )::Cmd
+  options = ["--rm", "--iidfile", "id", "--tag", "$image_full_name_plus_tag"]
   no_cache && push!(options, "--no-cache")
   @show options
   `docker build $options .`
