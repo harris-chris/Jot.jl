@@ -53,12 +53,10 @@ end
 StructTypes.StructType(::Type{Config}) = StructTypes.Mutable()  
 
 struct ResponseFunction
-  name::String
   mod::Module
   response_function::Symbol
 
   function ResponseFunction(
-      name::String, 
       mod::Module, 
       response_function::String,
   )::ResponseFunction
@@ -66,12 +64,11 @@ struct ResponseFunction
   end
 
   function ResponseFunction(
-      name::String,
       mod::Module,
       response_function::Symbol,
   )::ResponseFunction
     if (response_function in names(mod, all=true))
-      new(name, mod, response_function)
+      new(mod, response_function)
     else
       throw(UndefVarError("Cannot find function $response_function in module $mod"))
     end
@@ -81,18 +78,18 @@ end
 @with_kw struct Image
   repository::String
   tag::String
-  image_id::String
-  created::Union{Missing, String} = missing
+  id::String
+  createdat::Union{Missing, String} = missing
   size::Union{Missing, String} = missing
 end
 
-Base.:(==)(a::Image, b::Image) = a.image_id[1:docker_hash_limit] == b.image_id[1:docker_hash_limit]
+Base.:(==)(a::Image, b::Image) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
 
 @with_kw struct Container
-  container_id::String
-  image::Image
+  id::String
+  image::String
   command::Union{Missing, String} = missing
-  created::Union{Missing, String} = missing
+  createdat::Union{Missing, String} = missing
   ports::Union{Missing, String} = missing
   names::Union{Missing, String} = missing
 end
@@ -109,7 +106,7 @@ end
 end
 StructTypes.StructType(::Type{AWSRepository}) = StructTypes.Mutable()  
 
-Base.:(==)(a::Container, b::Container) = a.container_id[1:docker_hash_limit] == b.container_id[1:docker_hash_limit]
+Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -164,7 +161,7 @@ function interpolate_string_with_config(
 end
 
 function get_registry(aws_config::AWSConfig)::String
-  "$(config.aws.account_id).dkr.ecr.$(config.aws.region).amazonaws.com"
+  "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com"
 end
 
 function get_image_full_name(
@@ -226,10 +223,6 @@ function get_response_function_name(rf::ResponseFunction)::String
   "$(get_package_name(rf.mod)).$(rf.response_function)"
 end
 
-function get_dockerfile(rf::ResponseFunction)::String
-  get_julia_image_dockerfile(rf)
-end
-
 function is_container_running(con::Container)::Bool
   running_containers = get_containers()
   con in running_containers
@@ -237,7 +230,7 @@ end
 
 function stop_container(con::Container)
   if is_container_running(con)
-    run(`docker stop $(con.container_id)`)
+    run(`docker stop $(con.id)`)
   end
 end
 
@@ -258,27 +251,32 @@ function write_bootstrap_to_build_directory(path::String)
 end
 
 function build_image(
-    name::String,
+    image_suffix::String,
     rf::ResponseFunction,
     aws_config::AWSConfig; 
-    tag::String = "latest",
+    image_tag::String = "latest",
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
   )::Image
   build_dir = move_to_temporary_build_directory(rf.mod)
   write_bootstrap_to_build_directory(build_dir)
-  dockerfile = get_dockerfile(rf)
+  dockerfile = get_dockerfile(rf, julia_base_version)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
-  build_cmd = get_dockerfile_build_cmd(dockerfile, def.config, no_cache)
+  image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
+                                                     image_suffix,
+                                                     image_tag)
+  build_cmd = get_dockerfile_build_cmd(dockerfile, 
+                                       image_name_plus_tag,
+                                       no_cache)
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end
   return Image(
-    repository = get_image_name(def.config),
-    tag = get_image_tag(def.config),
-    image_id = image_id,
+    repository = get_image_full_name(aws_config, image_suffix),
+    tag = image_tag,
+    id = image_id,
   )
 end
 
@@ -286,39 +284,30 @@ function split_line_by_whitespace(l::AbstractString)::Vector{String}
   filter(x -> x != "", [strip(wrd) for wrd in split(l, "   ")])
 end
 
-function docker_output_to_vec_dict(raw_output::String)::Vector{Dict{String, Any}}
-  by_line = split(raw_output, "\n")
-  headers = map(lowercase, split_line_by_whitespace(by_line[1]))
-  as_strings = by_line[2:end]
-  as_vec_string = filter(!isempty, map(split_line_by_whitespace, as_strings))
-  if !all([length(strs) == length(headers) for strs in as_vec_string])
-    error("Unable to match docker image ls output with headers")
+function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T} where {T}
+  if raw_output == ""
+    Vector{T}()
+  else
+    as_lower = lowercase(raw_output)
+    by_line = split(as_lower, "\n")
+    as_dicts = [JSON3.read(js_str) for js_str in by_line]
+    type_args = [[dict[Symbol(fn)] for fn in fieldnames(T)] for dict in as_dicts]
+    [T(args...) for args in type_args]
   end
-  as_dict = [Dict(kw => str for (kw, str) in zip(headers, str)) for str in as_vec_string]
 end
 
 function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
-  image_ls_output = read(`docker image ls $args`, String)
-  as_dicts = docker_output_to_vec_dict(image_ls_output)
-  image_field_names = map(x -> String(x) |> x -> replace(x, "_" => " "), fieldnames(Image))
-  image_args = [[dict[fn] for fn in image_field_names] for dict in as_dicts]
-  images = [Image(i_args...) for i_args in image_args]
+  docker_output = readchomp(`docker image ls $args --format '{{json .}}'`)
+  parse_docker_ls_output(Image, docker_output)
 end
 
 function get_containers(args::Vector{String} = Vector{String}())::Vector{Container}
-  docker_ps_output = read(`docker ps $args`, String)
-  as_dicts = docker_output_to_vec_dict(docker_ps_output)
-  container_field_names = map(x -> String(x) |> x -> replace(x, "_" => " "), fieldnames(Container))
-  images = get_images()
-  get_image(img_id) = images[findfirst(x -> x.image_id == img_id, images)]
-  container_args = [[fn == "image" ? get_image(dict["image"]) : dict[fn]
-                     for fn in container_field_names]
-                    for dict in as_dicts]
-  containers = [Container(c_args...) for c_args in container_args]
+  docker_output = readchomp(`docker ps $args --format '{{json .}}'`)
+  parse_docker_ls_output(Container, docker_output)
 end
 
 function get_containers(image::Image)::Vector{Container}
-  get_containers(["--filter", "ancestor=$(image.image_id[begin:docker_hash_limit])"])
+  get_containers(["--filter", "ancestor=$(image.id[begin:docker_hash_limit])"])
 end
 
 function delete_image(image::Image; force::Bool=false)
@@ -332,7 +321,7 @@ function delete_image(image::Image; force::Bool=false)
       throw(ContainersStillRunning(containers))
     end
   end
-  run(`docker image rm $(image.image_id)`)
+  run(`docker image rm $(image.id)`)
 end
 
 function run_local_test(image::Image, test_input::Any, expected_test_response::Any)::Bool
@@ -375,8 +364,8 @@ end
 function run_image_locally(image::Image; detached::Bool=true)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
-  container_id = readchomp(`docker run $args $(image.image_id)`)
-  Container(container_id=container_id, image=image)
+  container_id = readchomp(`docker run $args $(image.id)`)
+  Container(id=container_id, image=image.id)
 end
 
 function send_local_request(request::String)

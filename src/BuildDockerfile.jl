@@ -2,9 +2,9 @@ const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/julia_depot"
 const jot_github_url = "https://github.com/harris-chris/Jot.jl#master"
 
-function dockerfile_add_julia_image(image_config::ImageConfig)::String
+function dockerfile_add_julia_image(julia_base_version::String)::String
   """
-  FROM julia:$(image_config.julia_version)
+  FROM julia:$julia_base_version
   """
 end
 
@@ -99,10 +99,10 @@ function get_dependencies_json(config::Config)::String
   json(all_deps)
 end
 
-function get_julia_image_dockerfile(rf::ResponseFunction, image_config::ImageConfig)::String
+function get_dockerfile(rf::ResponseFunction, julia_base_version::String)::String
   foldl(
     *, [
-    dockerfile_add_julia_image(image_config),
+    dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
     dockerfile_add_module(rf.mod),

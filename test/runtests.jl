@@ -14,10 +14,10 @@ using Random
   aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
   
   # Test that the function name is correctly validated
-  @test_throws MethodError ResponseFunction("jot-test-1", JotTest1, :bad_function_name)
+  @test_throws MethodError ResponseFunction(JotTest1, :bad_function_name)
 
-  jt1_function = ResponseFunction("jot-test-1", JotTest1, :response_func)
-  jt1_image = build_image(jt1_function, aws_config)
+  jt1_function = ResponseFunction(JotTest1, :response_func)
+  jt1_image = build_image("jot-test-1", jt1_function, aws_config)
   # Test that container runs
   jt1_cont = run_image_locally(jt1_image)
   @test is_container_running(jt1_cont)
