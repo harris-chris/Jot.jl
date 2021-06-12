@@ -32,6 +32,26 @@ using Random
   request = randstring(4)
   expected_response = JotTest1.response_func(request)
   @test run_local_test(jt1_image, request, expected_response)
+
+  # Delete ECR repo, if it exists
+  try
+    delete_ecr_repo(jt1_image)
+  catch e
+  end
+
+  # Create ECR repo
+  create_ecr_repo(jt1_image)
+  # Check we can find it
+  @test does_ecr_repo_exist(jt1_image)
+
+  # Delete it
+  delete_ecr_repo(jt1_image)
+  # Check it's deleted
+  @test !does_ecr_repo_exist(jt1_image)
+
+  # Push image to ECR
+  push_to_ecr(jt1_image)
+
   # Delete image
   delete_image(jt1_image, force=true)
   

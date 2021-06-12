@@ -15,6 +15,7 @@ export get_config, get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
+export push_to_ecr
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -119,46 +120,47 @@ function get_package_name(mod::Module)::String
   splitpath(get_package_path(mod))[end]
 end
 
-function interpolate_string_with_config(
-    str::String,
-    config::Config,
-  )::String
-  mappings = Dict(
-    raw"$(aws.account_id)" => config.aws.account_id,
-    raw"$(aws.region)" => config.aws.region,
-    raw"$(aws.role)" => config.lambda_function.role,
-    raw"$(aws.role_arn_string)" => get_role_arn_string(config),
-    raw"$(image.name)" => config.image.name,
-    raw"$(image.tag)" => config.image.tag,
-    raw"$(image.julia_version)" => config.image.julia_version,
-    raw"$(image.runtime_path)" => "/var/runtime",
-    raw"$(image.julia_depot_path)" => "/var/julia",
-    raw"$(image.julia_cpu_target)" => config.image.julia_cpu_target,
-    raw"$(image.image_uri_string)" => get_image_uri_string(config),
-    raw"$(image.ecr_arn_string)" => get_ecr_arn_string(config),
-    raw"$(image.ecr_uri_string)" => get_ecr_uri_string(config),
-    raw"$(image.function_uri_string)" => get_function_uri_string(config),
-    raw"$(image.function_arn_string)" => get_function_arn_string(config),
-    raw"$(lambda_function.name)" => config.lambda_function.name,
-    raw"$(lambda_function.timeout)" => config.lambda_function.timeout,
-    raw"$(lambda_function.memory_size)" => config.lambda_function.memory_size,
-  )
-  aws_matches = map(x -> x.match, eachmatch(r"\$\(aws.[a-z\_]+\)", str))
-  image_matches = map(x -> x.match, eachmatch(r"\$\(image.[a-z\_]+\)", str))
-  lambda_function_matches = map(x -> x.match, eachmatch(r"\$\(lambda_function.[a-z\_]+\)", str))
-  all_matches = [aws_matches ; image_matches ; lambda_function_matches]
+# function interpolate_string_with_config(
+    # str::String,
+    # config::Config,
+  # )::String
+  # mappings = Dict(
+    # raw"$(aws.account_id)" => config.aws.account_id,
+    # raw"$(aws.region)" => config.aws.region,
+    # raw"$(image_full_name)" => get_image_full_name(
+    # raw"$(aws.role)" => config.lambda_function.role,
+    # raw"$(aws.role_arn_string)" => get_role_arn_string(config),
+    # raw"$(image.name)" => config.image.name,
+    # raw"$(image.tag)" => config.image.tag,
+    # raw"$(image.julia_version)" => config.image.julia_version,
+    # raw"$(image.runtime_path)" => "/var/runtime",
+    # raw"$(image.julia_depot_path)" => "/var/julia",
+    # raw"$(image.julia_cpu_target)" => config.image.julia_cpu_target,
+    # raw"$(image.image_uri_string)" => get_image_uri_string(config),
+    # raw"$(image.ecr_arn_string)" => get_ecr_arn_string(config),
+    # raw"$(image.ecr_uri_string)" => get_ecr_uri_string(config),
+    # raw"$(image.function_uri_string)" => get_function_uri_string(config),
+    # raw"$(image.function_arn_string)" => get_function_arn_string(config),
+    # raw"$(lambda_function.name)" => config.lambda_function.name,
+    # raw"$(lambda_function.timeout)" => config.lambda_function.timeout,
+    # raw"$(lambda_function.memory_size)" => config.lambda_function.memory_size,
+  # )
+  # aws_matches = map(x -> x.match, eachmatch(r"\$\(aws.[a-z\_]+\)", str))
+  # image_matches = map(x -> x.match, eachmatch(r"\$\(image.[a-z\_]+\)", str))
+  # lambda_function_matches = map(x -> x.match, eachmatch(r"\$\(lambda_function.[a-z\_]+\)", str))
+  # all_matches = [aws_matches ; image_matches ; lambda_function_matches]
 
-  for var_match in all_matches 
-    try 
-      str = replace(str, var_match => mappings[var_match])
-    catch e
-      if isa(e, KeyError)
-        throw(InterpolationNotFoundException(var_match))
-      end
-    end
-  end
-  str
-end
+  # for var_match in all_matches 
+    # try 
+      # str = replace(str, var_match => mappings[var_match])
+    # catch e
+      # if isa(e, KeyError)
+        # throw(InterpolationNotFoundException(var_match))
+      # end
+    # end
+  # end
+  # str
+# end
 
 function get_registry(aws_config::AWSConfig)::String
   "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com"
@@ -177,6 +179,26 @@ function get_image_full_name_plus_tag(
     image_tag::String,
   )::String
   "$(get_image_full_name(aws_config, image_suffix)):$image_tag"
+end
+
+function get_image_full_name_plus_tag(image::Image)::String
+  "$(image.repository):$(image.tag)"
+end
+
+function get_aws_id(image::Image)::String
+  split(image.repository, '.')[1]
+end
+
+function get_aws_region(image::Image)::String
+  split(image.repository, '.')[4]
+end
+
+function get_aws_config(image::Image)::AWSConfig
+  AWSConfig(get_aws_id(image), get_aws_region(image))
+end
+
+function get_image_suffix(image::Image)::String
+  split(image.repository, '/')[2]
 end
 
 function get_role_arn_string(
@@ -343,13 +365,47 @@ function run_local_test(
   end
 end
 
-function test_image_remotely(image::Image)::Bool
-
+function ecr_login_for_image(aws_config::AWSConfig, image_suffix::String)
+  script = get_ecr_login_script(aws_config, image_suffix)
+  run(`bash -c $script`)
 end
 
-function login_to_ecr(config::Config)
-  interp = interpolate_string_with_config(ecr_login, config)
-  run(`bash -c $interp`)
+
+function ecr_login_for_image(image::Image)
+  ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
+end
+
+function push_to_ecr(image::Image)
+  ecr_login_for_image(image)
+  create_ecr_repo(image)
+  push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
+  run(`bash -c $push_script`)
+end
+
+function does_ecr_repo_exist(image::Image)::Bool
+  aws_repos = reachomp(`aws ecr describe-repositories`)
+  aws_repos = JSON3.read(aws_repos)
+  image_full_name = get_image_full_name(image)
+  any(repo -> repo.repositoryUri == image_full_name, aws_repos["repositories"])
+end
+
+function create_ecr_repo(image::Image)
+  if !does_ecr_repo_exist(image)
+    create_script = get_create_ecr_repo_script(
+                                               get_image_suffix(image),
+                                               get_aws_region(image),
+                                              )
+    run(`bash -c $create_script`)
+  end
+end
+
+function delete_ecr_repo(image::Image)
+  delete_script = get_delete_ecr_repo_script(get_image_suffix(image))
+  run(`bash -c $delete_script`)
+end
+
+function test_image_remotely(image::Image)::Bool
+
 end
 
 function get_repositories(config::Config)::Vector{AWSRepository}
