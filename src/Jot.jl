@@ -14,7 +14,7 @@ export ResponseFunction, Image
 export get_config, get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
-export stop_container, is_container_running, get_containers
+export stop_container, is_container_running, get_containers, delete_container
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -234,6 +234,11 @@ function stop_container(con::Container)
   end
 end
 
+function delete_container(con::Container)
+  run(`docker container rm $(con.id)`)
+end
+
+
 function move_to_temporary_build_directory(mod::Module)::String
   build_dir = mktempdir()
   cd(build_dir)
@@ -306,38 +311,36 @@ function get_containers(args::Vector{String} = Vector{String}())::Vector{Contain
   parse_docker_ls_output(Container, docker_output)
 end
 
-function get_containers(image::Image)::Vector{Container}
-  get_containers(["--filter", "ancestor=$(image.id[begin:docker_hash_limit])"])
+function get_containers(image::Image; args::Vector{String}=Vector{String}())::Vector{Container}
+  get_containers([
+                  ["--filter", "ancestor=$(image.id[begin:docker_hash_limit])"]
+                  args
+                 ])
 end
 
 function delete_image(image::Image; force::Bool=false)
-  containers = get_containers(image)
-  if length(containers) > 0
-    if force
-      for con in containers
-        stop_container(con) 
-      end
-    else
-      throw(ContainersStillRunning(containers))
-    end
-  end
-  run(`docker image rm $(image.id)`)
+  args = force ? ["--force"] : []
+  run(`docker image rm $(image.id) $args`)
 end
 
-function run_local_test(image::Image, test_input::Any, expected_test_response::Any)::Bool
+function run_local_test(
+    image::Image,
+    test_input::Any = "", 
+    expected_response::Any = nothing,
+  )::Bool
   running = get_containers(image)
   con = length(running) == 0 ? run_image_locally(image) : nothing
   actual = send_local_request(test_input)
-  !isnothing(con) && stop_container(con)
-  passed = actual == expected_test_response
-  if passed
-    @info "Test passed"
+  !isnothing(con) && (stop_container(con); delete_container(con))
+  if !isnothing(expected_response)
+    passed = actual == expected_response
+    passed && @info "Test passed; result received matched expected $actual"
+    !passed && @info "Test failed; actual: $actual was not equal to expected: $expected_test_response"
+    passed
   else
-    @info "Test failed"
-    @info "Actual: $actual"
-    @info "Expected: $expected_test_response"
+    @info "Response received from container; test passed"
+    true
   end
-  passed
 end
 
 function test_image_remotely(image::Image)::Bool

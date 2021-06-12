@@ -29,6 +29,10 @@ using Random
   # Check container has stopped
   @test length(get_containers(jt1_image)) == 0
   # Run local test of container
-  @test run_local_test(jt1_image, jt1_def.test...)
+  request = randstring(4)
+  expected_response = JotTest1.response_func(request)
+  @test run_local_test(jt1_image, request, expected_response)
+  # Delete image
+  delete_image(jt1_image, force=true)
   
 end
