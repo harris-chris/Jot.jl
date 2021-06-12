@@ -62,7 +62,7 @@ function get_create_lambda_role_script(role_name)::String
 
   read RESULT < <(aws iam create-role \\
     --role-name $(role_name) \\
-    --assume-role-policy-document "$TRUST_POLICY")
+    --assume-role-policy-document "$TRUST_PO<Up>LICY")
   """
 end
 

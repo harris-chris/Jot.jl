@@ -49,30 +49,6 @@ function dockerfile_add_aws_rie()::String
   """
 end
 
-function dockerfile_runtime_files(config::Config, package::Bool)::String
-  """
-  RUN mkdir -p $(config.image.julia_depot_path)
-  ENV JULIA_DEPOT_PATH=$(config.image.julia_depot_path)
-  COPY .$(config.image.julia_depot_path)/. $(config.image.julia_depot_path)
-
-  RUN mkdir -p $(config.image.runtime_path)
-  WORKDIR $(config.image.runtime_path)
-
-  COPY $(config.image.runtime_path)/. ./
-
-  ENV FUNC_PATH="$(joinpath(config.image.runtime_path, "function.jl"))"
-  # RUN FUNC_PATH="$(joinpath(pwd(), builtins.function_path))"
-
-  RUN julia build_runtime.jl $(config.image.runtime_path) $package $(get_dependencies_json(config)) $(config.image.julia_cpu_target)
-
-  # RUN find $(config.image.julia_depot_path)/packages -name "function.jl" -exec cp ./function.jl {} \\;
-
-  ENV PATH="$(config.image.runtime_path):\${PATH}"
-
-  ENTRYPOINT ["$(config.image.runtime_path)/bootstrap"]
-  """
-end
-
 function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   docker_entry = """
   ENV PKG_NAME=$(get_package_name(rf.mod))
@@ -81,22 +57,6 @@ function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   RUN chmod +x ./bootstrap
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """
-end
-
-function dockerfile_add_permissions(config::Config)::String
-  """
-  # RUN chmod 644 \$(find $(config.image.runtime_path) -type f)
-  # RUN chmod 644 \$(find $(config.image.julia_depot_path) -type f)
-  RUN chmod +rwx -R $(config.image.runtime_path)
-  RUN chmod +rwx -R $(config.image.julia_depot_path)
-  """
-end
-
-function get_dependencies_json(config::Config)::String
-  # all_deps = [builtins.required_packages; config.image.dependencies]
-  all_deps = config.image.dependencies
-  all_deps_string = ["\"$dep\"" for dep in all_deps]
-  json(all_deps)
 end
 
 function get_dockerfile(rf::ResponseFunction, julia_base_version::String)::String
