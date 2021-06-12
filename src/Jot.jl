@@ -15,7 +15,7 @@ export get_config, get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
-export push_to_ecr
+export create_ecr_repo, delete_ecr_repo, does_ecr_repo_exist, push_to_ecr
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -171,6 +171,10 @@ function get_image_full_name(
     image_suffix::String,
   )::String
   "$(get_registry(aws_config))/$image_suffix"
+end
+
+function get_image_full_name(image::Image)::String
+  image.repository
 end
 
 function get_image_full_name_plus_tag(
@@ -383,7 +387,7 @@ function push_to_ecr(image::Image)
 end
 
 function does_ecr_repo_exist(image::Image)::Bool
-  aws_repos = reachomp(`aws ecr describe-repositories`)
+  aws_repos = readchomp(`aws ecr describe-repositories`)
   aws_repos = JSON3.read(aws_repos)
   image_full_name = get_image_full_name(image)
   any(repo -> repo.repositoryUri == image_full_name, aws_repos["repositories"])

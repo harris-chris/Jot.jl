@@ -27,17 +27,17 @@ docker push $image_full_name_plus_tag
 
 function get_create_ecr_repo_script(image_suffix::String, aws_region::String)::String
   """
-  aws ecr create-repository \
-    --repository-name $(image_suffix) \
-    --image-scanning-configuration scanOnPush=true \
+  aws ecr create-repository \\
+    --repository-name $(image_suffix) \\
+    --image-scanning-configuration scanOnPush=true \\
     --region $(aws_region)
   """
 end
 
 function get_delete_ecr_repo_script(image_suffix)::String
   """
-  aws ecr delete-repository \
-    --force \
+  aws ecr delete-repository \\
+    --force \\
     --repository-name $(image_suffix)
   """
 end
