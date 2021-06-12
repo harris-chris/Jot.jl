@@ -60,9 +60,9 @@ function get_create_lambda_role_script(role_name)::String
   EOF
   )
 
-  read RESULT < <(aws iam create-role \\
+  aws iam create-role \\
     --role-name $(role_name) \\
-    --assume-role-policy-document "$TRUST_PO<Up>LICY")
+    --assume-role-policy-document "\$TRUST_POLICY"
   """
 end
 
@@ -71,3 +71,22 @@ function get_delete_lambda_role_script(role_name)::String
   aws iam delete-role --role-name $(role_name)
   """
 end
+
+function get_create_lambda_function_script(
+    function_name::String,
+    repo_uri::String,
+    role_arn::String,
+    timeout::Int64,
+    memory_size::Int64,
+  )::String
+  """
+  aws lambda create-function \\
+    --function-name=$(function_name) \\
+    --code ImageUri=$(repo_ir) \\
+    --role $(role_arn) \\
+    --package-type Image \\
+    --timeout=$(timeout) \\
+    --memory-size=$(memory_size))
+  """
+end
+

@@ -16,6 +16,7 @@ export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr
+export create_aws_role, delete_aws_role
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -132,6 +133,25 @@ const lambda_execution_policy_statement = AWSRolePolicyStatement(
 end
 StructTypes.StructType(::Type{AWSRole}) = StructTypes.Mutable()  
 Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
+
+@with_kw mutable struct LambdaFunction
+  FunctionName::Union{Missing, String} = missing
+  FunctionArn::Union{Missing, String} = missing
+  Runtime::Union{Missing, String} = missing
+  Role::Union{Missing, String} = missing
+  Handler::Union{Missing, String} = missing
+  CodeSize::Union{Missing, Int64} = missing
+  Description::Union{Missing, String} = missing
+  Timeout::Union{Missing, Int64} = missing
+  MemorySize::Union{Missing, Int64} = missing
+  LastModified::Union{Missing, String} = missing
+  CodeSha256::Union{Missing, String} = missing
+  Version::Union{Missing, String} = missing
+  TracingConfig::Union{Missing, Dict{String, Any}} = missing
+  RevisionId::Union{Missing, String} = missing
+  PackageType::Union{Missing, String} = missing
+end
+StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -427,26 +447,50 @@ function get_all_aws_roles()::Vector{AWSRole}
   all["Roles"]
 end
 
-function get_aws_role(role_name)::Union{Nothing, AWSRole}
+function get_aws_role(role_name::String)::Union{Nothing, AWSRole}
   all_roles = get_all_aws_roles()
   index = findfirst(role -> role.RoleName == role_name, all_roles)
   isnothing(index) ? nothing : all_roles[index]
 end
 
-function create_aws_role(role_name)::AWSRole
+function create_aws_role(role_name::String)::AWSRole
   create_script = get_create_lambda_role_script(role_name)
   role_json = readchomp(`bash -c $create_script`)
-  @debug repo_json
-  JSON3.read(repo_json, Dict{String, ECRRepo})["Role"]
+  @debug role_json
+  JSON3.read(role_json, Dict{String, AWSRole})["Role"]
 end
 
-function delete_aws_role(role_name)
+function delete_aws_role(role_name::String)
   delete_script = get_delete_lambda_role_script(role_name)
+  run(`bash -c $delete_script`)
+end
+
+function delete_aws_role(role::AWSRole)
+  delete_script = get_delete_lambda_role_script(role.RoleName)
   run(`bash -c $delete_script`)
 end
 
 function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
   lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement 
+end
+
+function create_lambda_function(
+    repo::ECRRepo, 
+    role::AWSRole;
+    function_name::Union{Nothing, String} = nothing,
+    timeout::Int64 = 30,
+    memory_size::Int64 = 1000,
+  )::LambdaFunction
+  function_name = isnothing(function_name) ? repo.repositoryName : function_name
+  create_script = get_create_lambda_function_script(function_name,
+                                                    repo.repositoryUri,
+                                                    role.Arn,
+                                                    timeout,
+                                                    memory_size,
+                                                   )
+  func_json = readchomp(`bash -c $create_script`)
+  @debug func_json
+  JSON3.read(func_json, Dict{String, LambdaFunction})["Function"]
 end
 
 function run_image_locally(image::Image; detached::Bool=true)::Container

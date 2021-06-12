@@ -19,14 +19,12 @@ using Jot
   end
 
   aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
+
+  test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 8)
   jt1_function = ResponseFunction(JotTest1, :response_func)
-  jt1_image = build_image("jot-test-1", jt1_function, aws_config)
+  jt1_image = build_image("jot-test-1" * test_suffix, jt1_function, aws_config)
 
   @testset "Local test" begin
-    # Test that the function name is correctly validated
-
-    jt1_function = ResponseFunction(JotTest1, :response_func)
-    jt1_image = build_image("jot-test-1", jt1_function, aws_config)
     # Test that container runs
     jt1_cont = run_image_locally(jt1_image)
     @test is_container_running(jt1_cont)
@@ -37,7 +35,9 @@ using Jot
     end
     # Check container has stopped
     @test length(get_containers(jt1_image)) == 0
-    # Run local test of container
+    # Run local test of container, without value
+    @test run_local_test(jt1_image)
+    # Run local test of container, with expected response
     request = randstring(4)
     expected_response = JotTest1.response_func(request)
     @test run_local_test(jt1_image, request, expected_response)
@@ -62,20 +62,29 @@ using Jot
     # Push image to ECR
     ecr_repo = push_to_ecr(jt1_image)
     # Check we can find the repo
-    @show ecr_repo
-    @show Jot.get_all_ecr_repos()[2]
-    @show ecr_repo == Jot.get_all_ecr_repos()[2]
     @test ecr_repo in Jot.get_all_ecr_repos()
   end
 
-  jt1_role_name = "jt1-execution-role"
+  jt1_role_name = "jt1-execution-role" * test_suffix
   @testset "AWS Role test" begin
     # Delete Test role, if it exists
     existing_role = Jot.get_aws_role(jt1_role_name)
     isnothing(existing_role) || delete_aws_role(existing_role)
     
     # Create role
-  
+    jt1_role = create_aws_role(jt1_role_name)
+    # Check we can find it
+    @test jt1_role == Jot.get_aws_role(jt1_role_name)
+    # Verify it has execution permission
+    @test Jot.aws_role_has_lambda_execution_permissions(jt1_role)
+
+    # Delete it
+    delete_aws_role(jt1_role)
+    # Check it's deleted
+    @test isnothing(Jot.get_aws_role(jt1_role_name))
+
+    # Re-create it
+    jt1_role = create_aws_role(jt1_role_name)
   end
   
   # Clean up
