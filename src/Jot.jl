@@ -104,7 +104,7 @@ Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
 
 @with_kw mutable struct AWSRolePolicyStatement
   Effect::Union{Missing, String} = missing
-  Principal::Union{Missing, Dict{String, String}} = missing
+  Principal::Union{Missing, Dict{String, Any}} = missing
   Action::Union{Missing, String} = missing
 end
 StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()  
