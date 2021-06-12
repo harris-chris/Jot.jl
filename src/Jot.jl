@@ -46,13 +46,6 @@ StructTypes.StructType(::Type{ImageConfig}) = StructTypes.Mutable()
 end
 StructTypes.StructType(::Type{LambdaFunctionConfig}) = StructTypes.Mutable()  
 
-@with_kw mutable struct Config
-  aws::AWSConfig = AWSConfig()
-  image::ImageConfig = ImageConfig()
-  lambda_function::LambdaFunctionConfig = LambdaFunctionConfig()
-end
-StructTypes.StructType(::Type{Config}) = StructTypes.Mutable()  
-
 struct ResponseFunction
   mod::Module
   response_function::Symbol
@@ -94,6 +87,7 @@ Base.:(==)(a::Image, b::Image) = a.id[1:docker_hash_limit] == b.id[1:docker_hash
   ports::Union{Missing, String} = missing
   names::Union{Missing, String} = missing
 end
+Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
 
 @with_kw mutable struct ECRRepo
   repositoryArn::Union{Missing, String} = missing
@@ -106,8 +100,38 @@ end
   encryptionConfiguration::Union{Missing, Any} = missing
 end
 StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()  
+Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
 
-Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
+@with_kw mutable struct AWSRolePolicyStatement
+  Effect::Union{Missing, String} = missing
+  Principal::Union{Missing, Dict{String, String}} = missing
+  Action::Union{Missing, String} = missing
+end
+StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()  
+
+@with_kw mutable struct AWSRolePolicyDocument
+  Version::Union{Missing, String} = missing
+  Statement::Vector{AWSRolePolicyStatement} = Vector{AWSRolePolicyStatement}()
+end
+StructTypes.StructType(::Type{AWSRolePolicyDocument}) = StructTypes.Mutable()  
+
+const lambda_execution_policy_statement = AWSRolePolicyStatement(
+    Effect = "Allow",
+    Principal = Dict("Service" => "lambda.amazonaws.com"),
+    Action = "sts:AssumeRole",
+  )
+
+@with_kw mutable struct AWSRole
+  Path::Union{Missing, String} = missing
+  RoleName::Union{Missing, String} = missing
+  RoleId::Union{Missing, String} = missing
+  Arn::Union{Missing, String} = missing
+  CreateDate::Union{Missing, String} = missing
+  AssumeRolePolicyDocument::Union{Missing, AWSRolePolicyDocument} = missing
+  MaxSessionDuration::Union{Missing, Int64} = missing
+end
+StructTypes.StructType(::Type{AWSRole}) = StructTypes.Mutable()  
+Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -119,48 +143,6 @@ end
 function get_package_name(mod::Module)::String
   splitpath(get_package_path(mod))[end]
 end
-
-# function interpolate_string_with_config(
-    # str::String,
-    # config::Config,
-  # )::String
-  # mappings = Dict(
-    # raw"$(aws.account_id)" => config.aws.account_id,
-    # raw"$(aws.region)" => config.aws.region,
-    # raw"$(image_full_name)" => get_image_full_name(
-    # raw"$(aws.role)" => config.lambda_function.role,
-    # raw"$(aws.role_arn_string)" => get_role_arn_string(config),
-    # raw"$(image.name)" => config.image.name,
-    # raw"$(image.tag)" => config.image.tag,
-    # raw"$(image.julia_version)" => config.image.julia_version,
-    # raw"$(image.runtime_path)" => "/var/runtime",
-    # raw"$(image.julia_depot_path)" => "/var/julia",
-    # raw"$(image.julia_cpu_target)" => config.image.julia_cpu_target,
-    # raw"$(image.image_uri_string)" => get_image_uri_string(config),
-    # raw"$(image.ecr_arn_string)" => get_ecr_arn_string(config),
-    # raw"$(image.ecr_uri_string)" => get_ecr_uri_string(config),
-    # raw"$(image.function_uri_string)" => get_function_uri_string(config),
-    # raw"$(image.function_arn_string)" => get_function_arn_string(config),
-    # raw"$(lambda_function.name)" => config.lambda_function.name,
-    # raw"$(lambda_function.timeout)" => config.lambda_function.timeout,
-    # raw"$(lambda_function.memory_size)" => config.lambda_function.memory_size,
-  # )
-  # aws_matches = map(x -> x.match, eachmatch(r"\$\(aws.[a-z\_]+\)", str))
-  # image_matches = map(x -> x.match, eachmatch(r"\$\(image.[a-z\_]+\)", str))
-  # lambda_function_matches = map(x -> x.match, eachmatch(r"\$\(lambda_function.[a-z\_]+\)", str))
-  # all_matches = [aws_matches ; image_matches ; lambda_function_matches]
-
-  # for var_match in all_matches 
-    # try 
-      # str = replace(str, var_match => mappings[var_match])
-    # catch e
-      # if isa(e, KeyError)
-        # throw(InterpolationNotFoundException(var_match))
-      # end
-    # end
-  # end
-  # str
-# end
 
 function get_registry(aws_config::AWSConfig)::String
   "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com"
@@ -383,12 +365,16 @@ function push_to_ecr(image::Image)::ECRRepo
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
+    @info "no repo found"
     create_ecr_repo(image)
   else
+    @info "repo was found"
     existing_repo
   end
+  @show existing_repo
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
   readchomp(`bash -c $push_script`)
+  repo
 end
 
 function get_ecr_repo(image::Image)::Union{Nothing, ECRRepo}
@@ -396,6 +382,22 @@ function get_ecr_repo(image::Image)::Union{Nothing, ECRRepo}
   image_full_name = get_image_full_name(image)
   index = findfirst(repo -> repo.repositoryUri == image_full_name, all_repos)
   isnothing(index) ? nothing : all_repos[index]
+end
+
+
+function create_lambda_execution_role(role_name)
+  create_script = get_create_lambda_role_script(role_name)
+  run(`bash -c $create_script`)
+end
+
+function test_image_remotely(image::Image)::Bool
+
+end
+
+function get_all_ecr_repos()::Vector{ECRRepo}
+  all_repos_json = readchomp(`aws ecr describe-repositories`)
+  all = JSON3.read(all_repos_json, Dict{String, Vector{ECRRepo}})
+  all["repositories"]
 end
 
 function get_ecr_repo(repo_name::String)::Union{Nothing, ECRRepo}
@@ -410,7 +412,8 @@ function create_ecr_repo(image::Image)::ECRRepo
                                              get_aws_region(image),
                                             )
   repo_json = readchomp(`bash -c $create_script`)
-  JSON3.read(repo_json, ECRRepo)
+  @debug repo_json
+  JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]
 end
 
 function delete_ecr_repo(repo::ECRRepo)
@@ -418,22 +421,32 @@ function delete_ecr_repo(repo::ECRRepo)
   run(`bash -c $delete_script`)
 end
 
-function does_lambda_execution_role_exist()::Bool
+function get_all_aws_roles()::Vector{AWSRole}
+  all_roles_json = readchomp(`aws iam list-roles`)
+  all = JSON3.read(all_roles_json, Dict{String, Vector{AWSRole}})
+  all["Roles"]
 end
 
-function create_lambda_execution_role(role_name)
+function get_aws_role(role_name)::Union{Nothing, AWSRole}
+  all_roles = get_all_aws_roles()
+  index = findfirst(role -> role.RoleName == role_name, all_roles)
+  isnothing(index) ? nothing : all_roles[index]
+end
+
+function create_aws_role(role_name)::AWSRole
   create_script = get_create_lambda_role_script(role_name)
-  run(`bash -c $create_script`)
+  role_json = readchomp(`bash -c $create_script`)
+  @debug repo_json
+  JSON3.read(repo_json, Dict{String, ECRRepo})["Role"]
 end
 
-function test_image_remotely(image::Image)::Bool
-
+function delete_aws_role(role_name)
+  delete_script = get_delete_lambda_role_script(role_name)
+  run(`bash -c $delete_script`)
 end
 
-function get_all_ecr_repos()::Vector{ECRRepo}
-  all_repos = read(`aws ecr describe-repositories`, String)
-  all = JSON3.read(all_repos, Dict{String, Vector{ECRRepo}})
-  all["repositories"]
+function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
+  lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement 
 end
 
 function run_image_locally(image::Image; detached::Bool=true)::Container

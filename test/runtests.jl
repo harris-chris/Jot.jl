@@ -62,13 +62,25 @@ using Jot
     # Push image to ECR
     ecr_repo = push_to_ecr(jt1_image)
     # Check we can find the repo
-    @test ecr_repo in get_all_ecr_repos()
+    @show ecr_repo
+    @show Jot.get_all_ecr_repos()[2]
+    @show ecr_repo == Jot.get_all_ecr_repos()[2]
+    @test ecr_repo in Jot.get_all_ecr_repos()
+  end
 
+  jt1_role_name = "jt1-execution-role"
+  @testset "AWS Role test" begin
+    # Delete Test role, if it exists
+    existing_role = Jot.get_aws_role(jt1_role_name)
+    isnothing(existing_role) || delete_aws_role(existing_role)
+    
+    # Create role
+  
   end
   
   # Clean up
   jt1_repo = Jot.get_ecr_repo(jt1_image)
-  isnothing(jt1_repo) || delete_ecr_repo(jt1_image)
+  isnothing(jt1_repo) || delete_ecr_repo(jt1_repo)
   jt1_conts = get_containers(jt1_image)
   for cont in jt1_conts
     stop_container(cont)

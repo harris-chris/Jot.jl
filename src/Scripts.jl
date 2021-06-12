@@ -65,3 +65,9 @@ function get_create_lambda_role_script(role_name)::String
     --assume-role-policy-document "$TRUST_POLICY")
   """
 end
+
+function get_delete_lambda_role_script(role_name)::String
+  """
+  aws iam delete-role --role-name $(role_name)
+  """
+end
