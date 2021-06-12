@@ -109,12 +109,15 @@ Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
   Action::Union{Missing, String} = missing
 end
 StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()  
+Base.:(==)(a::AWSRolePolicyStatement, b::AWSRolePolicyStatement) = (
+  a.Effect == b.Effect && a.Principal == b.Principal && a.Action == b.Action)
 
 @with_kw mutable struct AWSRolePolicyDocument
   Version::Union{Missing, String} = missing
   Statement::Vector{AWSRolePolicyStatement} = Vector{AWSRolePolicyStatement}()
 end
 StructTypes.StructType(::Type{AWSRolePolicyDocument}) = StructTypes.Mutable()  
+Base.:(==)(a::AWSRolePolicyDocument, b::AWSRolePolicyDocument) = (a.Version == b.Version && a.Statement == b.Statement)
 
 const lambda_execution_policy_statement = AWSRolePolicyStatement(
     Effect = "Allow",
