@@ -15,7 +15,7 @@ export get_config, get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
-export create_ecr_repo, delete_ecr_repo, does_ecr_repo_exist, push_to_ecr
+export create_ecr_repo, delete_ecr_repo, push_to_ecr
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -95,7 +95,7 @@ Base.:(==)(a::Image, b::Image) = a.id[1:docker_hash_limit] == b.id[1:docker_hash
   names::Union{Missing, String} = missing
 end
 
-@with_kw mutable struct AWSRepository
+@with_kw mutable struct ECRRepo
   repositoryArn::Union{Missing, String} = missing
   registryId::Union{Missing, String} = missing
   repositoryName::Union{Missing, String} = missing
@@ -105,7 +105,7 @@ end
   imageScanningConfiguration::Union{Missing, Any} = missing
   encryptionConfiguration::Union{Missing, Any} = missing
 end
-StructTypes.StructType(::Type{AWSRepository}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()  
 
 Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
 
@@ -379,49 +379,61 @@ function ecr_login_for_image(image::Image)
   ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
 end
 
-function push_to_ecr(image::Image)
+function push_to_ecr(image::Image)::ECRRepo
   ecr_login_for_image(image)
-  create_ecr_repo(image)
-  push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
-  run(`bash -c $push_script`)
-end
-
-function does_ecr_repo_exist(image::Image)::Bool
-  aws_repos = readchomp(`aws ecr describe-repositories`)
-  aws_repos = JSON3.read(aws_repos)
-  image_full_name = get_image_full_name(image)
-  any(repo -> repo.repositoryUri == image_full_name, aws_repos["repositories"])
-end
-
-function create_ecr_repo(image::Image)
-  if !does_ecr_repo_exist(image)
-    create_script = get_create_ecr_repo_script(
-                                               get_image_suffix(image),
-                                               get_aws_region(image),
-                                              )
-    run(`bash -c $create_script`)
+  existing_repo = get_ecr_repo(image)
+  repo = if isnothing(existing_repo)
+    create_ecr_repo(image)
+  else
+    existing_repo
   end
+  push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
+  readchomp(`bash -c $push_script`)
 end
 
-function delete_ecr_repo(image::Image)
-  delete_script = get_delete_ecr_repo_script(get_image_suffix(image))
+function get_ecr_repo(image::Image)::Union{Nothing, ECRRepo}
+  all_repos = get_all_ecr_repos()
+  image_full_name = get_image_full_name(image)
+  index = findfirst(repo -> repo.repositoryUri == image_full_name, all_repos)
+  isnothing(index) ? nothing : all_repos[index]
+end
+
+function get_ecr_repo(repo_name::String)::Union{Nothing, ECRRepo}
+  all_repos = get_all_ecr_repos()
+  index = findfirst(repo -> repo.repositoryName == repo_name, all_repos)
+  isnothing(index) ? nothing : all_repos[index]
+end
+
+function create_ecr_repo(image::Image)::ECRRepo
+  create_script = get_create_ecr_repo_script(
+                                             get_image_suffix(image),
+                                             get_aws_region(image),
+                                            )
+  repo_json = readchomp(`bash -c $create_script`)
+  JSON3.read(repo_json, ECRRepo)
+end
+
+function delete_ecr_repo(repo::ECRRepo)
+  delete_script = get_delete_ecr_repo_script(repo.repositoryName)
   run(`bash -c $delete_script`)
+end
+
+function does_lambda_execution_role_exist()::Bool
+end
+
+function create_lambda_execution_role(role_name)
+  create_script = get_create_lambda_role_script(role_name)
+  run(`bash -c $create_script`)
 end
 
 function test_image_remotely(image::Image)::Bool
 
 end
 
-function get_repositories(config::Config)::Vector{AWSRepository}
+function get_all_ecr_repos()::Vector{ECRRepo}
   all_repos = read(`aws ecr describe-repositories`, String)
-  @debug all_repos
-  all = JSON3.read(all_repos, Dict{String, Vector{AWSRepository}})
+  all = JSON3.read(all_repos, Dict{String, Vector{ECRRepo}})
   all["repositories"]
-end
-
-function does_ecr_repository_exist(config::Config)::Bool
-  ecr_uri = get_ecr_uri_string(config)
-  any([repo.repositoryUri == ecr_uri for repo in get_repositories(config)])
 end
 
 function run_image_locally(image::Image; detached::Bool=true)::Container

@@ -34,11 +34,34 @@ function get_create_ecr_repo_script(image_suffix::String, aws_region::String)::S
   """
 end
 
-function get_delete_ecr_repo_script(image_suffix)::String
+function get_delete_ecr_repo_script(repo_name)::String
   """
   aws ecr delete-repository \\
     --force \\
-    --repository-name $(image_suffix)
+    --repository-name $(repo_name)
   """
 end
 
+function get_create_lambda_role_script(role_name)::String
+  """
+  TRUST_POLICY=\$(cat <<EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "lambda.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+  EOF
+  )
+
+  read RESULT < <(aws iam create-role \\
+    --role-name $(role_name) \\
+    --assume-role-policy-document "$TRUST_POLICY")
+  """
+end

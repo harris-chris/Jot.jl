@@ -43,29 +43,32 @@ using Jot
     @test run_local_test(jt1_image, request, expected_response)
   end
 
-  @testset "Remote test" begin 
+  @testset "ECR test" begin 
     # Delete ECR repo, if it exists
-    try
-      delete_ecr_repo(jt1_image)
-    catch e
-    end
+    existing_repo = Jot.get_ecr_repo(jt1_image)
+    if !isnothing(existing_repo) delete_ecr_repo(existing_repo) end
 
     # Create ECR repo
     create_ecr_repo(jt1_image)
     # Check we can find it
-    @test does_ecr_repo_exist(jt1_image)
+    jt1_repo = Jot.get_ecr_repo(jt1_image)
+    @test !isnothing(jt1_repo)
 
     # Delete it
-    delete_ecr_repo(jt1_image)
+    delete_ecr_repo(jt1_repo)
     # Check it's deleted
-    @test !does_ecr_repo_exist(jt1_image)
+    @test isnothing(Jot.get_ecr_repo(jt1_image))
 
     # Push image to ECR
-    push_to_ecr(jt1_image)
+    ecr_repo = push_to_ecr(jt1_image)
+    # Check we can find the repo
+    @test ecr_repo in get_all_ecr_repos()
 
   end
   
   # Clean up
+  jt1_repo = Jot.get_ecr_repo(jt1_image)
+  isnothing(jt1_repo) || delete_ecr_repo(jt1_image)
   jt1_conts = get_containers(jt1_image)
   for cont in jt1_conts
     stop_container(cont)
