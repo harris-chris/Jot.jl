@@ -6,7 +6,7 @@ using Random
 Pkg.develop(PackageSpec(path="./"))
 using Jot
 
-@testset "Jot.jl" begin
+@testset "Local Module" begin
   response_suffix = randstring(12)
   open("./test/JotTest1/response_suffix", "w") do rsfile
     write(rsfile, response_suffix)
@@ -110,6 +110,11 @@ using Jot
                                                  function_name = jt1_lambda_function_name)
     # Check that we can find it
     @test jt1_lambda_function == Jot.get_lambda_function(jt1_lambda_function_name)
+    # Invoke it 
+    request = randstring(4)
+    expected_response = JotTest1.response_func(request)
+    response = invoke_function(request, jt1_lambda_function)
+    @test response == expected_response
   end
   
   # Clean up

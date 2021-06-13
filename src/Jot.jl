@@ -9,14 +9,15 @@ using LibCURL
 using Dates
 
 # EXPORTS
-export AWSConfig, LambdaFunctionConfig, Config
+export AWSConfig
 export ResponseFunction, Image
-export get_config, get_dockerfile, build_definition
+export get_dockerfile, build_definition
 export run_image_locally, build_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr
 export create_aws_role, delete_aws_role
+export create_lambda_function, delete_lambda_function, invoke_function
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -29,23 +30,6 @@ const docker_hash_limit = 12
   region::Union{Missing, String} = missing
 end
 StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()  
-
-@with_kw mutable struct ImageConfig
-  name::Union{Missing, String} = missing
-  tag::String = "latest"
-  dependencies::Vector{String} = []
-  julia_version::String = "1.6.0"
-  julia_cpu_target::String = "x86-64"
-end
-StructTypes.StructType(::Type{ImageConfig}) = StructTypes.Mutable()  
-
-@with_kw mutable struct LambdaFunctionConfig
-  name::Union{Missing, String} = missing
-  role::String = "LambdaExecutionRole"
-  timeout::Int = 30
-  memory_size::Int = 1000
-end
-StructTypes.StructType(::Type{LambdaFunctionConfig}) = StructTypes.Mutable()  
 
 struct ResponseFunction
   mod::Module
@@ -156,6 +140,13 @@ Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
 end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
 
+struct Path
+  response_function::Union{Nothing, ResponseFunction}
+  image::Union{Nothing, Image}
+  repo::Union{Nothing, ECRRepo}
+  lambda_function::Union{Nothing, LambdaFunction}
+end
+
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
 function get_package_path(mod::Module)::String
@@ -236,19 +227,6 @@ end
 include("BuildDockerfile.jl")
 include("Runtime.jl")
 include("Scripts.jl")
-
-function get_config(
-    config_fpath::String;
-  )::Config
-  
-  config = Config()
-  open(config_fpath, "r") do f
-    json_string = read(f, String)
-    JSON3.read!(json_string, config)
-    @info "Config file successfully loaded"
-    config
-  end
-end
 
 function get_response_function_name(rf::ResponseFunction)::String
   "$(get_package_name(rf.mod)).$(rf.response_function)"
@@ -533,7 +511,15 @@ function send_local_request(request::String)
   JSON3.read(http.body)
 end
 
-function send_remote_request(
+function get_path(rf::ResponseFunction)::Path
+  Path(rf, nothing, nothing, nothing)
+end
+
+function get_path(func::LambdaFunction)::Path
+   
+end
+
+function invoke_function(
     request::String,
     lambda_function::LambdaFunction, 
   )

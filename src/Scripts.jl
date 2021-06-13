@@ -82,7 +82,7 @@ function get_create_lambda_function_script(
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\
-    --code ImageUri=$(repo_ir) \\
+    --code ImageUri=$(repo_uri) \\
     --role $(role_arn) \\
     --package-type Image \\
     --timeout=$(timeout) \\
