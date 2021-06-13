@@ -466,13 +466,15 @@ function create_lambda_function(
     repo::ECRRepo, 
     role::AWSRole;
     function_name::Union{Nothing, String} = nothing,
+    image_tag::String = "latest",
     timeout::Int64 = 30,
     memory_size::Int64 = 1000,
   )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
+  image_uri = "$(repo.repositoryUri):$image_tag"
   create_script = get_create_lambda_function_script(function_name,
-                                                    repo.repositoryUri,
+                                                    image_uri,
                                                     role.Arn,
                                                     timeout,
                                                     memory_size,
@@ -491,14 +493,27 @@ function create_lambda_function(
     no_cache::Union{Nothing, Bool} = nothing,
     julia_base_version::Union{Nothing, String} = nothing,
     julia_cpu_target::Union{Nothing, String} = nothing,
+    timeout::Union{Nothing, Int64} = nothing,
+    memory_size::Union{Nothing, Int64} = nothing,
   )::LambdaFunction
   create_image_kwarg_strings = ["image_tag", "no_cache", "julia_base_version", "julia_cpu_target"]
-  create_image_kws = [(str => eval(Meta.parse(str))) for str in create_image_kwarg_strings if !isnothing(eval(Meta.parse(str)))]
-  image = create_image(name, rf, aws_config; create_image_kws)
+  create_image_kws = [
+                      (str => eval(Meta.parse(str))) 
+                      for str in create_image_kwarg_strings 
+                      if !isnothing(eval(Meta.parse(str)))
+                     ]
+  image = create_image(name, rf, aws_config; create_image_kws...)
   repo = create_ecr_repo(image)
   role = isnothing(role) ? get_aws_role(name) : role
   role = isnothing(role) ? create_aws_role(name) : role
-  create_lambda_function(repo, role)
+
+  create_lambda_function_kwarg_strings = ["image_tag", "timeout", "memory_size"]
+  create_lambda_function_kws = [
+                      (str => eval(Meta.parse(str))) 
+                      for str in create_lambda_function_kwarg_strings 
+                      if !isnothing(eval(Meta.parse(str)))
+                     ]
+  create_lambda_function(repo, role; create_lambda_function_kws...)
 end
 
 function delete_lambda_function(func::LambdaFunction)

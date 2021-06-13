@@ -64,9 +64,9 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     # Check that we can find it
     @test jt1_lambda_function == Jot.get_lambda_function(jt1_image_name)
     
-    # Create function, with different name
+    # Create function, with different name, from scratch
     jt1_lambda_function_name = "jt1-lambda-function"
-    jt1_lambda_function = create_lambda_function(jt1_repo, 
+    jt1_lambda_function_alt = create_lambda_function(jt1_lambda_function_name, 
                                                  jt1_role, 
                                                  function_name = jt1_lambda_function_name)
     # Check that we can find it
