@@ -477,6 +477,17 @@ function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
   lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement 
 end
 
+function get_all_lambda_functions()::Vector{LambdaFunction}
+  all_json = readchomp(`aws lambda list-functions`)
+  JSON3.read(all_json, Dict{String, Vector{LambdaFunction}})["Functions"]
+end
+
+function get_lambda_function(function_name::String)::Union{Nothing, LambdaFunction}
+  all = get_all_lambda_functions()
+  index = findfirst(x -> x.FunctionName == function_name, all)
+  isnothing(index) ? nothing : all_roles[index]
+end
+
 function create_lambda_function(
     repo::ECRRepo, 
     role::AWSRole;
@@ -485,6 +496,7 @@ function create_lambda_function(
     memory_size::Int64 = 1000,
   )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
+  aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
   create_script = get_create_lambda_function_script(function_name,
                                                     repo.repositoryUri,
                                                     role.Arn,
@@ -494,6 +506,12 @@ function create_lambda_function(
   func_json = readchomp(`bash -c $create_script`)
   @debug func_json
   JSON3.read(func_json, Dict{String, LambdaFunction})["Function"]
+end
+
+function delete_lambda_function(func::LambdaFunction)
+  delete_script = get_delete_lambda_role_script(func.FunctionArn)
+  output = readchomp(`bash -c $delete_script`)
+  @debug output
 end
 
 function run_image_locally(image::Image; detached::Bool=true)::Container

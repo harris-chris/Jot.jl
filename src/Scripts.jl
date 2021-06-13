@@ -90,3 +90,18 @@ function get_create_lambda_function_script(
   """
 end
 
+function get_delete_lambda_function_script(function_arn::String)::String
+  """
+  aws lambda delete-function \\
+    --function-name=$(function_arn)
+  """
+end
+
+function get_invoke_lambda_function_script(
+    function_arn::String
+  )::String
+  """
+  aws lambda delete-function \\
+    --function-name=$(function_arn)
+  """
+end

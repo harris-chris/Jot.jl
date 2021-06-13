@@ -22,7 +22,8 @@ using Jot
 
   test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 8)
   jt1_function = ResponseFunction(JotTest1, :response_func)
-  jt1_image = build_image("jot-test-1" * test_suffix, jt1_function, aws_config)
+  jt1_image_name = "jot-test-1"
+  jt1_image = build_image(jt1_image_name * test_suffix, jt1_function, aws_config)
 
   @testset "Local test" begin
     # Test that container runs
@@ -82,9 +83,33 @@ using Jot
     delete_aws_role(jt1_role)
     # Check it's deleted
     @test isnothing(Jot.get_aws_role(jt1_role_name))
+  end
 
-    # Re-create it
-    jt1_role = create_aws_role(jt1_role_name)
+  jt1_role = create_aws_role(jt1_role_name)
+  jt1_repo = create_ecr_repo(jt1_image)
+  @testset "AWS Function test" begin
+    # Delete Test function, if it exists
+    existing_function = Jot.get_lambda_function(jt1_image_name)
+    isnothing(existing_function) || delete_lambda_function(existing_function)
+
+    # Create function
+    jt1_lambda_function = create_lambda_function(jt1_repo, jt1_role)
+    # Check that we can find it
+    @test jt1_lambda_function == Jot.get_lambda_function(jt1_image_name)
+    # Delete it
+    delete_lambda_function(jt1_lambda_function)
+    # Check it's deleted
+    @test isnothing(Jot.get_lambda_function(jt1_image_name))
+    
+    # Create function, with different name
+    jt1_lambda_function_name = "jt1-lambda-function"
+    jt1_lambda_function = create_lambda_function(jt1_repo, 
+                                                 jt1_role, 
+                                                 function_name = jt1_lambda_function_name)
+    # Check that we can find it
+    @test jt1_lambda_function == Jot.get_lambda_function(jt1_lambda_function_name)
+
+
   end
   
   # Clean up
@@ -94,5 +119,7 @@ using Jot
   for cont in jt1_conts
     stop_container(cont)
   end
+  delete_aws_role(jt1_role)
+  delete_lambda_function(jt1_lambda_function)
   delete_image(jt1_image, force=true)
 end
