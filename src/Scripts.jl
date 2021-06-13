@@ -86,7 +86,7 @@ function get_create_lambda_function_script(
     --role $(role_arn) \\
     --package-type Image \\
     --timeout=$(timeout) \\
-    --memory-size=$(memory_size))
+    --memory-size=$(memory_size)
   """
 end
 

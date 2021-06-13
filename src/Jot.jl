@@ -12,7 +12,7 @@ using Dates
 export AWSConfig
 export ResponseFunction, Image
 export get_dockerfile, build_definition
-export run_image_locally, build_image, delete_image, get_images
+export run_image_locally, create_image, delete_image, get_images
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr
@@ -247,7 +247,6 @@ function delete_container(con::Container)
   run(`docker container rm $(con.id)`)
 end
 
-
 function move_to_temporary_build_directory(mod::Module)::String
   build_dir = mktempdir()
   cd(build_dir)
@@ -264,7 +263,7 @@ function write_bootstrap_to_build_directory(path::String)
   end
 end
 
-function build_image(
+function create_image(
     image_suffix::String,
     rf::ResponseFunction,
     aws_config::AWSConfig; 
@@ -308,6 +307,12 @@ function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T
     type_args = [[dict[Symbol(fn)] for fn in fieldnames(T)] for dict in as_dicts]
     [T(args...) for args in type_args]
   end
+end
+
+function get_image(repository::String)::Union{Nothing, Image}
+  all = get_images()
+  index = findfirst(x -> x.repository == repository, all)
+  isnothing(index) ? nothing : all[index]
 end
 
 function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
@@ -357,7 +362,6 @@ function ecr_login_for_image(aws_config::AWSConfig, image_suffix::String)
   run(`bash -c $script`)
 end
 
-
 function ecr_login_for_image(image::Image)
   ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
 end
@@ -366,13 +370,10 @@ function push_to_ecr(image::Image)::ECRRepo
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
-    @info "no repo found"
     create_ecr_repo(image)
   else
-    @info "repo was found"
     existing_repo
   end
-  @show existing_repo
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
   readchomp(`bash -c $push_script`)
   repo
@@ -385,14 +386,9 @@ function get_ecr_repo(image::Image)::Union{Nothing, ECRRepo}
   isnothing(index) ? nothing : all_repos[index]
 end
 
-
 function create_lambda_execution_role(role_name)
   create_script = get_create_lambda_role_script(role_name)
   run(`bash -c $create_script`)
-end
-
-function test_image_remotely(image::Image)::Bool
-
 end
 
 function get_all_ecr_repos()::Vector{ECRRepo}
@@ -484,6 +480,25 @@ function create_lambda_function(
   func_json = readchomp(`bash -c $create_script`)
   @debug func_json
   JSON3.read(func_json, Dict{String, LambdaFunction})["Function"]
+end
+
+function create_lambda_function(
+    name::String,
+    rf::ResponseFunction,
+    aws_config::AWSConfig;
+    role::Union{Nothing, AWSRole} = nothing,
+    image_tag::Union{Nothing, String} = nothing,
+    no_cache::Union{Nothing, Bool} = nothing,
+    julia_base_version::Union{Nothing, String} = nothing,
+    julia_cpu_target::Union{Nothing, String} = nothing,
+  )::LambdaFunction
+  create_image_kwarg_strings = ["image_tag", "no_cache", "julia_base_version", "julia_cpu_target"]
+  create_image_kws = [(str => eval(Meta.parse(str))) for str in create_image_kwarg_strings if !isnothing(eval(Meta.parse(str)))]
+  image = create_image(name, rf, aws_config; create_image_kws)
+  repo = create_ecr_repo(image)
+  role = isnothing(role) ? get_aws_role(name) : role
+  role = isnothing(role) ? create_aws_role(name) : role
+  create_lambda_function(repo, role)
 end
 
 function delete_lambda_function(func::LambdaFunction)

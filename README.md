@@ -1,5 +1,6 @@
 # Jot
 
+what's the difference between create_ecr_repo and push_to_ecr? One creates the repo, the other pushes the image to it
 
 # Some sort of visual output showing what has been done so far
 
