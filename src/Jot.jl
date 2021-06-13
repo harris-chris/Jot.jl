@@ -533,4 +533,14 @@ function send_local_request(request::String)
   JSON3.read(http.body)
 end
 
+function send_remote_request(
+    request::String,
+    lambda_function::LambdaFunction, 
+  )
+  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn, request)
+  response = readchomp(`bash -c $invoke_script`) 
+  @debug response
+  JSON3.read(response)
+end
+
 end

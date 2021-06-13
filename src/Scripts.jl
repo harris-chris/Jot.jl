@@ -98,10 +98,12 @@ function get_delete_lambda_function_script(function_arn::String)::String
 end
 
 function get_invoke_lambda_function_script(
-    function_arn::String
+    function_arn::String,
+    request::String,
   )::String
   """
-  aws lambda delete-function \\
-    --function-name=$(function_arn)
+  aws lambda invoke \\
+    --function-name=$(function_arn) \\
+    --payload=$(request)
   """
 end

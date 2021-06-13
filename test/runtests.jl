@@ -47,7 +47,7 @@ using Jot
   @testset "ECR test" begin 
     # Delete ECR repo, if it exists
     existing_repo = Jot.get_ecr_repo(jt1_image)
-    if !isnothing(existing_repo) delete_ecr_repo(existing_repo) end
+    isnothing(existing_repo) || delete_ecr_repo(existing_repo)
 
     # Create ECR repo
     create_ecr_repo(jt1_image)
@@ -61,9 +61,11 @@ using Jot
     @test isnothing(Jot.get_ecr_repo(jt1_image))
 
     # Push image to ECR
-    ecr_repo = push_to_ecr(jt1_image)
+    jt1_repo = push_to_ecr(jt1_image)
     # Check we can find the repo
-    @test ecr_repo in Jot.get_all_ecr_repos()
+    @test jt1_repo in Jot.get_all_ecr_repos()
+    # Delete it
+    delete_ecr_repo(jt1_repo)
   end
 
   jt1_role_name = "jt1-execution-role" * test_suffix
@@ -108,8 +110,6 @@ using Jot
                                                  function_name = jt1_lambda_function_name)
     # Check that we can find it
     @test jt1_lambda_function == Jot.get_lambda_function(jt1_lambda_function_name)
-
-
   end
   
   # Clean up
