@@ -11,6 +11,7 @@ using Dates
 # EXPORTS
 export AWSConfig
 export ResponseFunction, Image
+export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_images
 export run_local_test, run_remote_test
@@ -24,6 +25,8 @@ struct InterpolationNotFoundException <: Exception interpolation::String end
 
 # CONSTANTS
 const docker_hash_limit = 12
+
+@enum LambdaFunctionState pending active
 
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
@@ -551,23 +554,36 @@ function get_path(func::LambdaFunction)::Path
    
 end
 
+function get_function_state(func_name::String)::LambdaFunctionState
+  state_json = readchomp(`aws lambda get-function-configuration --function-name=$func_name`)
+  state_data = JSON3.read(state_json)
+  @debug state_data
+  if state_data["State"] == "Pending" pending
+  elseif state_data["State"] == "Active" active
+  end
+end
+
+function get_function_state(func::LambdaFunction)::LambdaFunctionState
+  get_function_state(func.FunctionArn)
+end
+
 function invoke_function(
     request::Any,
     lambda_function::LambdaFunction, 
-  )
+  )::Tuple{String, Any}
   request_json = JSON3.write(request)
   @debug request_json
   outfile_path = tempname()
   invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn, 
                                                     request_json, 
                                                     outfile_path)
-  @debug invoke_script
   status = readchomp(`bash -c $invoke_script`) 
-  response = open(outfile_path, "w") do f
+  @debug status
+  response = open(outfile_path, "r") do f
     read(f, String)
   end
   @debug response
-  JSON3.read(response)
+  (status, JSON3.read(response))
 end
 
 end

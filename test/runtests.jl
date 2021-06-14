@@ -67,43 +67,46 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     # Invoke it 
     request = randstring(4)
     expected_response = JotTest1.response_func(request)
-    response = invoke_function(request, jt1_lambda_function)
+    while true
+      Jot.get_function_state(jt1_lambda_function) == active && break
+    end
+    (status, response) = invoke_function(request, jt1_lambda_function)
     @test response == expected_response
   end
   
   # Clean up
-  @testset "Clean up" begin
-    # Delete lambda_function
-    delete_lambda_function(jt1_lambda_function)
-    # Check it's deleted
-    @test isnothing(Jot.get_lambda_function(jt1_image_name))
+  # @testset "Clean up" begin
+    # # Delete lambda_function
+    # delete_lambda_function(jt1_lambda_function)
+    # # Check it's deleted
+    # @test isnothing(Jot.get_lambda_function(jt1_image_name))
 
-    # Stop all containers
-    jt1_conts = get_containers(jt1_image, args=["--all"])
-    for cont in jt1_conts
-      stop_container(cont)
-      delete_container(cont)
-    end
-    # Check they have all stopped
-    @test length(get_containers(jt1_image, args=["--all"])) == 0
+    # # Stop all containers
+    # jt1_conts = get_containers(jt1_image, args=["--all"])
+    # for cont in jt1_conts
+      # stop_container(cont)
+      # delete_container(cont)
+    # end
+    # # Check they have all stopped
+    # @test length(get_containers(jt1_image, args=["--all"])) == 0
 
-    # Delete repo
-    delete_ecr_repo(jt1_repo)
-    # Check it's deleted
-    @test isnothing(Jot.get_ecr_repo(jt1_image))
+    # # Delete repo
+    # delete_ecr_repo(jt1_repo)
+    # # Check it's deleted
+    # @test isnothing(Jot.get_ecr_repo(jt1_image))
 
-    # Delete image
-    jt1_repository = jt1_image.repository
-    delete_image(jt1_image, force=true)
-    # Check it's deleted
-    @test isnothing(Jot.get_image(jt1_repository))
+    # # Delete image
+    # jt1_repository = jt1_image.repository
+    # delete_image(jt1_image, force=true)
+    # # Check it's deleted
+    # @test isnothing(Jot.get_image(jt1_repository))
 
-    # Delete role
-    delete_aws_role(jt1_role)
-    # Check it's deleted
-    @test isnothing(Jot.get_aws_role(jt1_role_name))
+    # # Delete role
+    # delete_aws_role(jt1_role)
+    # # Check it's deleted
+    # @test isnothing(Jot.get_aws_role(jt1_role_name))
 
-  end
+  # end
 end
 
   

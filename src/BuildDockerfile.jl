@@ -1,5 +1,5 @@
 const runtime_path = "/var/runtime"
-const julia_depot_path = "/var/julia_depot"
+const julia_depot_path = "/var/runtime/julia_depot"
 const jot_github_url = "https://github.com/harris-chris/Jot.jl#master"
 
 function dockerfile_add_julia_image(julia_base_version::String)::String
@@ -18,8 +18,10 @@ end
 function dockerfile_add_runtime_directories()::String
   """
   RUN mkdir -p $runtime_path
+  RUN chmod 644 $runtime_path
   ENV JULIA_DEPOT_PATH=$julia_depot_path
-  RUN mkdir -p $runtime_path
+  RUN mkdir -p $julia_depot_path
+  RUN chmod 644 $julia_depot_path
   WORKDIR $runtime_path
   """
 end
@@ -54,7 +56,7 @@ function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   ENV PKG_NAME=$(get_package_name(rf.mod))
   ENV FUNC_NAME=$(get_response_function_name(rf))
   COPY ./bootstrap ./
-  RUN chmod +x ./bootstrap
+  RUN chmod 755 -R .
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """
 end
