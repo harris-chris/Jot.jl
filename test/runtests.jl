@@ -25,6 +25,14 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
   jt1_image_name = "jot-test-1" * test_suffix
   jt1_role_name = "jt1-execution-role" * test_suffix
 
+  jt1_role = create_aws_role(jt1_role_name)
+  @testset "AWS Role test" begin
+    # Check we can find it
+    @test jt1_role == Jot.get_aws_role(jt1_role_name)
+    # Verify it has execution permission
+    @test Jot.aws_role_has_lambda_execution_permissions(jt1_role)
+  end
+
   jt1_image = create_image(jt1_image_name, jt1_function, aws_config)
   @testset "Local test" begin
     # Test that container runs
@@ -51,26 +59,11 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     @test !isnothing(Jot.get_ecr_repo(jt1_image))
   end
 
-  jt1_role = create_aws_role(jt1_role_name)
-  @testset "AWS Role test" begin
-    # Check we can find it
-    @test jt1_role == Jot.get_aws_role(jt1_role_name)
-    # Verify it has execution permission
-    @test Jot.aws_role_has_lambda_execution_permissions(jt1_role)
-  end
-
   jt1_lambda_function = create_lambda_function(jt1_repo, jt1_role)
   @testset "AWS Function test" begin
     # Check that we can find it
     @test jt1_lambda_function == Jot.get_lambda_function(jt1_image_name)
     
-    # Create function, with different name, from scratch
-    jt1_lambda_function_name = "jt1-lambda-function"
-    jt1_lambda_function_alt = create_lambda_function(jt1_lambda_function_name, 
-                                                 jt1_role, 
-                                                 function_name = jt1_lambda_function_name)
-    # Check that we can find it
-    @test jt1_lambda_function == Jot.get_lambda_function(jt1_lambda_function_name)
     # Invoke it 
     request = randstring(4)
     expected_response = JotTest1.response_func(request)

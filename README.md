@@ -27,11 +27,11 @@ The default delete action should be to delete the entire jot. But you can also d
 A jot should permit multiple versions/tags. We can just show the most recent one.
 Note that tags and hashes are somewhat equivalent
 Probably best to have a drop-down for various versions.
-LocalImage ->   Repo ->   Functions  
-->0.1           ->0.1     ->earlyVersion1
-->0.1           ->0.1     ->earlyVersion2
-->0.2           ->0.2     ->midVersion
-->latest        ->latest  ->latest (but out-of-date; hashes do not match, so put in red)
+ResponseFunction -> LocalImage ->   Repo ->   Functions  
+-> not current      ->0.1           ->0.1     ->earlyVersion1
+-> not current      ->0.1           ->0.1     ->earlyVersion2
+-> commit x83u2     ->0.2           ->0.2     ->midVersion
+-> HEAD/current     ->latest        ->latest  ->latest (but out-of-date; hashes do not match, so put in red)
 
 
 Are we sure that we have a one-to-one mapping for all stages?

@@ -139,6 +139,7 @@ Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
   PackageType::Union{Missing, String} = missing
 end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
+Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
 
 struct Path
   response_function::Union{Nothing, ResponseFunction}
@@ -425,9 +426,9 @@ function get_all_aws_roles()::Vector{AWSRole}
 end
 
 function get_aws_role(role_name::String)::Union{Nothing, AWSRole}
-  all_roles = get_all_aws_roles()
-  index = findfirst(role -> role.RoleName == role_name, all_roles)
-  isnothing(index) ? nothing : all_roles[index]
+  all = get_all_aws_roles()
+  index = findfirst(role -> role.RoleName == role_name, all)
+  isnothing(index) ? nothing : all[index]
 end
 
 function create_aws_role(role_name::String)::AWSRole
@@ -459,7 +460,7 @@ end
 function get_lambda_function(function_name::String)::Union{Nothing, LambdaFunction}
   all = get_all_lambda_functions()
   index = findfirst(x -> x.FunctionName == function_name, all)
-  isnothing(index) ? nothing : all_roles[index]
+  isnothing(index) ? nothing : all[index]
 end
 
 function create_lambda_function(
@@ -481,9 +482,10 @@ function create_lambda_function(
                                                    )
   func_json = readchomp(`bash -c $create_script`)
   @debug func_json
-  JSON3.read(func_json, Dict{String, LambdaFunction})["Function"]
+  JSON3.read(func_json, LambdaFunction)
 end
 
+# THIS CURRENTLY DEPRECATED, TRYING TO FIGURE OUT WHAT TO DO WITH IT
 function create_lambda_function(
     name::String,
     rf::ResponseFunction,
@@ -517,7 +519,7 @@ function create_lambda_function(
 end
 
 function delete_lambda_function(func::LambdaFunction)
-  delete_script = get_delete_lambda_role_script(func.FunctionArn)
+  delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
   @debug output
 end
@@ -550,11 +552,20 @@ function get_path(func::LambdaFunction)::Path
 end
 
 function invoke_function(
-    request::String,
+    request::Any,
     lambda_function::LambdaFunction, 
   )
-  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn, request)
-  response = readchomp(`bash -c $invoke_script`) 
+  request_json = JSON3.write(request)
+  @debug request_json
+  outfile_path = tempname()
+  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn, 
+                                                    request_json, 
+                                                    outfile_path)
+  @debug invoke_script
+  status = readchomp(`bash -c $invoke_script`) 
+  response = open(outfile_path, "w") do f
+    read(f, String)
+  end
   @debug response
   JSON3.read(response)
 end

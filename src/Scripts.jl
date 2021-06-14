@@ -100,10 +100,13 @@ end
 function get_invoke_lambda_function_script(
     function_arn::String,
     request::String,
+    outfile::String,
   )::String
   """
   aws lambda invoke \\
     --function-name=$(function_arn) \\
-    --payload=$(request)
+    --payload='$(request)' \\
+    --cli-binary-format raw-in-base64-out \\
+    $outfile
   """
 end
