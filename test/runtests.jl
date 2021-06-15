@@ -107,14 +107,6 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     @test isnothing(Jot.get_aws_role(jt1_role_name))
 
   end
-  Pkg.rm(JotTest1)
 end
 
-@testset "Local Module from path" begin
-  response_suffix = randstring(12)
-  open("./test/JotTest1/response_suffix", "w") do rsfile
-    write(rsfile, response_suffix)
-  end
-  Pkg.develop(PackageSpec(path="./test/JotTest1"))
-  using JotTest1
   

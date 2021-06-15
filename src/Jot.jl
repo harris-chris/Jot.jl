@@ -601,17 +601,17 @@ function get_environment_variables(image_inspect::Dict{String, Any})::Vector{Str
   image_inspect["ContainerConfig"]["Env"]
 end
 
-function get_lambda(image::Image)::Lambda
-  # Predecessor
-  image_inspect = JSON3.read(image.id)
-  env_vars = get_environment_variables(image_inspect)
-  # Successor
-  mod = Lambda(env_vars.FUNC_NAME,
-               get_ecr_repo(image),
-               get_lambda_function()
+# function get_lambda(image::Image)::Lambda
+  # # Predecessor
+  # image_inspect = JSON3.read(image.id)
+  # env_vars = get_environment_variables(image_inspect)
+  # # Successor
+  # mod = Lambda(env_vars.FUNC_NAME,
+               # get_ecr_repo(image),
+               # get_lambda_function()
 
 
-end
+# end
 
 function get_lambda(repo::Image)::Lambda
   # run image_ls, look for same Arn
