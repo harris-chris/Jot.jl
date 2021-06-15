@@ -1,6 +1,7 @@
 module Jot
 
 # IMPORTS
+using Pkg
 using JSON3
 using StructTypes
 using Parameters
@@ -34,15 +35,39 @@ const docker_hash_limit = 12
 end
 StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()  
 
+struct ModuleDefinition
+  name::String
+  path::String
+end
+
 struct ResponseFunction
-  mod::Module
+  mod::Union{Module, ModuleDefinition}
   response_function::Symbol
+
+  function ResponseFunction(
+      module_name::String,
+      module_path::String,
+      function_name::String,
+    )::ResponseFunction
+    new(ModuleDefinition(module_name, module_path), function_name)
+  end
+
+  function ResponseFunction(
+      full_path::String,
+      function_name::String,
+    )::ResponseFunction
+    mod_def = ModuleDefinition(
+                               joinpath(splitpath(module_path)[begin:end-2]...),
+                               splitpath(module_path)[end],
+                              )
+    new(mod_def, function_name)
+  end
 
   function ResponseFunction(
       mod::Module, 
       response_function::String,
   )::ResponseFunction
-    ResponseFunction(name, mod, Symbol(response_function))
+    new(name, mod, Symbol(response_function))
   end
 
   function ResponseFunction(
@@ -89,6 +114,13 @@ Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:doc
 end
 StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()  
 Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
+
+@with_kw mutable struct RemoteImage
+  imageDigest::Union{Missing, String} = missing
+  imageTag::Union{Missing, String} = missing
+end
+StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
+Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
 
 @with_kw mutable struct AWSRolePolicyStatement
   Effect::Union{Missing, String} = missing
@@ -144,8 +176,8 @@ end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
 
-struct Path
-  response_function::Union{Nothing, ResponseFunction}
+struct Lambda
+  function_name::String
   image::Union{Nothing, Image}
   repo::Union{Nothing, ECRRepo}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -158,8 +190,16 @@ function get_package_path(mod::Module)::String
   joinpath(splitpath(module_path)[begin:end-2]...)
 end
 
+function get_package_path(mod::ModuleDefinition)::String
+  mod.module_path
+end
+
 function get_package_name(mod::Module)::String
   splitpath(get_package_path(mod))[end]
+end
+
+function get_package_name(mod::ModuleDefinition)::String
+  mod.package_name
 end
 
 function get_registry(aws_config::AWSConfig)::String
@@ -466,6 +506,12 @@ function get_lambda_function(function_name::String)::Union{Nothing, LambdaFuncti
   isnothing(index) ? nothing : all[index]
 end
 
+function get_lambda_function(repo::ECRRepo)::Union{Nothing, LambdaFunction}
+  all = get_all_lambda_functions()
+  index = findfirst(x -> x.FunctionName == function_name, all)
+  isnothing(index) ? nothing : all[index]
+end
+
 function create_lambda_function(
     repo::ECRRepo, 
     role::AWSRole;
@@ -546,12 +592,30 @@ function send_local_request(request::String)
   JSON3.read(http.body)
 end
 
-function get_path(rf::ResponseFunction)::Path
-  Path(rf, nothing, nothing, nothing)
+function get_lambda(rf::ResponseFunction)::Lambda
+  Lambda(rf, nothing, nothing, nothing)
+  # TODO find images - inspect and look at layers
 end
 
-function get_path(func::LambdaFunction)::Path
-   
+function get_environment_variables(image_inspect::Dict{String, Any})::Vector{String}
+  image_inspect["ContainerConfig"]["Env"]
+end
+
+function get_lambda(image::Image)::Lambda
+  # Predecessor
+  image_inspect = JSON3.read(image.id)
+  env_vars = get_environment_variables(image_inspect)
+  # Successor
+  mod = Lambda(env_vars.FUNC_NAME,
+               get_ecr_repo(image),
+               get_lambda_function()
+
+
+end
+
+function get_lambda(repo::Image)::Lambda
+  # run image_ls, look for same Arn
+  # run aws lambda list-functions
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState

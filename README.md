@@ -33,6 +33,18 @@ ResponseFunction -> LocalImage ->   Repo ->   Functions
 -> commit x83u2     ->0.2           ->0.2     ->midVersion
 -> HEAD/current     ->latest        ->latest  ->latest (but out-of-date; hashes do not match, so put in red)
 
+HASHES
+-------
+can obtain git hash using readchomp(`git log --format=%H -1`) - this is the hash of the current commit, not the tree hash
+
+LAMBDAS
+--------
+When capturing lambdas, we can filter by on-local or on-remote. Probably on-local by default.
+At the moment, the response_function is an actual module (not a string). For this, probably best to represent it as a string.
+But then how do we recover the root? What data do we actually extract from the module?
+- the package name, the function name, the package path
+
+
 
 Are we sure that we have a one-to-one mapping for all stages?
 image -> repo => 
@@ -58,3 +70,6 @@ shell interop and exporting the scripts?
 
 The repo can have multiple images in
 - we need separate docker image and ecr image types
+
+Add a validate_package function, because ResponseFunction is not being validated on instantiation if it is PackageName, FunctionName as strings.
+Or, somehow validate ModuleDefinition on instantiation, maybe at least check the path and somehow check the names 

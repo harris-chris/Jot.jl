@@ -9,7 +9,7 @@ using Jot
 aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
 
-@testset "Local Module" begin
+@testset "Local Module full test" begin
   response_suffix = randstring(12)
   open("./test/JotTest1/response_suffix", "w") do rsfile
     write(rsfile, response_suffix)
@@ -75,38 +75,46 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
   end
   
   # Clean up
-  # @testset "Clean up" begin
-    # # Delete lambda_function
-    # delete_lambda_function(jt1_lambda_function)
-    # # Check it's deleted
-    # @test isnothing(Jot.get_lambda_function(jt1_image_name))
+  @testset "Clean up" begin
+    # Delete lambda_function
+    delete_lambda_function(jt1_lambda_function)
+    # Check it's deleted
+    @test isnothing(Jot.get_lambda_function(jt1_image_name))
 
-    # # Stop all containers
-    # jt1_conts = get_containers(jt1_image, args=["--all"])
-    # for cont in jt1_conts
-      # stop_container(cont)
-      # delete_container(cont)
-    # end
-    # # Check they have all stopped
-    # @test length(get_containers(jt1_image, args=["--all"])) == 0
+    # Stop all containers
+    jt1_conts = get_containers(jt1_image, args=["--all"])
+    for cont in jt1_conts
+      stop_container(cont)
+      delete_container(cont)
+    end
+    # Check they have all stopped
+    @test length(get_containers(jt1_image, args=["--all"])) == 0
 
-    # # Delete repo
-    # delete_ecr_repo(jt1_repo)
-    # # Check it's deleted
-    # @test isnothing(Jot.get_ecr_repo(jt1_image))
+    # Delete repo
+    delete_ecr_repo(jt1_repo)
+    # Check it's deleted
+    @test isnothing(Jot.get_ecr_repo(jt1_image))
 
-    # # Delete image
-    # jt1_repository = jt1_image.repository
-    # delete_image(jt1_image, force=true)
-    # # Check it's deleted
-    # @test isnothing(Jot.get_image(jt1_repository))
+    # Delete image
+    jt1_repository = jt1_image.repository
+    delete_image(jt1_image, force=true)
+    # Check it's deleted
+    @test isnothing(Jot.get_image(jt1_repository))
 
-    # # Delete role
-    # delete_aws_role(jt1_role)
-    # # Check it's deleted
-    # @test isnothing(Jot.get_aws_role(jt1_role_name))
+    # Delete role
+    delete_aws_role(jt1_role)
+    # Check it's deleted
+    @test isnothing(Jot.get_aws_role(jt1_role_name))
 
-  # end
+  end
+  Pkg.rm(JotTest1)
 end
 
+@testset "Local Module from path" begin
+  response_suffix = randstring(12)
+  open("./test/JotTest1/response_suffix", "w") do rsfile
+    write(rsfile, response_suffix)
+  end
+  Pkg.develop(PackageSpec(path="./test/JotTest1"))
+  using JotTest1
   
