@@ -44,6 +44,21 @@ At the moment, the response_function is an actual module (not a string). For thi
 But then how do we recover the root? What data do we actually extract from the module?
 - the package name, the function name, the package path
 
+Process for getting all lambdas:
+- get all local images
+- get all remote images
+- get all functions
+See which of these we can link together
+
+Use 
+`docker image ls` to get all local images
+`aws ecr describe-repositories` to get all repos, but within that `aws ecr list-images` individually within these
+`aws lambda list-functions` gets us all the functions, but then need to (individually) run
+`aws lambda get-function --function-name=<x>` to find the repo associated with a function. ResolvedImageUri gives the hash.
+Then try and line these up.
+Start associating forwards or backwards? Actually what's the problem?
+
+Vectorized?
 
 
 Are we sure that we have a one-to-one mapping for all stages?

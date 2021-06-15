@@ -621,7 +621,6 @@ end
 function get_function_state(func_name::String)::LambdaFunctionState
   state_json = readchomp(`aws lambda get-function-configuration --function-name=$func_name`)
   state_data = JSON3.read(state_json)
-  @debug state_data
   if state_data["State"] == "Pending" pending
   elseif state_data["State"] == "Active" active
   end
