@@ -6,10 +6,10 @@ if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
   exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_NAME)"
 else
   echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-  touch /tmp/working
-  echo "CREATED TEMPORARY FILE"
-  exec /usr/local/julia/bin/julia -e "using Jot; println(pwd())"
-  echo "JULIA CREATED TEMP"
+  # touch /tmp/working
+  # echo "CREATED TEMPORARY FILE"
+  # exec /usr/local/julia/bin/julia -e "using Jot; println(pwd())"
+  # echo "JULIA CREATED TEMP"
   exec /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_NAME)"
 fi
 """
