@@ -11,7 +11,7 @@ using Dates
 
 # EXPORTS
 export AWSConfig
-export ResponseFunction, Image
+export ResponseFunction, LocalImage
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_images
@@ -82,7 +82,7 @@ struct ResponseFunction
   end
 end
 
-@with_kw struct Image
+@with_kw struct LocalImage
   repository::String
   tag::String
   id::String
@@ -90,7 +90,7 @@ end
   size::Union{Missing, String} = missing
 end
 
-Base.:(==)(a::Image, b::Image) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
+Base.:(==)(a::LocalImage, b::LocalImage) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
 
 @with_kw struct Container
   id::String
@@ -118,6 +118,7 @@ Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
 @with_kw mutable struct RemoteImage
   imageDigest::Union{Missing, String} = missing
   imageTag::Union{Missing, String} = missing
+  ecr_repo::Union{Missing, ECRRepo} = missing
 end
 StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
 Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
@@ -178,7 +179,7 @@ Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionA
 
 struct Lambda
   function_name::String
-  image::Union{Nothing, Image}
+  local_image::Union{Nothing, LocalImage}
   repo::Union{Nothing, ECRRepo}
   lambda_function::Union{Nothing, LambdaFunction}
 end
@@ -213,7 +214,7 @@ function get_image_full_name(
   "$(get_registry(aws_config))/$image_suffix"
 end
 
-function get_image_full_name(image::Image)::String
+function get_image_full_name(image::LocalImage)::String
   image.repository
 end
 
@@ -225,23 +226,23 @@ function get_image_full_name_plus_tag(
   "$(get_image_full_name(aws_config, image_suffix)):$image_tag"
 end
 
-function get_image_full_name_plus_tag(image::Image)::String
+function get_image_full_name_plus_tag(image::LocalImage)::String
   "$(image.repository):$(image.tag)"
 end
 
-function get_aws_id(image::Image)::String
+function get_aws_id(image::LocalImage)::String
   split(image.repository, '.')[1]
 end
 
-function get_aws_region(image::Image)::String
+function get_aws_region(image::LocalImage)::String
   split(image.repository, '.')[4]
 end
 
-function get_aws_config(image::Image)::AWSConfig
+function get_aws_config(image::LocalImage)::AWSConfig
   AWSConfig(get_aws_id(image), get_aws_region(image))
 end
 
-function get_image_suffix(image::Image)::String
+function get_image_suffix(image::LocalImage)::String
   split(image.repository, '/')[2]
 end
 
@@ -322,7 +323,7 @@ function create_image(
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
-  )::Image
+  )::LocalImage
   build_dir = move_to_temporary_build_directory(rf.mod)
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
@@ -338,7 +339,7 @@ function create_image(
                                        no_cache)
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end
-  return Image(
+  return LocalImage(
     repository = get_image_full_name(aws_config, image_suffix),
     tag = image_tag,
     id = image_id,
@@ -361,15 +362,15 @@ function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T
   end
 end
 
-function get_image(repository::String)::Union{Nothing, Image}
+function get_image(repository::String)::Union{Nothing, LocalImage}
   all = get_images()
   index = findfirst(x -> x.repository == repository, all)
   isnothing(index) ? nothing : all[index]
 end
 
-function get_images(args::Vector{String} = Vector{String}())::Vector{Image}
+function get_images(args::Vector{String} = Vector{String}())::Vector{LocalImage}
   docker_output = readchomp(`docker image ls $args --format '{{json .}}'`)
-  parse_docker_ls_output(Image, docker_output)
+  parse_docker_ls_output(LocalImage, docker_output)
 end
 
 function get_containers(args::Vector{String} = Vector{String}())::Vector{Container}
@@ -377,20 +378,20 @@ function get_containers(args::Vector{String} = Vector{String}())::Vector{Contain
   parse_docker_ls_output(Container, docker_output)
 end
 
-function get_containers(image::Image; args::Vector{String}=Vector{String}())::Vector{Container}
+function get_containers(image::LocalImage; args::Vector{String}=Vector{String}())::Vector{Container}
   get_containers([
                   ["--filter", "ancestor=$(image.id[begin:docker_hash_limit])"]
                   args
                  ])
 end
 
-function delete_image(image::Image; force::Bool=false)
+function delete_image(image::LocalImage; force::Bool=false)
   args = force ? ["--force"] : []
   run(`docker image rm $(image.id) $args`)
 end
 
 function run_local_test(
-    image::Image,
+    image::LocalImage,
     test_input::Any = "", 
     expected_response::Any = nothing,
   )::Bool
@@ -414,11 +415,11 @@ function ecr_login_for_image(aws_config::AWSConfig, image_suffix::String)
   run(`bash -c $script`)
 end
 
-function ecr_login_for_image(image::Image)
+function ecr_login_for_image(image::LocalImage)
   ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
 end
 
-function push_to_ecr(image::Image)::ECRRepo
+function push_to_ecr(image::LocalImage)::ECRRepo
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
@@ -431,7 +432,7 @@ function push_to_ecr(image::Image)::ECRRepo
   repo
 end
 
-function get_ecr_repo(image::Image)::Union{Nothing, ECRRepo}
+function get_ecr_repo(image::LocalImage)::Union{Nothing, ECRRepo}
   all_repos = get_all_ecr_repos()
   image_full_name = get_image_full_name(image)
   index = findfirst(repo -> repo.repositoryUri == image_full_name, all_repos)
@@ -455,7 +456,7 @@ function get_ecr_repo(repo_name::String)::Union{Nothing, ECRRepo}
   isnothing(index) ? nothing : all_repos[index]
 end
 
-function create_ecr_repo(image::Image)::ECRRepo
+function create_ecr_repo(image::LocalImage)::ECRRepo
   create_script = get_create_ecr_repo_script(
                                              get_image_suffix(image),
                                              get_aws_region(image),
@@ -581,7 +582,7 @@ function delete_lambda_function(func::LambdaFunction)
   @debug output
 end
 
-function run_image_locally(image::Image; detached::Bool=true)::Container
+function run_image_locally(image::LocalImage; detached::Bool=true)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
   container_id = readchomp(`docker run $args $(image.id)`)
@@ -609,7 +610,7 @@ function get_environment_variables(image_inspect::Dict{String, Any})::Vector{Str
   image_inspect["ContainerConfig"]["Env"]
 end
 
-# function get_lambda(image::Image)::Lambda
+# function get_lambda(image::LocalImage)::Lambda
   # # Predecessor
   # image_inspect = JSON3.read(image.id)
   # env_vars = get_environment_variables(image_inspect)
@@ -621,7 +622,7 @@ end
 
 # end
 
-function get_lambda(repo::Image)::Lambda
+function get_lambda(repo::LocalImage)::Lambda
   # run image_ls, look for same Arn
   # run aws lambda list-functions
 end
