@@ -54,17 +54,8 @@ function dockerfile_add_aws_rie()::String
   """
 end
 
-function dockerfile_add_precompile(package_compiler::Bool=false)::String
-  precompile_script = get_precompile_julia_script(package_compiler)
-end
-
-if package == "true"
-  create_sysimage(
-                  :JuliaLambdaRuntime, 
-                  precompile_execution_file=precompile_file,
-                  replace_default=true,
-                  cpu_target=cpu_target,
-                 )
+function dockerfile_add_precompile(package_compile::Bool=false)::String
+  precompile_script = get_precompile_julia_script(package_compile)
 end
 
 function dockerfile_add_bootstrap(rf::ResponseFunction)::String

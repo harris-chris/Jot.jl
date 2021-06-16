@@ -309,7 +309,7 @@ end
 
 function write_precompile_script_to_build_directory(path::String, package_compile::Bool)
   open(joinpath(path, "precompile.jl"), "w") do f
-    write(f, get_precompile_julia_script(package_compiler))
+    write(f, get_precompile_julia_script(package_compile))
   end
 end
 

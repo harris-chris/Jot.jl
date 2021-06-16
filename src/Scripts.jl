@@ -14,8 +14,9 @@ else
 fi
 """
 
-function get_precompile_julia_script(package_compiler::Bool)::String
+function get_precompile_julia_script(package_compile::Bool)::String
   """
+  import Pkg
   using Jot
   Pkg.precompile()
   """
