@@ -20,13 +20,10 @@ function dockerfile_add_runtime_directories()::String
   """
   RUN mkdir -p $julia_depot_path
   ENV JULIA_DEPOT_PATH=$julia_depot_path
-  RUN chmod 777 -R $runtime_path
   RUN mkdir -p $temp_path
   ENV TMPDIR=$temp_path
-  RUN chmod 777 -R $runtime_path
   RUN mkdir -p $runtime_path
   WORKDIR $runtime_path
-  RUN chmod 777 -R $runtime_path
   """
 end
 
