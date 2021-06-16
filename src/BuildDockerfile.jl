@@ -62,8 +62,8 @@ function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   COPY ./precompile.jl ./
   COPY ./bootstrap ./
   RUN julia precompile.jl
+  RUN chmod 775 . -R
   ENTRYPOINT ["/var/runtime/bootstrap"]
-  RUN chmod 777 -R $runtime_path
   """
 end
 
