@@ -54,11 +54,26 @@ function dockerfile_add_aws_rie()::String
   """
 end
 
+function dockerfile_add_precompile(package_compiler::Bool=false)::String
+  precompile_script = get_precompile_julia_script(package_compiler)
+end
+
+if package == "true"
+  create_sysimage(
+                  :JuliaLambdaRuntime, 
+                  precompile_execution_file=precompile_file,
+                  replace_default=true,
+                  cpu_target=cpu_target,
+                 )
+end
+
 function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   """
   ENV PKG_NAME=$(get_package_name(rf.mod))
   ENV FUNC_NAME=$(get_response_function_name(rf))
+  COPY ./precompile.jl ./
   COPY ./bootstrap ./
+  RUN julia precompile.jl
   ENTRYPOINT ["/var/runtime/bootstrap"]
   RUN chmod 777 -R $runtime_path
   """

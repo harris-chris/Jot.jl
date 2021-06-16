@@ -307,6 +307,12 @@ function write_bootstrap_to_build_directory(path::String)
   end
 end
 
+function write_precompile_script_to_build_directory(path::String, package_compile::Bool)
+  open(joinpath(path, "precompile.jl"), "w") do f
+    write(f, get_precompile_julia_script(package_compiler))
+  end
+end
+
 function create_image(
     image_suffix::String,
     rf::ResponseFunction,
@@ -315,9 +321,11 @@ function create_image(
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
+    package_compile::Bool = false,
   )::Image
   build_dir = move_to_temporary_build_directory(rf.mod)
   write_bootstrap_to_build_directory(build_dir)
+  write_precompile_script_to_build_directory(build_dir, package_compile)
   dockerfile = get_dockerfile(rf, julia_base_version)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
