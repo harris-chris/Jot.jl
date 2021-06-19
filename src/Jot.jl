@@ -40,9 +40,23 @@ struct ModuleDefinition
   path::String
 end
 
+function get_commit(path::String)::Union{Missing, String}
+  try
+    readchomp(`bash -c "PWD=pwd; cd $path; git rev-parse HEAD; cd \$PWD"`)
+  catch e
+    missing
+  end
+end
+
+function get_commit(mod::Module)::Union{Missing, String}
+  mod_path = get_package_path(mod)
+  get_commit(mod_path)
+end
+
 struct ResponseFunction
   mod::Union{Module, ModuleDefinition}
   response_function::Symbol
+  commit::Union{Missing, String}
 
   function ResponseFunction(
       module_name::String,
@@ -56,26 +70,27 @@ struct ResponseFunction
       full_path::String,
       function_name::String,
     )::ResponseFunction
-    mod_def = ModuleDefinition(
-                               joinpath(splitpath(module_path)[begin:end-2]...),
-                               splitpath(module_path)[end],
-                              )
-    new(mod_def, function_name)
+    name = splitpath(full_path)[end]
+    path = joinpath(splitpath(module_path)[begin:end-2]...)
+    commit = get_commit(path)
+    mod_def = ModuleDefinition(name, path)
+    new(mod_def, function_name, commit)
   end
 
   function ResponseFunction(
       mod::Module, 
       response_function::String,
   )::ResponseFunction
-    new(name, mod, Symbol(response_function))
+    new(mod, Symbol(response_function))
   end
 
   function ResponseFunction(
       mod::Module,
       response_function::Symbol,
   )::ResponseFunction
+    commit = get_commit(mod)
     if (response_function in names(mod, all=true))
-      new(mod, response_function)
+      new(mod, response_function, commit)
     else
       throw(UndefVarError("Cannot find function $response_function in module $mod"))
     end
@@ -179,12 +194,13 @@ StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
 
 struct Lambda
+  aws_config::Union{Nothing, AWSConfig}
+  response_function::Union{Nothing, ResponseFunction}
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
 end
 Base.show(l::Lambda) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
-
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -330,7 +346,7 @@ function create_image(
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
   image_labels = Dict("RF_NAME" => get_response_function_name(rf))
-  dockerfile = get_dockerfile(rf, julia_base_version, image_labels)
+  dockerfile = get_dockerfile(rf, julia_base_version; labels=image_labels)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
@@ -341,9 +357,12 @@ function create_image(
                                        image_name_plus_tag,
                                        no_cache)
   run(build_cmd)
-  image_id = open("id", "r") do f String(read(f)) end
+  image_id = open("id", "r") do f String(read(f)) end |> x -> split(x, ':')[2]
   all_images = get_all_local_images()
-  this_image = all_images[findfirst(img -> img.ID == image_id, all_images)]
+  @debug all_images
+  short_id = image_id[1:docker_hash_limit]
+  @debug short_id
+  this_image = all_images[findfirst(img -> img.ID == short_id, all_images)]
   this_image
 end
 
@@ -381,14 +400,14 @@ end
 
 function get_containers(image::LocalImage; args::Vector{String}=Vector{String}())::Vector{Container}
   get_containers([
-                  ["--filter", "ancestor=$(image.id[begin:docker_hash_limit])"]
+                  ["--filter", "ancestor=$(image.ID[begin:docker_hash_limit])"]
                   args
                  ])
 end
 
 function delete_image(image::LocalImage; force::Bool=false)
   args = force ? ["--force"] : []
-  run(`docker image rm $(image.id) $args`)
+  run(`docker image rm $(image.ID) $args`)
 end
 
 function run_local_test(
@@ -586,8 +605,8 @@ end
 function run_image_locally(image::LocalImage; detached::Bool=true)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
-  container_id = readchomp(`docker run $args $(image.id)`)
-  Container(ID=container_id, Image=image.id)
+  container_id = readchomp(`docker run $args $(image.ID)`)
+  Container(ID=container_id, Image=image.ID)
 end
 
 function send_local_request(request::String)
@@ -679,7 +698,7 @@ function get_all_lambdas()::Vector{Lambda}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  lambdas = [Lambda(l, nothing, nothing) for l in all_local]
+  lambdas = [Lambda(get_aws_config(l), get_function_name(l), l, nothing, nothing) for l in all_local]
 
   function match_with_lambdas(
       lambdas::Vector{Lambda}, 

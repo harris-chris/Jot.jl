@@ -10,8 +10,15 @@ either that or we store func_name per remote image rather than as a tag in the e
 but ecr repos map 1:1 with lambda functions? Actually no.
 So that's fine. func_name pkg_name stored in remoteimage, not ecr repo
 
-lambda should have all four
+lambda should have all four attributes. 
+lambda_function should store git commit
+should be a matrix of datum
+datum being a per-type struct
+awsconfig should also be part of the lambda
+right now, the lambda connection process does notwork back from lambda_function to local_image, if remote_image is not present
+that's fine though
 
+Test ModuleDefinition works 
 
 what's the difference between create_ecr_repo and push_to_ecr? One creates the repo, the other pushes the image to it
 
