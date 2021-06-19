@@ -179,12 +179,12 @@ StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
 
 struct Lambda
-  function_name::Union{Nothing, String}
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
 end
-Base.show(l::Lambda) = "$(l.function_name)\t$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
+Base.show(l::Lambda) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
+
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -329,7 +329,8 @@ function create_image(
   build_dir = move_to_temporary_build_directory(rf.mod)
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
-  dockerfile = get_dockerfile(rf, julia_base_version)
+  image_labels = Dict("RF_NAME" => get_response_function_name(rf))
+  dockerfile = get_dockerfile(rf, julia_base_version, image_labels)
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
@@ -601,26 +602,48 @@ function send_local_request(request::String)
   JSON3.read(http.body)
 end
 
-function get_lambda(rf::ResponseFunction)::Lambda
-  Lambda(rf, nothing, nothing, nothing)
-  # TODO find images - inspect and look at layers
+function get_environment_variables(image_inspect::AbstractDict{String, Any})::Dict{String, String}
+  envs = image_inspect["ContainerConfig"]["Env"]
+  Dict(
+       env_split[1] => env_split[2] for env_split in map(x -> split(x, "="), envs)
+      )
 end
 
-function get_environment_variables(image_inspect::Dict{String, Any})::Vector{String}
-  image_inspect["ContainerConfig"]["Env"]
+function get_function_name(
+    env_vars::AbstractDict{String, String}
+  )::Union{Nothing, String}
+  try
+    env_vars["FUNC_NAME"]
+  catch e
+    if isa(e, KeyError)
+      nothing
+    end
+  end
 end
 
-# function get_lambda(image::LocalImage)::Lambda
-  # # Predecessor
-  # image_inspect = JSON3.read(image.id)
-  # env_vars = get_environment_variables(image_inspect)
-  # # Successor
-  # mod = Lambda(env_vars.FUNC_NAME,
-               # get_ecr_repo(image),
-               # get_lambda_function()
+function get_function_name(image::LocalImage)::Union{Nothing, String}
+  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  println(image_inspect_json)
+  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
+  env_vars = get_environment_variables(image_inspect)
+  println(env_vars)
+  get_function_name(env_vars)
+end
 
+function get_function_name(images::Vector{LocalImage})::Vector{String}
+  image_ids = join([img.ID for img in images], " ")
+  image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
+  env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
+  [get_function_name(env_vars) for env_vars in env_var_arr]
+end
 
-# end
+function get_function_name(lambda::Lambda)::Union{Nothing, String}
+  if !isnothing(lambda.local_image)
+    get_function_name(local_image)
+  else
+    nothing
+  end
+end
 
 function get_all_remote_images()::Vector{RemoteImage}
   repos = get_all_ecr_repos()
@@ -656,7 +679,7 @@ function get_all_lambdas()::Vector{Lambda}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  lambdas = [Lambda(nothing, l, nothing, nothing) for l in all_local]
+  lambdas = [Lambda(l, nothing, nothing) for l in all_local]
 
   function match_with_lambdas(
       lambdas::Vector{Lambda}, 
@@ -670,7 +693,7 @@ function get_all_lambdas()::Vector{Lambda}
       curr_l2 = l2[1]; other_l2 = l2[2:end]
       any_matches = [match(lm, curr_l2) for lm in lambdas]
       lambdas = [m ? add(lm, curr_l2) : lm for (m, lm) in zip(any_matches, lambdas)]
-      any(any_matches) || push!(lambdas, add(Lambda(nothing, nothing, nothing, nothing), curr_l2))
+      any(any_matches) || push!(lambdas, add(Lambda(nothing, nothing, nothing), curr_l2))
       match_with_lambdas(lambdas, other_l2, match, add)
     end
   end
@@ -683,8 +706,8 @@ function get_all_lambdas()::Vector{Lambda}
     isnothing(lm.remote_image) ? false : matches(lm.remote_image, func)
   end
 
-  add_lambda(lm::Lambda, remote::RemoteImage)::Lambda = Lambda(lm.function_name, lm.local_image, remote, lm.lambda_function)
-  add_lambda(lm::Lambda, func::LambdaFunction)::Lambda = Lambda(lm.function_name, lm.local_image, lm.remote_image, func)
+  add_lambda(lm::Lambda, remote::RemoteImage)::Lambda = Lambda(lm.local_image, remote, lm.lambda_function)
+  add_lambda(lm::Lambda, func::LambdaFunction)::Lambda = Lambda(lm.local_image, lm.remote_image, func)
 
   lambdas = match_with_lambdas(lambdas,
                      all_remote,
@@ -698,6 +721,70 @@ function get_all_lambdas()::Vector{Lambda}
                      add_lambda,
                     )
   lambdas
+end
+
+function group_by_function_name(lambdas::Vector{Lambda})::Dict{String, Vector{Lambda}}
+  has_local_image = filter(l -> !isnothing(l.local_image), lambdas)
+  func_names = map(l -> get_function_name(l.local_image), has_local_image) 
+  lambdas_by_function = Dict()
+  for (func_name, lambda) in zip(func_names, has_local_image)
+    if !isnothing(lambda.local_image)
+      if !isnothing(func_name)
+        lambdas_for_name = get(lambdas_by_function, mod_func_name, Vector{Lambda}())
+        lambdas_by_function[mod_func_name] = [lambdas_for_name ; [lambda]]
+      end
+    end
+  end
+  lambdas_by_function
+end
+
+
+function show_all_lambdas(; 
+    local_image_attr::String = "tag", 
+    remote_image_attr::String = "tag",  
+    lambda_function_attr::String = "version",
+  )
+  lambdas_by_function = get_all_lambdas() |> group_by_function_name
+  out = ""
+  for (f_name, lambdas) in lambdas_by_function
+    out *= "\n$f_name"
+    # Header
+    out *= "\n\tLocal Image\tRemote Image\tLambda Function"
+    for lambda in lambdas
+      @debug lambda
+      li_attr = if local_image_attr == "tag"
+        lambda.local_image.Tag
+      elseif local_image_attr == "created at"
+        lambda.local_image.CreatedAt
+      elseif local_image_attr == "id"
+        lambda.local_image.ID[1:docker_hash_limit]
+      elseif local_image_attr == "digest"
+        lambda.local_image.Digest[1:docker_hash_limit]
+      end
+
+      ri_attr = if isnothing(lambda.remote_image)
+        ""
+      else
+        if remote_image_attr == "tag"
+          lambda.remote_image.imageTag
+        elseif remote_image_attr == "digest"
+          lambda.remote_image.imageDigest[1:docker_hash_limit]
+        end
+      end
+
+      lf_attr = if isnothing(lambda.lambda_function)
+        ""
+      else
+        if lambda_function_attr == "version"
+          lambda.lambda_function.Version
+        elseif lambda_function_attr == "digest"
+          lambda.lambda_function.CodeSha256
+        end
+      end
+      out *= "\n\t$li_attr\t$ri_attr\t$lf_attr"
+    end
+  end
+  println(out)
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState

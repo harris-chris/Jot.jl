@@ -2,6 +2,17 @@
 
 # WIP, please ignore this until ready
 
+we need some way to ensure that repo and module_name.func_name are 1:1
+in practice I think this means local_image needs to be immutable as regards to func_name
+also need to ensure that image is unique
+meaning that two versions of the same image cannot use different func_names
+either that or we store func_name per remote image rather than as a tag in the ecr repo
+but ecr repos map 1:1 with lambda functions? Actually no.
+So that's fine. func_name pkg_name stored in remoteimage, not ecr repo
+
+lambda should have all four
+
+
 what's the difference between create_ecr_repo and push_to_ecr? One creates the repo, the other pushes the image to it
 
 So far we have been defining Image etc structs as being purely text data, not storing any actual julia objects.
@@ -34,11 +45,13 @@ Probably best to have a drop-down for various versions.
       "repository":
       "tag":
   
-my-function  ResponseFunction -> LocalImage ->   Repo ->   Functions  
-              -> not current      ->0.1           ->0.1     ->earlyVersion1
-              -> not current      ->0.1           ->0.1     ->earlyVersion2
-              -> commit x83u2     ->0.2           ->0.2     ->midVersion
-              -> HEAD/current     ->latest        ->latest  ->latest (but out-of-date; hashes do not match, so put in red)
+aws_config
+    my-function  
+        ResponseFunction -> LocalImage ->   Repo ->   Functions  
+                  -> not current      ->0.1           ->0.1     ->earlyVersion1
+                  -> not current      ->0.1           ->0.1     ->earlyVersion2
+                  -> commit x83u2     ->0.2           ->0.2     ->midVersion
+                  -> HEAD/current     ->latest        ->latest  ->latest (but out-of-date; hashes do not match, so put in red)
 
 HASHES
 -------

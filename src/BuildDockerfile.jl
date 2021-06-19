@@ -67,7 +67,18 @@ function dockerfile_add_bootstrap(rf::ResponseFunction)::String
   """
 end
 
-function get_dockerfile(rf::ResponseFunction, julia_base_version::String)::String
+function dockerfile_add_labels(labels::Dict{String, String})::String
+  labels = join(["$k=$v" for (k, v) in labels], " ")
+  """
+  LABEL $labels
+  """
+end
+
+function get_dockerfile(
+    rf::ResponseFunction, 
+    julia_base_version::String;
+    labels::Dict{String, String},
+  )::String
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
@@ -77,6 +88,7 @@ function get_dockerfile(rf::ResponseFunction, julia_base_version::String)::Strin
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
     dockerfile_add_bootstrap(rf),
+    isnothing(labels) ? "" : dockerfile_add_labels(labels),
   ]; init = "")
 end
 
@@ -87,7 +99,6 @@ function get_dockerfile_build_cmd(
   )::Cmd
   options = ["--rm", "--iidfile", "id", "--tag", "$image_full_name_plus_tag"]
   no_cache && push!(options, "--no-cache")
-  @show options
   `docker build $options .`
 end
 
