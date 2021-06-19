@@ -459,7 +459,7 @@ function push_to_ecr!(image::LocalImage)::ECRRepo
   readchomp(`bash -c $push_script`)
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
-  image = all_images[img_idx]
+  image.Digest = all_images[img_idx].Digest
   repo
 end
 
