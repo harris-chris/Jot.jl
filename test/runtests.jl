@@ -53,13 +53,15 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     @test run_local_test(jt1_image, request, expected_response)
   end
 
-  jt1_repo = push_to_ecr(jt1_image)
+  jt1_repo = push_to_ecr!(jt1_image)
   @testset "ECR test" begin 
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(jt1_image))
     # Check that we can find the remote image which matches our local image
+    println(jt1_image)
+    println("ALL")
+    println(Jot.get_all_local_images())
     @test !isnothing(Jot.get_remote_image(jt1_image))
-
   end
 
   jt1_lambda_function = create_lambda_function(jt1_repo, jt1_role)
@@ -103,10 +105,10 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     @test isnothing(Jot.get_ecr_repo(jt1_image))
 
     # Delete image
-    jt1_repository = jt1_image.repository
+    jt1_repository = jt1_image.Repository
     delete_image(jt1_image, force=true)
     # Check it's deleted
-    @test isnothing(Jot.get_image(jt1_repository))
+    @test isnothing(Jot.get_local_image(jt1_repository))
 
     # Delete role
     delete_aws_role(jt1_role)

@@ -17,7 +17,7 @@ export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_local_image
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
-export create_ecr_repo, delete_ecr_repo, push_to_ecr
+export create_ecr_repo, delete_ecr_repo, push_to_ecr!
 export create_aws_role, delete_aws_role
 export create_lambda_function, delete_lambda_function, invoke_function
 
@@ -106,7 +106,7 @@ end
   Tag::String
 end
 StructTypes.StructType(::Type{LocalImage}) = StructTypes.Mutable()  
-Base.:(==)(a::LocalImage, b::LocalImage) = a.ID == b.ID
+Base.:(==)(a::LocalImage, b::LocalImage) = a.ID[1:docker_hash_limit] == b.ID[1:docker_hash_limit]
 
 @with_kw struct Container
   Command::Union{Missing, String} = missing
@@ -116,7 +116,7 @@ Base.:(==)(a::LocalImage, b::LocalImage) = a.ID == b.ID
   Names::Union{Missing, String} = missing
   Ports::Union{Missing, String} = missing
 end
-Base.:(==)(a::Container, b::Container) = a.ID == b.ID
+Base.:(==)(a::Container, b::Container) = a.ID[1:docker_hash_limit] == b.ID[1:docker_hash_limit]
 
 @with_kw mutable struct ECRRepo
   repositoryArn::Union{Missing, String} = missing
@@ -291,12 +291,21 @@ include("BuildDockerfile.jl")
 include("Runtime.jl")
 include("Scripts.jl")
 
+function get_response_function(local_image::LocalImage)::ResponseFunction
+  func_name = get_response_function_name(local_image)
+  mod_def = ModuleDefinition()
+end
+
+
+
 function get_response_function_name(rf::ResponseFunction)::String
   "$(get_package_name(rf.mod)).$(rf.response_function)"
 end
 
 function is_container_running(con::Container)::Bool
   running_containers = get_containers()
+  @debug running_containers
+  @debug con
   con in running_containers
 end
 
@@ -359,9 +368,7 @@ function create_image(
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end |> x -> split(x, ':')[2]
   all_images = get_all_local_images()
-  @debug all_images
   short_id = image_id[1:docker_hash_limit]
-  @debug short_id
   this_image = all_images[findfirst(img -> img.ID == short_id, all_images)]
   this_image
 end
@@ -399,8 +406,9 @@ function get_containers(args::Vector{String} = Vector{String}())::Vector{Contain
 end
 
 function get_containers(image::LocalImage; args::Vector{String}=Vector{String}())::Vector{Container}
+  @debug image.ID
   get_containers([
-                  ["--filter", "ancestor=$(image.ID[begin:docker_hash_limit])"]
+                  ["--filter", "ancestor=$(image.ID[1:docker_hash_limit])"]
                   args
                  ])
 end
@@ -439,7 +447,7 @@ function ecr_login_for_image(image::LocalImage)
   ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
 end
 
-function push_to_ecr(image::LocalImage)::ECRRepo
+function push_to_ecr!(image::LocalImage)::ECRRepo
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
@@ -449,6 +457,9 @@ function push_to_ecr(image::LocalImage)::ECRRepo
   end
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
   readchomp(`bash -c $push_script`)
+  all_images = get_all_local_images()
+  img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
+  image = all_images[img_idx]
   repo
 end
 
@@ -628,7 +639,7 @@ function get_environment_variables(image_inspect::AbstractDict{String, Any})::Di
       )
 end
 
-function get_function_name(
+function get_response_function_name(
     env_vars::AbstractDict{String, String}
   )::Union{Nothing, String}
   try
@@ -640,25 +651,25 @@ function get_function_name(
   end
 end
 
-function get_function_name(image::LocalImage)::Union{Nothing, String}
+function get_response_function_name(image::LocalImage)::Union{Nothing, String}
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
   println(image_inspect_json)
   image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
   env_vars = get_environment_variables(image_inspect)
   println(env_vars)
-  get_function_name(env_vars)
+  get_response_function_name(env_vars)
 end
 
-function get_function_name(images::Vector{LocalImage})::Vector{String}
+function get_response_function_name(images::Vector{LocalImage})::Vector{String}
   image_ids = join([img.ID for img in images], " ")
   image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
   env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
-  [get_function_name(env_vars) for env_vars in env_var_arr]
+  [get_response_function_name(env_vars) for env_vars in env_var_arr]
 end
 
-function get_function_name(lambda::Lambda)::Union{Nothing, String}
+function get_response_function_name(lambda::Lambda)::Union{Nothing, String}
   if !isnothing(lambda.local_image)
-    get_function_name(local_image)
+    get_response_function_name(local_image)
   else
     nothing
   end
@@ -686,12 +697,46 @@ function get_remote_image(local_image)::Union{Nothing, RemoteImage}
 end
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
+  @debug local_image.Digest
+  @debug remote_image.imageDigest
   local_image.Digest == remote_image.imageDigest
 end
 
 function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bool
   hash_only = split(remote_image.imageDigest, ':')[2]
   hash_only == lambda_function.CodeSha256
+end
+
+function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, Matrix{String}}
+  headers = Dict("AWS Config" => ["Account ID"],
+                 "Response Function" => ["Function Name", "Commit"],
+                 "Local Image" => ["Image Name", "ID", "Tag"],
+                 "Remote Image" => ["Tag"],
+                 "Lambda Function" => ["Name", "Last Modified"],
+                )
+  get_datum(aws_config::AWSConfig) = [aws_config.account_id]
+  get_datum(rf::ResponseFunction) = [get_response_function_name(rf), rf.commit]
+  get_datum(img::LocalImage) = [get_image_suffix(img), imd.ID, img.Tag]
+  get_datum(img::RemoteImage) = [img.imageTag]
+  get_datum(lf::LambdaFunction) = [lf.FunctionName, lf.LastModified]
+
+  data = [
+          [isnothing(l.aws_config) ? [""] : get_datum(l.aws_config) ;
+           isnothing(l.response_function) ? ["", ""] : get_datum(l.response_function) ;
+           isnothing(l.local_image) ? ["", "", ""] : get_datum(l.local_image) ;
+           isnothing(l.remote_image) ? [""] : get_datum(l.remote_image) ;
+           isnothing(l.lambda_function) ? ["", ""] : get_datum(l.lambda_function)
+          ] for l in lambdas
+         ]
+  (headers, data)
+end
+
+function show_lambdas()
+  lambdas = get_all_lambdas()
+  (headers, data) = to_table(lambdas)
+  headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
+                    [x for bottom in values(headers) for x in bottom])
+  pretty_table(data; headers_matrix)
 end
 
 function get_all_lambdas()::Vector{Lambda}
@@ -744,7 +789,7 @@ end
 
 function group_by_function_name(lambdas::Vector{Lambda})::Dict{String, Vector{Lambda}}
   has_local_image = filter(l -> !isnothing(l.local_image), lambdas)
-  func_names = map(l -> get_function_name(l.local_image), has_local_image) 
+  func_names = map(l -> get_response_function_name(l.local_image), has_local_image) 
   lambdas_by_function = Dict()
   for (func_name, lambda) in zip(func_names, has_local_image)
     if !isnothing(lambda.local_image)
@@ -756,7 +801,6 @@ function group_by_function_name(lambdas::Vector{Lambda})::Dict{String, Vector{La
   end
   lambdas_by_function
 end
-
 
 function show_all_lambdas(; 
     local_image_attr::String = "tag", 

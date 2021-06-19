@@ -2,6 +2,8 @@
 
 # WIP, please ignore this until ready
 
+Should ResponseFunction use a PackageSpec?
+
 we need some way to ensure that repo and module_name.func_name are 1:1
 in practice I think this means local_image needs to be immutable as regards to func_name
 also need to ensure that image is unique
@@ -9,6 +11,8 @@ meaning that two versions of the same image cannot use different func_names
 either that or we store func_name per remote image rather than as a tag in the ecr repo
 but ecr repos map 1:1 with lambda functions? Actually no.
 So that's fine. func_name pkg_name stored in remoteimage, not ecr repo
+
+Need a test that also includes dependencies - a package, not just a module
 
 lambda should have all four attributes. 
 lambda_function should store git commit
@@ -19,6 +23,9 @@ right now, the lambda connection process does notwork back from lambda_function 
 that's fine though
 
 Test ModuleDefinition works 
+
+want some sort of general purpose table-writing thing. maybe use an existing package
+The table need not be configurable, that's what the JSON is for
 
 what's the difference between create_ecr_repo and push_to_ecr? One creates the repo, the other pushes the image to it
 
