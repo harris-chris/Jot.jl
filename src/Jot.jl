@@ -14,7 +14,7 @@ export AWSConfig
 export ResponseFunction, LocalImage
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
-export run_image_locally, create_image, delete_image, get_images
+export run_image_locally, create_image, delete_image, get_local_image
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr
@@ -82,25 +82,26 @@ struct ResponseFunction
   end
 end
 
-@with_kw struct LocalImage
-  repository::String
-  tag::String
-  id::String
-  createdat::Union{Missing, String} = missing
-  size::Union{Missing, String} = missing
+@with_kw mutable struct LocalImage
+  CreatedAt::Union{Missing, String} = missing
+  Digest::String
+  ID::String
+  Repository::String
+  Size::Union{Missing, String} = missing
+  Tag::String
 end
-
-Base.:(==)(a::LocalImage, b::LocalImage) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
+StructTypes.StructType(::Type{LocalImage}) = StructTypes.Mutable()  
+Base.:(==)(a::LocalImage, b::LocalImage) = a.ID == b.ID
 
 @with_kw struct Container
-  id::String
-  image::String
-  command::Union{Missing, String} = missing
-  createdat::Union{Missing, String} = missing
-  ports::Union{Missing, String} = missing
-  names::Union{Missing, String} = missing
+  Command::Union{Missing, String} = missing
+  CreatedAt::Union{Missing, String} = missing
+  ID::String
+  Image::String
+  Names::Union{Missing, String} = missing
+  Ports::Union{Missing, String} = missing
 end
-Base.:(==)(a::Container, b::Container) = a.id[1:docker_hash_limit] == b.id[1:docker_hash_limit]
+Base.:(==)(a::Container, b::Container) = a.ID == b.ID
 
 @with_kw mutable struct ECRRepo
   repositoryArn::Union{Missing, String} = missing
@@ -178,11 +179,12 @@ StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
 
 struct Lambda
-  function_name::String
+  function_name::Union{Nothing, String}
   local_image::Union{Nothing, LocalImage}
-  repo::Union{Nothing, ECRRepo}
+  remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
 end
+Base.show(l::Lambda) = "$(l.function_name)\t$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
 
 struct ContainersStillRunning <: Exception containers::Vector{Container} end
 
@@ -215,7 +217,7 @@ function get_image_full_name(
 end
 
 function get_image_full_name(image::LocalImage)::String
-  image.repository
+  image.Repository
 end
 
 function get_image_full_name_plus_tag(
@@ -227,15 +229,15 @@ function get_image_full_name_plus_tag(
 end
 
 function get_image_full_name_plus_tag(image::LocalImage)::String
-  "$(image.repository):$(image.tag)"
+  "$(image.Repository):$(image.Tag)"
 end
 
 function get_aws_id(image::LocalImage)::String
-  split(image.repository, '.')[1]
+  split(image.Repository, '.')[1]
 end
 
 function get_aws_region(image::LocalImage)::String
-  split(image.repository, '.')[4]
+  split(image.Repository, '.')[4]
 end
 
 function get_aws_config(image::LocalImage)::AWSConfig
@@ -243,7 +245,7 @@ function get_aws_config(image::LocalImage)::AWSConfig
 end
 
 function get_image_suffix(image::LocalImage)::String
-  split(image.repository, '/')[2]
+  split(image.Repository, '/')[2]
 end
 
 function get_role_arn_string(
@@ -284,12 +286,12 @@ end
 
 function stop_container(con::Container)
   if is_container_running(con)
-    run(`docker stop $(con.id)`)
+    run(`docker stop $(con.ID)`)
   end
 end
 
 function delete_container(con::Container)
-  run(`docker container rm $(con.id)`)
+  run(`docker container rm $(con.ID)`)
 end
 
 function move_to_temporary_build_directory(mod::Module)::String
@@ -339,11 +341,9 @@ function create_image(
                                        no_cache)
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end
-  return LocalImage(
-    repository = get_image_full_name(aws_config, image_suffix),
-    tag = image_tag,
-    id = image_id,
-  )
+  all_images = get_all_local_images()
+  this_image = all_images[findfirst(img -> img.ID == image_id, all_images)]
+  this_image
 end
 
 function split_line_by_whitespace(l::AbstractString)::Vector{String}
@@ -354,22 +354,22 @@ function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T
   if raw_output == ""
     Vector{T}()
   else
-    as_lower = lowercase(raw_output)
-    by_line = split(as_lower, "\n")
+    # as_lower = lowercase(raw_output)
+    by_line = split(raw_output, "\n")
     as_dicts = [JSON3.read(js_str) for js_str in by_line]
     type_args = [[dict[Symbol(fn)] for fn in fieldnames(T)] for dict in as_dicts]
     [T(args...) for args in type_args]
   end
 end
 
-function get_image(repository::String)::Union{Nothing, LocalImage}
-  all = get_images()
-  index = findfirst(x -> x.repository == repository, all)
+function get_local_image(repository::String)::Union{Nothing, LocalImage}
+  all = get_all_local_images()
+  index = findfirst(x -> x.Repository == repository, all)
   isnothing(index) ? nothing : all[index]
 end
 
-function get_images(args::Vector{String} = Vector{String}())::Vector{LocalImage}
-  docker_output = readchomp(`docker image ls $args --format '{{json .}}'`)
+function get_all_local_images(args::Vector{String} = Vector{String}())::Vector{LocalImage}
+  docker_output = readchomp(`docker image ls $args --digests --format '{{json .}}'`)
   parse_docker_ls_output(LocalImage, docker_output)
 end
 
@@ -586,7 +586,7 @@ function run_image_locally(image::LocalImage; detached::Bool=true)::Container
   args = ["-p", "9000:8080"]
   detached && push!(args, "-d")
   container_id = readchomp(`docker run $args $(image.id)`)
-  Container(id=container_id, image=image.id)
+  Container(ID=container_id, Image=image.id)
 end
 
 function send_local_request(request::String)
@@ -622,9 +622,82 @@ end
 
 # end
 
-function get_lambda(repo::LocalImage)::Lambda
-  # run image_ls, look for same Arn
-  # run aws lambda list-functions
+function get_all_remote_images()::Vector{RemoteImage}
+  repos = get_all_ecr_repos()
+  remote_images = Vector{RemoteImage}()
+  for repo in repos
+    images_json = readchomp(`aws ecr list-images --repository-name=$(repo.repositoryName)`)
+    images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
+    for image in images
+      push!(remote_images, RemoteImage(imageDigest=image.imageDigest,
+                                       imageTag=image.imageTag,
+                                       ecr_repo=repo))
+    end
+  end
+  remote_images
+end
+
+function get_remote_image(local_image)::Union{Nothing, RemoteImage}
+  all_remote_images = get_all_remote_images()
+  index = findfirst(remote_image -> matches(local_image, remote_image), all_remote_images)
+  isnothing(index) ? nothing : all_remote_images[index]
+end
+
+function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
+  local_image.Digest == remote_image.imageDigest
+end
+
+function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bool
+  hash_only = split(remote_image.imageDigest, ':')[2]
+  hash_only == lambda_function.CodeSha256
+end
+
+function get_all_lambdas()::Vector{Lambda}
+  all_local = get_all_local_images()
+  all_remote = get_all_remote_images()
+  all_functions = get_all_lambda_functions()
+  lambdas = [Lambda(nothing, l, nothing, nothing) for l in all_local]
+
+  function match_with_lambdas(
+      lambdas::Vector{Lambda}, 
+      l2::Vector{T}, 
+      match::Function,
+      add::Function,
+  )::Vector{Lambda} where {T}
+    if length(l2) == 0
+      lambdas
+    else
+      curr_l2 = l2[1]; other_l2 = l2[2:end]
+      any_matches = [match(lm, curr_l2) for lm in lambdas]
+      lambdas = [m ? add(lm, curr_l2) : lm for (m, lm) in zip(any_matches, lambdas)]
+      any(any_matches) || push!(lambdas, add(Lambda(nothing, nothing, nothing, nothing), curr_l2))
+      match_with_lambdas(lambdas, other_l2, match, add)
+    end
+  end
+
+  function match_lambda(lm::Lambda, remote::RemoteImage)::Bool 
+    isnothing(lm.local_image) ? false : matches(lm.local_image, remote)
+  end
+
+  function match_lambda(lm::Lambda, func::LambdaFunction)::Bool 
+    isnothing(lm.remote_image) ? false : matches(lm.remote_image, func)
+  end
+
+  add_lambda(lm::Lambda, remote::RemoteImage)::Lambda = Lambda(lm.function_name, lm.local_image, remote, lm.lambda_function)
+  add_lambda(lm::Lambda, func::LambdaFunction)::Lambda = Lambda(lm.function_name, lm.local_image, lm.remote_image, func)
+
+  lambdas = match_with_lambdas(lambdas,
+                     all_remote,
+                     match_lambda,
+                     add_lambda,
+                    )
+
+  lambdas = match_with_lambdas(lambdas,
+                     all_functions,
+                     match_lambda,
+                     add_lambda,
+                    )
+  lambdas
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState

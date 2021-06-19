@@ -55,8 +55,11 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
 
   jt1_repo = push_to_ecr(jt1_image)
   @testset "ECR test" begin 
-    # Check we can find it
+    # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(jt1_image))
+    # Check that we can find the remote image which matches our local image
+    @test !isnothing(Jot.get_remote_image(jt1_image))
+
   end
 
   jt1_lambda_function = create_lambda_function(jt1_repo, jt1_role)
@@ -72,6 +75,10 @@ test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
     end
     (status, response) = invoke_function(request, jt1_lambda_function)
     @test response == expected_response
+  end
+
+  @testset "Lambda related functions" begin
+    # Check that we can 
   end
   
   # Clean up
