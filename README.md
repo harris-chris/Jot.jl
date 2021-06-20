@@ -2,7 +2,24 @@
 
 # WIP, please ignore this until ready
 
+If the user has provided a PackageSpec which is a url only, we have no easy way to get the commit (it may not have one) nor the tree-hash. We need to add these labels in the dockerfile. Can we
+- download these as part of the dockerfile creation process
+- then read the hash in the dockerfile, add it as a label
+- then add it as a local path in the docker julia
+
+OR 
+
+- download it locally, get the uuid, copy it to the image, delete it locally
++ we need some kind of general add_package_to_dockerfile function
+  would this all just be text in the dockerfile? It can't be if we are to get the labels
+
+- can labels be retrospectively added to an image?
+
+Need to rename create_image, delete_image etc to eg create_local_image
+
 Should ResponseFunction use a PackageSpec?
+
+tidy up dependencies, think we can get rid of some
 
 we need some way to ensure that repo and module_name.func_name are 1:1
 in practice I think this means local_image needs to be immutable as regards to func_name

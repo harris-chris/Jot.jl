@@ -8,10 +8,11 @@ using Parameters
 using Base.Filesystem
 using LibCURL
 using Dates
+using IsURL
 
 # EXPORTS
 export AWSConfig
-export ResponseFunction, LocalImage
+export Responder, LocalImage
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_local_image
@@ -28,6 +29,7 @@ struct InterpolationNotFoundException <: Exception interpolation::String end
 const docker_hash_limit = 12
 
 @enum LambdaFunctionState pending active
+@enum ResponderType path_type url_type package_type
 
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
@@ -48,54 +50,80 @@ function get_commit(path::String)::Union{Missing, String}
   end
 end
 
+function get_tree_hash(path::String)::String
+  Pkg.GitTools.tree_hash(path) |> String
+end
+
 function get_commit(mod::Module)::Union{Missing, String}
   mod_path = get_package_path(mod)
   get_commit(mod_path)
 end
 
-struct ResponseFunction
-  mod::Union{Module, ModuleDefinition}
+struct Responder
+  pkg::Pkg.Types.PackageSpec
   response_function::Symbol
+  type::ResponderType
   commit::Union{Missing, String}
+  tree_hash::Union{Missing, String}
 
-  function ResponseFunction(
-      module_name::String,
-      module_path::String,
-      function_name::String,
-    )::ResponseFunction
-    new(ModuleDefinition(module_name, module_path), function_name)
-  end
-
-  function ResponseFunction(
-      full_path::String,
-      function_name::String,
-    )::ResponseFunction
-    name = splitpath(full_path)[end]
-    path = joinpath(splitpath(module_path)[begin:end-2]...)
-    commit = get_commit(path)
-    mod_def = ModuleDefinition(name, path)
-    new(mod_def, function_name, commit)
-  end
-
-  function ResponseFunction(
+  function Responder(
       mod::Module, 
-      response_function::String,
-  )::ResponseFunction
-    new(mod, Symbol(response_function))
+      response_function::Symbol,
+  )::Responder
+    pkg_path = get_package_path(mod)
+    ResponderFromPath(path=pkg_path, response_function=response_function)
   end
 
-  function ResponseFunction(
-      mod::Module,
+  function Responder(
+      package_spec::Pkg.Types.PackageSpec, 
       response_function::Symbol,
-  )::ResponseFunction
-    commit = get_commit(mod)
-    if (response_function in names(mod, all=true))
-      new(mod, response_function, commit)
+  )::Responder
+    if !isnothing(package_spec.repo.source)
+      path_url = package_spec.repo.source
+      if isurl(path_url)
+        # TODO URL
+        error("Not implemented URL")
+      elseif isrelativeurl(path_url)
+        ResponderFromPath(path_url, response_function)
+      else
+        error("path/url $path_url not recognized")
+      end
     else
-      throw(UndefVarError("Cannot find function $response_function in module $mod"))
+      error("Not implemented")
+    end
+  end
+
+  function ResponderFromPath(
+      path::String,
+      response_function::Symbol,
+    )::Responder
+    if !isdir(path)
+      error("Unable to find local directory $(path)")
+    else
+      path = path[end] == '/' ? path[1:end-1] : path
+      new(PackageSpec(path=path),
+         response_function,
+         path_type,
+         get_commit(path),
+         get_tree_hash(path),
+        )
     end
   end
 end
+
+function get_folder_name(res::Responder)::String
+  if !isnothing(res.pkg.name)
+    res.pkg.name
+  else
+    if res.type == path_type
+      split(res.pkg.repo.source, '/')[end]
+    else
+      # TODO others
+    end
+  end
+end
+
+
 
 @with_kw mutable struct LocalImage
   CreatedAt::Union{Missing, String} = missing
@@ -195,7 +223,7 @@ Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionA
 
 struct Lambda
   aws_config::Union{Nothing, AWSConfig}
-  response_function::Union{Nothing, ResponseFunction}
+  response_function::Union{Nothing, Responder}
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -207,10 +235,6 @@ struct ContainersStillRunning <: Exception containers::Vector{Container} end
 function get_package_path(mod::Module)::String
   module_path = Base.moduleroot(mod) |> pathof
   joinpath(splitpath(module_path)[begin:end-2]...)
-end
-
-function get_package_path(mod::ModuleDefinition)::String
-  mod.module_path
 end
 
 function get_package_name(mod::Module)::String
@@ -291,14 +315,12 @@ include("BuildDockerfile.jl")
 include("Runtime.jl")
 include("Scripts.jl")
 
-function get_response_function(local_image::LocalImage)::ResponseFunction
+function get_response_function(local_image::LocalImage)::Responder
   func_name = get_response_function_name(local_image)
   mod_def = ModuleDefinition()
 end
 
-
-
-function get_response_function_name(rf::ResponseFunction)::String
+function get_response_function_name(rf::Responder)::String
   "$(get_package_name(rf.mod)).$(rf.response_function)"
 end
 
@@ -343,7 +365,7 @@ end
 
 function create_image(
     image_suffix::String,
-    rf::ResponseFunction,
+    rf::Responder,
     aws_config::AWSConfig; 
     image_tag::String = "latest",
     no_cache::Bool = false,
@@ -577,7 +599,7 @@ end
 # THIS CURRENTLY DEPRECATED, TRYING TO FIGURE OUT WHAT TO DO WITH IT
 function create_lambda_function(
     name::String,
-    rf::ResponseFunction,
+    rf::Responder,
     aws_config::AWSConfig;
     role::Union{Nothing, AWSRole} = nothing,
     image_tag::Union{Nothing, String} = nothing,
@@ -715,7 +737,7 @@ function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, 
                  "Lambda Function" => ["Name", "Last Modified"],
                 )
   get_datum(aws_config::AWSConfig) = [aws_config.account_id]
-  get_datum(rf::ResponseFunction) = [get_response_function_name(rf), rf.commit]
+  get_datum(rf::Responder) = [get_response_function_name(rf), rf.commit]
   get_datum(img::LocalImage) = [get_image_suffix(img), imd.ID, img.Tag]
   get_datum(img::RemoteImage) = [img.imageTag]
   get_datum(lf::LambdaFunction) = [lf.FunctionName, lf.LastModified]
