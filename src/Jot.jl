@@ -370,19 +370,24 @@ function get_responder_add_script_and_labels(
     res::LocalPackageResponder,
     build_dir::String,
     package_compile::Bool,
-  )::Tuple{String, Dict{String, String}}
+  )::String
   local_path = res.pkg.repo.source
   package_name = get_responder_package_name(res)
   build_dir = move_local_to_build_directory(build_dir, local_path, package_name)
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
+  add_script = dockerfile_add_target_package(package_name)
+  add_script
+end
+
+function get_labels(
+    res::LocalPackageResponder,
+  )::Dict{String, String}
   img_labels = Dict("RESPONDER_PACKAGE_NAME" => get_responder_package_name(res),
                     "RESPONDER_FUNCTION_NAME" => get_responder_function_name(res),
                     "RESPONDER_COMMIT" => get_commit(res),
                     "RESPONDER_TREE_HASH" => get_tree_hash(res),
                    )
-  add_script = dockerfile_add_target_package(package_name)
-  (add_script, img_labels)
 end
 
 function create_image(
@@ -398,7 +403,8 @@ function create_image(
   build_dir = create_build_directory()
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
-  (add_script, labels) = get_responder_add_script_and_labels(res, build_dir, package_compile)
+  add_script = get_responder_add_script_and_labels(res, build_dir, package_compile)
+  labels = get_labels(res)
   dockerfile = get_dockerfile(
                               add_script, 
                               labels, 
