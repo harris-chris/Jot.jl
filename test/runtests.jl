@@ -9,23 +9,27 @@ using Jot
 Pkg.develop(PackageSpec(path="./test/JotTest1"))
 using JotTest1
 
-aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
-test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
+const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
+const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
+const jot_path = pwd()
 
 @show ARGS
 
+function reset_response_suffix()
+  response_suffix = randstring(12)
+  open(joinpath(jot_path, "./test/JotTest1/response_suffix"), "w") do rsfile
+    write(rsfile, response_suffix)
+  end
+end
+
 if "local_path" in ARGS || length(ARGS) == 0
   @testset "Test from local path" begin
-    response_suffix = randstring(12)
-    open("./test/JotTest1/response_suffix", "w") do rsfile
-      write(rsfile, response_suffix)
-    end
+    reset_response_suffix()
     lp_pkg = PackageSpec(path="./test/JotTest1")
     lp_rf = Responder(lp_pkg, :response_func)
     lp_image_name = "lp1" * test_suffix
-    lp_role_name = "lp1-execution-role" * test_suffix
     lp_image = create_image(lp_image_name, lp_rf, aws_config)
-    @testset "Local test" begin
+    @testset "Test that image can be created" begin
       # Test that container runs
       lp_cont = run_image_locally(lp_image)
       @test is_container_running(lp_cont)
@@ -36,6 +40,8 @@ if "local_path" in ARGS || length(ARGS) == 0
       end
       # Check container has stopped
       @test length(get_containers(lp_image)) == 0
+    end
+    @testset "Test that image runs" begin
       # Run local test of container, without value
       @test run_local_test(lp_image)
       # Run local test of container, with expected response
@@ -43,6 +49,22 @@ if "local_path" in ARGS || length(ARGS) == 0
       expected_response = JotTest1.response_func(request)
       @test run_local_test(lp_image, request, expected_response)
     end
+  end
+end
+
+if "labels" in ARGS || length(ARGS) == 0
+  @testset "Test image labels match function details" begin
+    reset_response_suffix()
+    lp_pkg = PackageSpec(path="./test/JotTest1")
+    lp_res = Responder(lp_pkg, :response_func)
+    lp_image_name = "lp1" * test_suffix
+    lp_image = create_image(lp_image_name, lp_res, aws_config)
+    @test Jot.get_labels(lp_res) == Jot.get_labels(lp_image)
+    @show pwd()
+    # Then create a new function
+    reset_response_suffix()
+    # Check that the tree hash has changed
+    @test Jot.get_labels(lp_res) != Jot.get_labels(lp_image)
   end
 end
 

@@ -344,7 +344,7 @@ function delete_container(con::Container)
   run(`docker container rm $(con.ID)`)
 end
 
-function move_local_to_build_directory(build_dir::String, path::String, name::String)::String
+function move_local_to_build_directory!(build_dir::String, path::String, name::String)
   Base.Filesystem.cp(path, joinpath(build_dir, name))
 end
 
@@ -354,28 +354,25 @@ function create_build_directory()::String
   build_dir
 end
 
-function write_bootstrap_to_build_directory(path::String)
+function write_bootstrap_to_build_directory!(path::String)
   open(joinpath(path, "bootstrap"), "w") do f
     write(f, bootstrap_script)
   end
 end
 
-function write_precompile_script_to_build_directory(path::String, package_compile::Bool)
+function write_precompile_script_to_build_directory!(path::String, package_compile::Bool)
   open(joinpath(path, "precompile.jl"), "w") do f
     write(f, get_precompile_julia_script(package_compile))
   end
 end
 
-function get_responder_add_script_and_labels(
+function get_responder_add_script(
     res::LocalPackageResponder,
     build_dir::String,
-    package_compile::Bool,
   )::String
   local_path = res.pkg.repo.source
   package_name = get_responder_package_name(res)
-  build_dir = move_local_to_build_directory(build_dir, local_path, package_name)
-  write_bootstrap_to_build_directory(build_dir)
-  write_precompile_script_to_build_directory(build_dir, package_compile)
+  move_local_to_build_directory!(build_dir, local_path, package_name)
   add_script = dockerfile_add_target_package(package_name)
   add_script
 end
@@ -401,10 +398,11 @@ function create_image(
     package_compile::Bool = false,
   )::LocalImage
   build_dir = create_build_directory()
-  write_bootstrap_to_build_directory(build_dir)
-  write_precompile_script_to_build_directory(build_dir, package_compile)
-  add_script = get_responder_add_script_and_labels(res, build_dir, package_compile)
+  write_bootstrap_to_build_directory!(build_dir)
+  write_precompile_script_to_build_directory!(build_dir, package_compile)
+  add_script = get_responder_add_script(res, build_dir)
   labels = get_labels(res)
+  # TODO put dockerfile together here
   dockerfile = get_dockerfile(
                               add_script, 
                               labels, 
@@ -474,6 +472,12 @@ end
 function delete_image(image::LocalImage; force::Bool=false)
   args = force ? ["--force"] : []
   run(`docker image rm $(image.ID) $args`)
+end
+
+function get_labels(image::LocalImage)::Dict{String, String}
+  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
+  get_labels(image_inspect)
 end
 
 function run_local_test(
@@ -662,6 +666,10 @@ function get_environment_variables(image_inspect::AbstractDict{String, Any})::Di
   Dict(
        env_split[1] => env_split[2] for env_split in map(x -> split(x, "="), envs)
       )
+end
+
+function get_labels(image_inspect::AbstractDict{String, Any})::Dict{String, String}
+  image_inspect["ContainerConfig"]["Labels"]
 end
 
 function get_response_function_name(
