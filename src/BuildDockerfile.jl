@@ -27,23 +27,13 @@ function dockerfile_add_runtime_directories()::String
   """
 end
 
-function dockerfile_add_target_package(rf::Responder)::String
-  if !isnothing(rf.pkg.repo.source)
-    if isdir(rf.pkg.repo.source)
-      error("Unable to find local directory $(rf.pkg.repo.source)")
-    else
-      local_path = rf.pkg.repo.source
-      docker_dir_name = isnothing(rf.pkg.name) ? get_package_name(local_path) : rf.pkg.name
-      add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$docker_dir_name\\\")"
-      """
-      RUN mkdir ./$docker_dir_name
-      COPY ./$local_path ./$docker_dir_name
-      RUN julia -e \"$add_module_script\"
-      """
-    end
-  else
-    error("Unable to find definition of target package")
-  end
+function dockerfile_add_target_package(package_name::String)::String
+  add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$package_name\\\")"
+  """
+  RUN mkdir ./$package_name
+  COPY ./$package_name ./$package_name
+  RUN julia -e \"$add_module_script\"
+  """
 end
 
 function dockerfile_add_jot()::String
@@ -64,21 +54,19 @@ function dockerfile_add_precompile(package_compile::Bool=false)::String
   precompile_script = get_precompile_julia_script(package_compile)
 end
 
-function dockerfile_add_bootstrap(rf::Responder)::String
+function dockerfile_add_bootstrap(
+    package_name::String, 
+    function_name::String,
+  )::String
   """
-  ENV PKG_NAME=$(get_package_name(rf.mod))
-  ENV FUNC_NAME=$(get_response_function_name(rf))
+  ENV PKG_NAME=$(package_name)
+  ENV FUNC_FULL_NAME=$package_name.$function_name
   COPY ./precompile.jl ./
   COPY ./bootstrap ./
   RUN julia precompile.jl
   RUN chmod 775 . -R
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """
-end
-
-function dockerfile_add_response_function_labels(rf::Responder)::String
-  labels = Dict(String(name) => rf.name for name in fieldnames(rf) if !ismissing(rf.name))
-  dockerfile_add_labels(labels)
 end
 
 function dockerfile_add_labels(labels::Dict{String, String})::String
@@ -89,21 +77,22 @@ function dockerfile_add_labels(labels::Dict{String, String})::String
 end
 
 function get_dockerfile(
-    rf::Responder, 
-    julia_base_version::String;
+    add_responder_script::String,
     labels::Dict{String, String},
+    julia_base_version::String,
+    responder_package_name::String,
+    responder_function_name::String,
   )::String
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
-    dockerfile_add_module(rf.mod),
+    add_responder_script,
+    dockerfile_add_labels(labels),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
-    dockerfile_add_response_function_labels(rf),
-    dockerfile_add_bootstrap(rf),
-    isnothing(labels) ? "" : dockerfile_add_labels(labels),
+    dockerfile_add_bootstrap(responder_package_name, responder_function_name),
   ]; init = "")
 end
 

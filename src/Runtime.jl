@@ -15,6 +15,7 @@ function get_endpoint(host::String)::String
 end
 
 function lambda_respond(response::String, endpoint::String, aws_request_id::String)
+  println("LAMBDA respond with $response")
   HTTP.request(
     "POST", 
     "$(endpoint)$(aws_request_id)/response", 

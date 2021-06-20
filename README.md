@@ -9,6 +9,14 @@ If the user has provided a PackageSpec which is a url only, we have no easy way 
 
 OR 
 
+We are trying to get the commit / tree hash before building the image, because we want the labels
+- for a local path - just do it directly
+- for a package - look up from registry
+- from a remote resource - this is tricky
+- are we comfortable with the idea that when the Responder instantiates, it will do everything necessary to get the hash?
+  from a UI perspective, don't think we want that
+
+
 - download it locally, get the uuid, copy it to the image, delete it locally
 + we need some kind of general add_package_to_dockerfile function
   would this all just be text in the dockerfile? It can't be if we are to get the labels

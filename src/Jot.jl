@@ -9,10 +9,12 @@ using Base.Filesystem
 using LibCURL
 using Dates
 using IsURL
+using TOML
 
 # EXPORTS
 export AWSConfig
-export Responder, LocalImage
+export Responder
+export LocalImage
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_local_image
@@ -29,7 +31,6 @@ struct InterpolationNotFoundException <: Exception interpolation::String end
 const docker_hash_limit = 12
 
 @enum LambdaFunctionState pending active
-@enum ResponderType path_type url_type package_type
 
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
@@ -51,7 +52,7 @@ function get_commit(path::String)::Union{Missing, String}
 end
 
 function get_tree_hash(path::String)::String
-  Pkg.GitTools.tree_hash(path) |> String
+  Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
 function get_commit(mod::Module)::Union{Missing, String}
@@ -59,71 +60,78 @@ function get_commit(mod::Module)::Union{Missing, String}
   get_commit(mod_path)
 end
 
-struct Responder
+abstract type AbstractResponder end
+
+mutable struct LocalPackageResponder <: AbstractResponder
   pkg::Pkg.Types.PackageSpec
   response_function::Symbol
-  type::ResponderType
-  commit::Union{Missing, String}
-  tree_hash::Union{Missing, String}
+  local_dir::String
 
-  function Responder(
-      mod::Module, 
-      response_function::Symbol,
-  )::Responder
-    pkg_path = get_package_path(mod)
-    ResponderFromPath(path=pkg_path, response_function=response_function)
-  end
-
-  function Responder(
-      package_spec::Pkg.Types.PackageSpec, 
-      response_function::Symbol,
-  )::Responder
-    if !isnothing(package_spec.repo.source)
-      path_url = package_spec.repo.source
-      if isurl(path_url)
-        # TODO URL
-        error("Not implemented URL")
-      elseif isrelativeurl(path_url)
-        ResponderFromPath(path_url, response_function)
-      else
-        error("path/url $path_url not recognized")
-      end
-    else
-      error("Not implemented")
-    end
-  end
-
-  function ResponderFromPath(
+  function LocalPackageResponder(
       path::String,
       response_function::Symbol,
-    )::Responder
+    )::LocalPackageResponder
     if !isdir(path)
       error("Unable to find local directory $(path)")
     else
-      path = path[end] == '/' ? path[1:end-1] : path
+      path = path[end] == '/' ? path[1:end-1] : path |> abspath
       new(PackageSpec(path=path),
          response_function,
-         path_type,
-         get_commit(path),
-         get_tree_hash(path),
+         path,
         )
     end
   end
 end
 
-function get_folder_name(res::Responder)::String
+function Responder(
+    package_spec::Pkg.Types.PackageSpec, 
+    response_function::Symbol,
+)::AbstractResponder
+  if !isnothing(package_spec.repo.source)
+    path_url = package_spec.repo.source
+    if isurl(path_url)
+      # TODO URL
+      error("Not implemented URL")
+    elseif isrelativeurl(path_url)
+      LocalPackageResponder(path_url, response_function)
+    else
+      error("path/url $path_url not recognized")
+    end
+  else
+    error("Not implemented")
+  end
+end
+
+function Responder(
+    mod::Module, 
+    response_function::Symbol,
+)::LocalPackageResponder
+  pkg_path = get_package_path(mod)
+  LocalPackageResponder(pkg_path, response_function)
+end
+
+function get_responder_package_name(res::LocalPackageResponder)::String
   if !isnothing(res.pkg.name)
     res.pkg.name
   else
-    if res.type == path_type
-      split(res.pkg.repo.source, '/')[end]
-    else
-      # TODO others
+    open(joinpath(res.local_dir, "Project.toml"), "r") do file
+      proj = file |> TOML.parse
+      proj["name"]
     end
   end
 end
 
+function get_commit(res::LocalPackageResponder)::String
+  get_commit(res.local_dir)
+end
 
+function get_tree_hash(res::LocalPackageResponder)::String
+  get_tree_hash(res.local_dir)
+end
+
+function get_responder_function_name(res::LocalPackageResponder)::String
+  res.response_function |> String
+end
 
 @with_kw mutable struct LocalImage
   CreatedAt::Union{Missing, String} = missing
@@ -223,7 +231,7 @@ Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionA
 
 struct Lambda
   aws_config::Union{Nothing, AWSConfig}
-  response_function::Union{Nothing, Responder}
+  response_function::Union{Nothing, AbstractResponder}
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -315,13 +323,8 @@ include("BuildDockerfile.jl")
 include("Runtime.jl")
 include("Scripts.jl")
 
-function get_response_function(local_image::LocalImage)::Responder
-  func_name = get_response_function_name(local_image)
-  mod_def = ModuleDefinition()
-end
-
-function get_response_function_name(rf::Responder)::String
-  "$(get_package_name(rf.mod)).$(rf.response_function)"
+function get_response_function_name(res::LocalPackageResponder)::String
+  "$(get_responder_package_name(res)).$(res.response_function)"
 end
 
 function is_container_running(con::Container)::Bool
@@ -341,13 +344,13 @@ function delete_container(con::Container)
   run(`docker container rm $(con.ID)`)
 end
 
-function move_to_temporary_build_directory(mod::Module)::String
+function move_local_to_build_directory(build_dir::String, path::String, name::String)::String
+  Base.Filesystem.cp(path, joinpath(build_dir, name))
+end
+
+function create_build_directory()::String
   build_dir = mktempdir()
   cd(build_dir)
-  p_path = get_package_path(mod)
-  p_name = get_package_name(mod)
-  @show build_dir
-  Base.Filesystem.cp(p_path, joinpath(build_dir, p_name))
   build_dir
 end
 
@@ -363,9 +366,28 @@ function write_precompile_script_to_build_directory(path::String, package_compil
   end
 end
 
+function get_responder_add_script_and_labels(
+    res::LocalPackageResponder,
+    build_dir::String,
+    package_compile::Bool,
+  )::Tuple{String, Dict{String, String}}
+  local_path = res.pkg.repo.source
+  package_name = get_responder_package_name(res)
+  build_dir = move_local_to_build_directory(build_dir, local_path, package_name)
+  write_bootstrap_to_build_directory(build_dir)
+  write_precompile_script_to_build_directory(build_dir, package_compile)
+  img_labels = Dict("RESPONDER_PACKAGE_NAME" => get_responder_package_name(res),
+                    "RESPONDER_FUNCTION_NAME" => get_responder_function_name(res),
+                    "RESPONDER_COMMIT" => get_commit(res),
+                    "RESPONDER_TREE_HASH" => get_tree_hash(res),
+                   )
+  add_script = dockerfile_add_target_package(package_name)
+  (add_script, img_labels)
+end
+
 function create_image(
     image_suffix::String,
-    rf::Responder,
+    res::AbstractResponder,
     aws_config::AWSConfig; 
     image_tag::String = "latest",
     no_cache::Bool = false,
@@ -373,20 +395,28 @@ function create_image(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
   )::LocalImage
-  build_dir = move_to_temporary_build_directory(rf.mod)
+  build_dir = create_build_directory()
   write_bootstrap_to_build_directory(build_dir)
   write_precompile_script_to_build_directory(build_dir, package_compile)
-  image_labels = Dict("RF_NAME" => get_response_function_name(rf))
-  dockerfile = get_dockerfile(rf, julia_base_version; labels=image_labels)
+  (add_script, labels) = get_responder_add_script_and_labels(res, build_dir, package_compile)
+  dockerfile = get_dockerfile(
+                              add_script, 
+                              labels, 
+                              julia_base_version, 
+                              get_responder_package_name(res),
+                              String(res.response_function),
+                             )
   open(joinpath(build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
+  @debug dockerfile
   image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
                                                      image_suffix,
                                                      image_tag)
   build_cmd = get_dockerfile_build_cmd(dockerfile, 
                                        image_name_plus_tag,
                                        no_cache)
+  @debug build_cmd
   run(build_cmd)
   image_id = open("id", "r") do f String(read(f)) end |> x -> split(x, ':')[2]
   all_images = get_all_local_images()
@@ -596,39 +626,6 @@ function create_lambda_function(
   JSON3.read(func_json, LambdaFunction)
 end
 
-# THIS CURRENTLY DEPRECATED, TRYING TO FIGURE OUT WHAT TO DO WITH IT
-function create_lambda_function(
-    name::String,
-    rf::Responder,
-    aws_config::AWSConfig;
-    role::Union{Nothing, AWSRole} = nothing,
-    image_tag::Union{Nothing, String} = nothing,
-    no_cache::Union{Nothing, Bool} = nothing,
-    julia_base_version::Union{Nothing, String} = nothing,
-    julia_cpu_target::Union{Nothing, String} = nothing,
-    timeout::Union{Nothing, Int64} = nothing,
-    memory_size::Union{Nothing, Int64} = nothing,
-  )::LambdaFunction
-  create_image_kwarg_strings = ["image_tag", "no_cache", "julia_base_version", "julia_cpu_target"]
-  create_image_kws = [
-                      (str => eval(Meta.parse(str))) 
-                      for str in create_image_kwarg_strings 
-                      if !isnothing(eval(Meta.parse(str)))
-                     ]
-  image = create_image(name, rf, aws_config; create_image_kws...)
-  repo = create_ecr_repo(image)
-  role = isnothing(role) ? get_aws_role(name) : role
-  role = isnothing(role) ? create_aws_role(name) : role
-
-  create_lambda_function_kwarg_strings = ["image_tag", "timeout", "memory_size"]
-  create_lambda_function_kws = [
-                      (str => eval(Meta.parse(str))) 
-                      for str in create_lambda_function_kwarg_strings 
-                      if !isnothing(eval(Meta.parse(str)))
-                     ]
-  create_lambda_function(repo, role; create_lambda_function_kws...)
-end
-
 function delete_lambda_function(func::LambdaFunction)
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
@@ -665,7 +662,7 @@ function get_response_function_name(
     env_vars::AbstractDict{String, String}
   )::Union{Nothing, String}
   try
-    env_vars["FUNC_NAME"]
+    env_vars["FUNC_FULL_NAME"]
   catch e
     if isa(e, KeyError)
       nothing
@@ -737,7 +734,7 @@ function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, 
                  "Lambda Function" => ["Name", "Last Modified"],
                 )
   get_datum(aws_config::AWSConfig) = [aws_config.account_id]
-  get_datum(rf::Responder) = [get_response_function_name(rf), rf.commit]
+  get_datum(rf::AbstractResponder) = [get_response_function_name(rf), rf.commit]
   get_datum(img::LocalImage) = [get_image_suffix(img), imd.ID, img.Tag]
   get_datum(img::RemoteImage) = [img.imageTag]
   get_datum(lf::LambdaFunction) = [lf.FunctionName, lf.LastModified]

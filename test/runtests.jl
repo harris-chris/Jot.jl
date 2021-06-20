@@ -6,6 +6,9 @@ using Random
 Pkg.develop(PackageSpec(path="./"))
 using Jot
 
+Pkg.develop(PackageSpec(path="./test/JotTest1"))
+using JotTest1
+
 aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 test_suffix = randstring("abcdefghijklmnopqrstuvwxyz", 12)
 
@@ -49,8 +52,6 @@ if "local_module" in ARGS || length(ARGS) == 0
     open("./test/JotTest1/response_suffix", "w") do rsfile
       write(rsfile, response_suffix)
     end
-    Pkg.develop(PackageSpec(path="./test/JotTest1"))
-    using JotTest1
 
     @testset "Build test" begin
       @test_throws MethodError Responder(JotTest1, :bad_function_name)
