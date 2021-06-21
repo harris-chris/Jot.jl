@@ -68,7 +68,7 @@ function test_responder()::AbstractResponder
 end
 
 function test_local_image(res::AbstractResponder)::LocalImage
-  local_image = create_image("li"*test_suffix, res, aws_config)
+  local_image = create_image("jot-test-image-"*test_suffix, res, aws_config)
   @testset "Test local image" begin
     @test Jot.matches(res, local_image)
     # Test that container runs
@@ -93,29 +93,30 @@ end
 function test_ecr_repo(local_image::LocalImage)::ECRRepo
   ecr_repo = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
-    @test matches(local_image, ecr_repo)
+    @test Jot.matches(local_image, ecr_repo)
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(local_image))
     # Check that we can find the remote image which matches our local image
     remote_image = Jot.get_remote_image(local_image)
     @test !isnothing(remote_image)
-    @test matches(local_image, remote_image)
+    @test Jot.matches(local_image, remote_image)
   end
   ecr_repo
 end
 
 function test_aws_role()::AWSRole
-  aws_role =  create_aws_role("role"*test_suffix)
+  aws_role =  create_aws_role("jot-test-role-"*test_suffix)
   @testset "Test AWS role" begin 
     @test aws_role in get_all_aws_roles()
   end
+  sleep(5) # necessary; some kind of time delay in aws when creating roles
   aws_role
 end
 
 function test_lambda_function(ecr_repo::ECRRepo, aws_role::AWSRole)::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
-    @test matches(ecr_repo, lambda_function)
+    @test Jot.matches(ecr_repo, lambda_function)
     # Check that we can find it
     @test lambda_function in Jot.get_all_lambda_functions()
     # Invoke it 
@@ -154,5 +155,7 @@ function clean_up()
   end
 end
 
-run_tests(length(ARGS) == 0 ? nothing : ARGS[1])
+@testset "All Tests" begin
+  run_tests(length(ARGS) == 0 ? nothing : ARGS[1])
+end
 

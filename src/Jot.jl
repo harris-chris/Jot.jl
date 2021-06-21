@@ -21,7 +21,7 @@ export run_image_locally, create_image, delete_image, get_local_image
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_all_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr!
-export create_aws_role, delete_aws_role
+export create_aws_role, delete_aws_role, get_all_aws_roles
 export create_lambda_function, delete_lambda_function, invoke_function
 
 # EXCEPTIONS
@@ -615,16 +615,37 @@ function get_lambda_function(repo::ECRRepo)::Union{Nothing, LambdaFunction}
 end
 
 function create_lambda_function(
-    repo::ECRRepo, 
+    remote_image::RemoteImage,
+    role::AWSRole;
+    function_name::Union{Nothing, String} = nothing,
+    timeout::Int64 = 30,
+    memory_size::Int64 = 1000,
+  )::LambdaFunction
+  image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
+end
+
+function create_lambda_function(
+    repo::ECRRepo,
     role::AWSRole;
     function_name::Union{Nothing, String} = nothing,
     image_tag::String = "latest",
     timeout::Int64 = 30,
     memory_size::Int64 = 1000,
   )::LambdaFunction
+  image_uri = "$(repo.repositoryUri):$image_tag"
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
+end
+
+function create_lambda_function(
+    image_uri::String,
+    role::AWSRole,
+    function_name::Union{Nothing, String},
+    timeout::Int64,
+    memory_size::Int64,
+  )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
-  image_uri = "$(repo.repositoryUri):$image_tag"
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,
@@ -733,9 +754,11 @@ function matches(res::AbstractResponder, local_image::LocalImage)::Bool
   (get_tree_hash(res) == get_labels(local_image)["RESPONDER_TREE_HASH"])
 end
 
+function matches(local_image::LocalImage, ecr_repo::ECRRepo)::Bool
+  local_image.Repository == ecr_repo.repositoryUri
+end
+
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
-  @debug local_image.Digest
-  @debug remote_image.imageDigest
   local_image.Digest == remote_image.imageDigest
 end
 
