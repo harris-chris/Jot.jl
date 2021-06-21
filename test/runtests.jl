@@ -22,15 +22,7 @@ function reset_response_suffix()
   end
 end
 
-tc_local_images = Vector{LocalImage}()
-tc_remote_images = Vector{RemoteImage}()
-tc_repos = Vector{ECRRepo}()
-tc_roles = Vector{ECRRoles}()
-tc_containers = Vector{Container}()
-
-run_tests()
-
-function run_tests(to::String)
+function run_tests(to::Union{Nothing, String})
 
   res = test_responder()
   if to == "responder"
@@ -67,7 +59,7 @@ end
 function test_responder()::AbstractResponder
   reset_response_suffix()
   pkg = PackageSpec(path="./test/JotTest1")
-  res = Responder(lp_pkg, :response_func)
+  res = Responder(pkg, :response_func)
   @testset "Test responder" begin
     @test isa(Jot.get_tree_hash(res), String)
     @test isa(Jot.get_commit(res), String)
@@ -161,4 +153,6 @@ function clean_up()
     @test all([isnothing(x) for x in test_containers])
   end
 end
-  
+
+run_tests(length(ARGS) == 0 ? nothing : ARGS[1])
+

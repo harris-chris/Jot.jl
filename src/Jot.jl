@@ -13,8 +13,8 @@ using TOML
 
 # EXPORTS
 export AWSConfig
-export Responder
-export LocalImage
+export Responder, AbstractResponder
+export LocalImage, RemoteImage, ECRRepo, AWSRole, LambdaFunction
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_local_image
