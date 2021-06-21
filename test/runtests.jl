@@ -55,7 +55,7 @@ end
 if "labels" in ARGS || length(ARGS) == 0
   @testset "Test image labels match function details" begin
     reset_response_suffix()
-    lp_pkg = PackageSpec(path="./test/JotTest1")
+    lp_pkg = PackageSpec(path=joinpath(jot_path, "./test/JotTest1"))
     lp_res = Responder(lp_pkg, :response_func)
     lp_image_name = "lp1" * test_suffix
     lp_image = create_image(lp_image_name, lp_res, aws_config)
@@ -70,14 +70,11 @@ end
 
 if "local_module" in ARGS || length(ARGS) == 0
   @testset "Local Module full test" begin
-    response_suffix = randstring(12)
-    open("./test/JotTest1/response_suffix", "w") do rsfile
-      write(rsfile, response_suffix)
-    end
+    reset_response_suffix()
 
-    @testset "Build test" begin
-      @test_throws MethodError Responder(JotTest1, :bad_function_name)
-    end
+    # @testset "Build test" begin
+      # @test_throws MethodError Responder(JotTest1, :bad_function_name)
+    # end
 
     jt1_function = Responder(JotTest1, :response_func)
     jt1_image_name = "jot-test-1" * test_suffix
