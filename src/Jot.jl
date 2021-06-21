@@ -19,7 +19,7 @@ export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_image, delete_image, get_local_image
 export run_local_test, run_remote_test
-export stop_container, is_container_running, get_containers, delete_container
+export stop_container, is_container_running, get_all_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr!
 export create_aws_role, delete_aws_role
 export create_lambda_function, delete_lambda_function, invoke_function
@@ -328,7 +328,7 @@ function get_response_function_name(res::LocalPackageResponder)::String
 end
 
 function is_container_running(con::Container)::Bool
-  running_containers = get_containers()
+  running_containers = get_all_containers()
   @debug running_containers
   @debug con
   con in running_containers
@@ -456,14 +456,14 @@ function get_all_local_images(args::Vector{String} = Vector{String}())::Vector{L
   parse_docker_ls_output(LocalImage, docker_output)
 end
 
-function get_containers(args::Vector{String} = Vector{String}())::Vector{Container}
+function get_all_containers(args::Vector{String} = Vector{String}())::Vector{Container}
   docker_output = readchomp(`docker ps $args --format '{{json .}}'`)
   parse_docker_ls_output(Container, docker_output)
 end
 
-function get_containers(image::LocalImage; args::Vector{String}=Vector{String}())::Vector{Container}
+function get_all_containers(image::LocalImage; args::Vector{String}=Vector{String}())::Vector{Container}
   @debug image.ID
-  get_containers([
+  get_all_containers([
                   ["--filter", "ancestor=$(image.ID[1:docker_hash_limit])"]
                   args
                  ])
@@ -485,7 +485,7 @@ function run_local_test(
     test_input::Any = "", 
     expected_response::Any = nothing,
   )::Bool
-  running = get_containers(image)
+  running = get_all_containers(image)
   con = length(running) == 0 ? run_image_locally(image) : nothing
   actual = send_local_request(test_input)
   !isnothing(con) && (stop_container(con); delete_container(con))
@@ -727,6 +727,10 @@ function get_remote_image(local_image)::Union{Nothing, RemoteImage}
   all_remote_images = get_all_remote_images()
   index = findfirst(remote_image -> matches(local_image, remote_image), all_remote_images)
   isnothing(index) ? nothing : all_remote_images[index]
+end
+
+function matches(res::AbstractResponder, local_image::LocalImage)::Bool
+  (get_tree_hash(res) == get_labels(local_image)["RESPONDER_TREE_HASH"])
 end
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool

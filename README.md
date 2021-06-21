@@ -2,6 +2,12 @@
 
 # WIP, please ignore this until ready
 
+do we want to lock the responsefunction when the object is intitiated? Or when the image is created?
+I think we want the former
+What does this mean?
+- build locally when Responder initiated
+- add UT for same
+
 If the user has provided a PackageSpec which is a url only, we have no easy way to get the commit (it may not have one) nor the tree-hash. We need to add these labels in the dockerfile. Can we
 - download these as part of the dockerfile creation process
 - then read the hash in the dockerfile, add it as a label
