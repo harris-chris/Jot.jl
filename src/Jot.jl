@@ -227,7 +227,7 @@ Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
   PackageType::Union{Missing, String} = missing
 end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
-Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.FunctionArn == b.FunctionArn && a.CodeSha256 == b.CodeSha256)
+Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.CodeSha256 == b.CodeSha256)
 
 struct Lambda
   aws_config::Union{Nothing, AWSConfig}
@@ -509,7 +509,7 @@ function ecr_login_for_image(image::LocalImage)
   ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
 end
 
-function push_to_ecr!(image::LocalImage)::ECRRepo
+function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
@@ -522,7 +522,8 @@ function push_to_ecr!(image::LocalImage)::ECRRepo
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
   image.Digest = all_images[img_idx].Digest
-  repo
+  remote_image = get_remote_image(image)
+  (repo, remote_image)
 end
 
 function get_ecr_repo(image::LocalImage)::Union{Nothing, ECRRepo}
@@ -621,6 +622,7 @@ function create_lambda_function(
     timeout::Int64 = 30,
     memory_size::Int64 = 1000,
   )::LambdaFunction
+  function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
   create_lambda_function(image_uri, role, function_name, timeout, memory_size)
 end
@@ -633,6 +635,7 @@ function create_lambda_function(
     timeout::Int64 = 30,
     memory_size::Int64 = 1000,
   )::LambdaFunction
+  function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
   create_lambda_function(image_uri, role, function_name, timeout, memory_size)
 end
@@ -644,7 +647,6 @@ function create_lambda_function(
     timeout::Int64,
     memory_size::Int64,
   )::LambdaFunction
-  function_name = isnothing(function_name) ? repo.repositoryName : function_name
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,

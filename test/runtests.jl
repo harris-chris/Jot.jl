@@ -36,7 +36,7 @@ function run_tests(to::Union{Nothing, String})
     return
   end
 
-  ecr_repo = test_ecr_repo(local_image)
+  (ecr_repo, remote_image) = test_ecr_repo(local_image)
   if to == "ecr_repo"
     clean_up()
     return
@@ -48,7 +48,7 @@ function run_tests(to::Union{Nothing, String})
     return
   end
 
-  lambda_function = test_lambda_function(ecr_repo, aws_role)
+  lambda_function = test_lambda_function(ecr_repo, remote_image, aws_role)
   if to == "lambda_function"
     clean_up()
     return
@@ -90,18 +90,18 @@ function test_local_image(res::AbstractResponder)::LocalImage
   return local_image
 end
 
-function test_ecr_repo(local_image::LocalImage)::ECRRepo
-  ecr_repo = push_to_ecr!(local_image)
+function test_ecr_repo(local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+  (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
     @test Jot.matches(local_image, ecr_repo)
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(local_image))
     # Check that we can find the remote image which matches our local image
-    remote_image = Jot.get_remote_image(local_image)
-    @test !isnothing(remote_image)
+    ri_check = Jot.get_remote_image(local_image)
+    @test !isnothing(ri_check)
     @test Jot.matches(local_image, remote_image)
   end
-  ecr_repo
+  (ecr_repo, remote_image)
 end
 
 function test_aws_role()::AWSRole
@@ -109,14 +109,18 @@ function test_aws_role()::AWSRole
   @testset "Test AWS role" begin 
     @test aws_role in get_all_aws_roles()
   end
-  sleep(5) # necessary; some kind of time delay in aws when creating roles
+  sleep(10) # necessary; some kind of time delay in aws when creating roles
   aws_role
 end
 
-function test_lambda_function(ecr_repo::ECRRepo, aws_role::AWSRole)::LambdaFunction
+function test_lambda_function(
+    ecr_repo::ECRRepo, 
+    remote_image::RemoteImage, 
+    aws_role::AWSRole,
+  )::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
-    @test Jot.matches(ecr_repo, lambda_function)
+    @test Jot.matches(remote_image, lambda_function)
     # Check that we can find it
     @test lambda_function in Jot.get_all_lambda_functions()
     # Invoke it 
@@ -127,6 +131,8 @@ function test_lambda_function(ecr_repo::ECRRepo, aws_role::AWSRole)::LambdaFunct
     end
     (status, response) = invoke_function(request, lambda_function)
     @test response == expected_response
+    # Create the same thing using a remote image
+    @test lambda_function == create_lambda_function(remote_image, aws_role; function_name="addl"*test_suffix)
   end
   lambda_function
 end
