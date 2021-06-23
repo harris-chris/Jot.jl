@@ -17,7 +17,7 @@ export Responder, AbstractResponder
 export LocalImage, RemoteImage, ECRRepo, AWSRole, LambdaFunction
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
-export run_image_locally, create_image, delete_image, get_local_image
+export run_image_locally, create_local_image, delete_local_image, get_local_image
 export run_local_test, run_remote_test
 export stop_container, is_container_running, get_all_containers, delete_container
 export create_ecr_repo, delete_ecr_repo, push_to_ecr!
@@ -253,8 +253,8 @@ end
 
 function get_tree_hash(res::LocalPackageResponder)::String
   @debug res.build_dir
-  @debug get_tree_hash(res.build_dir)
-  get_tree_hash(res.build_dir)
+  @debug get_tree_hash(joinpath(res.build_dir, res.package_name))
+  get_tree_hash(joinpath(res.build_dir, res.package_name))
 end
 
 function get_tree_hash(path::String)::String
@@ -397,7 +397,7 @@ function get_labels(
                    )
 end
 
-function create_image(
+function create_local_image(
     image_suffix::String,
     res::AbstractResponder,
     aws_config::AWSConfig; 
@@ -478,7 +478,7 @@ function get_all_containers(image::LocalImage; args::Vector{String}=Vector{Strin
                  ])
 end
 
-function delete_image(image::LocalImage; force::Bool=false)
+function delete_local_image(image::LocalImage; force::Bool=false)
   args = force ? ["--force"] : []
   run(`docker image rm $(image.ID) $args`)
 end

@@ -77,7 +77,7 @@ function test_responder()::AbstractResponder
 end
 
 function test_local_image(res::AbstractResponder)::LocalImage
-  local_image = create_image("jot-test-image-"*test_suffix, res, aws_config)
+  local_image = create_local_image("jot-test-image-"*test_suffix, res, aws_config)
   @testset "Test local image" begin
     @test Jot.matches(res, local_image)
     # Test that container runs
@@ -156,10 +156,10 @@ function clean_up()
     test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
 
-    foreach(delete_lambda_function, test_lfs)
-    foreach(delete_ecr_repo, test_repos)
+    foreach(Jot.delete_lambda_function, test_lfs)
+    foreach(Jot.delete_ecr_repo, test_repos)
     foreach(delete_aws_role, test_roles)
-    foreach(delete_local_image, test_local_images)
+    foreach(x -> delete_local_image(x, force=true), test_local_images)
     foreach(delete_container, test_containers)
 
     @test all([isnothing(x) for x in test_lfs])
