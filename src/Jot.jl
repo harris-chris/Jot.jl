@@ -65,22 +65,33 @@ abstract type AbstractResponder end
 mutable struct LocalPackageResponder <: AbstractResponder
   pkg::Pkg.Types.PackageSpec
   response_function::Symbol
-  local_dir::String
+  build_dir::String
+  package_name::String
+
+  function LocalPackageResponder(
+      pkg::Pkg.Types.PackageSpec,
+      response_function::Symbol,
+    )::LocalPackageResponder
+    build_dir = create_build_directory()
+    path = pkg.repo.source
+    package_name = get_responder_package_name(path)
+    move_local_to_build_directory!(build_dir, path, package_name)
+    new(pkg, response_function, build_dir, package_name)
+  end
 
   function LocalPackageResponder(
       path::String,
       response_function::Symbol,
     )::LocalPackageResponder
-    if !isdir(path)
-      error("Unable to find local directory $(path)")
-    else
-      path = path[end] == '/' ? path[1:end-1] : path |> abspath
-      new(PackageSpec(path=path),
-         response_function,
-         path,
-        )
-    end
+    isdir(path) || error("Unable to find local directory $(path)")
+    path = path[end] == '/' ? path[1:end-1] : path |> abspath
+    pkg_spec = PackageSpec(path=path)
+    LocalPackageResponder(pkg_spec, response_function)
   end
+end
+
+function Base.show(res::LocalPackageResponder)::String
+  "$(get_response_function_name(res)) from $(res.package_spec.repo.source) with tree hash $(get_tree_hash(res))"
 end
 
 function Responder(
@@ -110,23 +121,19 @@ function Responder(
   LocalPackageResponder(pkg_path, response_function)
 end
 
-function get_responder_package_name(res::LocalPackageResponder)::String
-  if !isnothing(res.pkg.name)
-    res.pkg.name
-  else
-    open(joinpath(res.local_dir, "Project.toml"), "r") do file
-      proj = file |> TOML.parse
-      proj["name"]
-    end
+function get_responder_package_name(path::String)::String
+  open(joinpath(path, "Project.toml"), "r") do file
+    proj = file |> TOML.parse
+    proj["name"]
   end
 end
 
 function get_commit(res::LocalPackageResponder)::String
-  get_commit(res.local_dir)
+  get_commit(res.build_dir)
 end
 
 function get_tree_hash(res::LocalPackageResponder)::String
-  get_tree_hash(res.local_dir)
+  get_tree_hash(res.build_dir)
 end
 
 function get_responder_function_name(res::LocalPackageResponder)::String
@@ -324,7 +331,7 @@ include("Runtime.jl")
 include("Scripts.jl")
 
 function get_response_function_name(res::LocalPackageResponder)::String
-  "$(get_responder_package_name(res)).$(res.response_function)"
+  "$(res.package_name).$(res.response_function)"
 end
 
 function is_container_running(con::Container)::Bool
@@ -368,11 +375,9 @@ end
 
 function get_responder_add_script(
     res::LocalPackageResponder,
-    build_dir::String,
   )::String
   local_path = res.pkg.repo.source
-  package_name = get_responder_package_name(res)
-  move_local_to_build_directory!(build_dir, local_path, package_name)
+  package_name = res.package_name
   add_script = dockerfile_add_target_package(package_name)
   add_script
 end
@@ -380,7 +385,7 @@ end
 function get_labels(
     res::LocalPackageResponder,
   )::Dict{String, String}
-  img_labels = Dict("RESPONDER_PACKAGE_NAME" => get_responder_package_name(res),
+  img_labels = Dict("RESPONDER_PACKAGE_NAME" => res.package_name,
                     "RESPONDER_FUNCTION_NAME" => get_responder_function_name(res),
                     "RESPONDER_COMMIT" => get_commit(res),
                     "RESPONDER_TREE_HASH" => get_tree_hash(res),
@@ -397,20 +402,19 @@ function create_image(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
   )::LocalImage
-  build_dir = create_build_directory()
-  write_bootstrap_to_build_directory!(build_dir)
-  write_precompile_script_to_build_directory!(build_dir, package_compile)
-  add_script = get_responder_add_script(res, build_dir)
+  write_bootstrap_to_build_directory!(res.build_dir)
+  write_precompile_script_to_build_directory!(res.build_dir, package_compile)
+  add_script = get_responder_add_script(res)
   labels = get_labels(res)
   # TODO put dockerfile together here
   dockerfile = get_dockerfile(
                               add_script, 
                               labels, 
                               julia_base_version, 
-                              get_responder_package_name(res),
+                              res.package_name,
                               String(res.response_function),
                              )
-  open(joinpath(build_dir, "Dockerfile"), "w") do f
+  open(joinpath(res.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
   @debug dockerfile
@@ -753,6 +757,8 @@ function get_remote_image(local_image)::Union{Nothing, RemoteImage}
 end
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
+  @debug get_tree_hash(res)
+  @debug get_labels(local_image)["RESPONDER_TREE_HASH"]
   (get_tree_hash(res) == get_labels(local_image)["RESPONDER_TREE_HASH"])
 end
 

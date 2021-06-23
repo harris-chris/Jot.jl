@@ -54,6 +54,8 @@ function run_tests(to::Union{Nothing, String})
     return
   end
 
+  clean_up()
+
 end
 
 function test_responder()::AbstractResponder
@@ -63,6 +65,13 @@ function test_responder()::AbstractResponder
   @testset "Test responder" begin
     @test isa(Jot.get_tree_hash(res), String)
     @test isa(Jot.get_commit(res), String)
+
+    # Make a change to ./test/JotTest1
+    #
+    # Check that the tree has is different
+    #
+    # Check that the two != 
+    
   end
   res
 end
@@ -141,10 +150,10 @@ function clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
   @testset "Clean up" begin
-    test_lfs = [x for x in get_all_lambda_functions() if test_suffix in x.FunctionName]
-    test_repos = [x for x in get_all_ecr_repos() if test_suffix in x.repositoryName]
-    test_roles = [x for x in get_all_aws_roles() if test_suffix in x.RoleName]
-    test_local_images = [x for x in get_all_local_image() if test_suffix in x.Repository]
+    test_lfs = [x for x in Jot.get_all_lambda_functions() if test_suffix in x.FunctionName]
+    test_repos = [x for x in Jot.get_all_ecr_repos() if test_suffix in x.repositoryName]
+    test_roles = [x for x in Jot.get_all_aws_roles() if test_suffix in x.RoleName]
+    test_local_images = [x for x in Jot.get_all_local_images() if test_suffix in x.Repository]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
 
     foreach(delete_lambda_function, test_lfs)
