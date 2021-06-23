@@ -51,6 +51,12 @@ function get_commit(path::String)::Union{Missing, String}
   end
 end
 
+function get_tree_hash(res::LocalPackageResponder)::String
+  @debug res.build_dir
+  @debug get_tree_hash(res.build_dir)
+  get_tree_hash(res.build_dir)
+end
+
 function get_tree_hash(path::String)::String
   Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
@@ -75,7 +81,9 @@ mutable struct LocalPackageResponder <: AbstractResponder
     build_dir = create_build_directory()
     path = pkg.repo.source
     package_name = get_responder_package_name(path)
+    @show get_tree_hash(path)
     move_local_to_build_directory!(build_dir, path, package_name)
+    @show get_tree_hash(build_dir)
     new(pkg, response_function, build_dir, package_name)
   end
 
@@ -130,10 +138,6 @@ end
 
 function get_commit(res::LocalPackageResponder)::String
   get_commit(res.build_dir)
-end
-
-function get_tree_hash(res::LocalPackageResponder)::String
-  get_tree_hash(res.build_dir)
 end
 
 function get_responder_function_name(res::LocalPackageResponder)::String

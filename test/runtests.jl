@@ -150,10 +150,10 @@ function clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
   @testset "Clean up" begin
-    test_lfs = [x for x in Jot.get_all_lambda_functions() if test_suffix in x.FunctionName]
-    test_repos = [x for x in Jot.get_all_ecr_repos() if test_suffix in x.repositoryName]
-    test_roles = [x for x in Jot.get_all_aws_roles() if test_suffix in x.RoleName]
-    test_local_images = [x for x in Jot.get_all_local_images() if test_suffix in x.Repository]
+    test_lfs = [x for x in Jot.get_all_lambda_functions() if occursin(test_suffix, x.FunctionName)]
+    test_repos = [x for x in Jot.get_all_ecr_repos() if occursin(test_suffix, x.repositoryName)]
+    test_roles = [x for x in Jot.get_all_aws_roles() if occursin(test_suffix, x.RoleName)]
+    test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
 
     foreach(delete_lambda_function, test_lfs)
