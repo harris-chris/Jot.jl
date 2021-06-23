@@ -51,15 +51,6 @@ function get_commit(path::String)::Union{Missing, String}
   end
 end
 
-function get_tree_hash(res::LocalPackageResponder)::String
-  @debug res.build_dir
-  @debug get_tree_hash(res.build_dir)
-  get_tree_hash(res.build_dir)
-end
-
-function get_tree_hash(path::String)::String
-  Pkg.GitTools.tree_hash(path) |> bytes2hex
-end
 
 function get_commit(mod::Module)::Union{Missing, String}
   mod_path = get_package_path(mod)
@@ -258,6 +249,16 @@ end
 
 function get_package_name(mod::Module)::String
   splitpath(get_package_path(mod))[end]
+end
+
+function get_tree_hash(res::LocalPackageResponder)::String
+  @debug res.build_dir
+  @debug get_tree_hash(res.build_dir)
+  get_tree_hash(res.build_dir)
+end
+
+function get_tree_hash(path::String)::String
+  Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
 function get_package_name(mod::ModuleDefinition)::String
