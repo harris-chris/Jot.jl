@@ -89,9 +89,7 @@ mutable struct LocalPackageResponder <: AbstractResponder
   end
 end
 
-function Base.:(==)(a::LocalPackageResponder, b::LocalPackageResponder)
-  get_tree_hash(a) == get_tree_hash(b)
-end
+Base.:(==)(a::LocalPackageResponder, b::LocalPackageResponder) = get_tree_hash(a) == get_tree_hash(b)
 
 function Base.show(res::LocalPackageResponder)::String
   "$(get_response_function_name(res)) from $(res.package_spec.repo.source) with tree hash $(get_tree_hash(res))"
@@ -431,6 +429,7 @@ function create_local_image(
                               res.package_name,
                               String(res.response_function),
                              )
+  @debug res.build_dir
   open(joinpath(res.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
@@ -441,9 +440,8 @@ function create_local_image(
   build_cmd = get_dockerfile_build_cmd(dockerfile, 
                                        image_name_plus_tag,
                                        no_cache)
-  @debug build_cmd
-  run(build_cmd)
-  image_id = open("id", "r") do f String(read(f)) end |> x -> split(x, ':')[2]
+  run(Cmd(build_cmd, dir=res.build_dir))
+  image_id = open(joinpath(res.build_dir, "id"), "r") do f String(read(f)) end |> x -> split(x, ':')[2]
   all_images = get_all_local_images()
   short_id = image_id[1:docker_hash_limit]
   this_image = all_images[findfirst(img -> img.ID == short_id, all_images)]
@@ -500,6 +498,18 @@ function get_labels(image::LocalImage)::Dict{String, String}
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
   image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
   get_labels(image_inspect)
+end
+
+function get_labels(image::RemoteImage)::Dict{String, String}
+  batch_image_json = readchomp(
+    `aws ecr batch-get-image 
+      --repository-name $(image.ecr_repo.repositoryName) 
+      --image-id imageTag=$(image.imageTag) 
+      --accepted-media-types "application/vnd.docker.distribution.manifest.v1+json" --output json`
+     ) #|jq -r '.images[].imageManifest' |jq -r '.history[0].v1Compatibility' |jq -r '.config.Labels'
+  batch_image = JSON3.read(batch_image_json) 
+  labels = batch_image["images"][1]["imageManifest"]["history"]
+  @debug labels
 end
 
 function run_local_test(

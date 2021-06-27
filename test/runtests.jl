@@ -25,19 +25,22 @@ end
 
 function run_tests(to::Union{Nothing, String})
 
-  res = test_responder()
+  rs_suffix = reset_response_suffix()
+  response_func_check(s::String)::String = s * rs_suffix
+
+  (res, altered_res) = test_responder()
   if to == "responder"
     clean_up()
     return
   end
   
-  local_image = test_local_image(res)
+  local_image = test_local_image(res, altered_res, response_func_check)
   if to == "local_image"
     clean_up()
     return
   end
 
-  (ecr_repo, remote_image) = test_ecr_repo(local_image)
+  (ecr_repo, remote_image) = test_ecr_repo(res, local_image)
   if to == "ecr_repo"
     clean_up()
     return
@@ -49,7 +52,7 @@ function run_tests(to::Union{Nothing, String})
     return
   end
 
-  lambda_function = test_lambda_function(ecr_repo, remote_image, aws_role)
+  lambda_function = test_lambda_function(ecr_repo, remote_image, aws_role, response_func_check)
   if to == "lambda_function"
     clean_up()
     return
@@ -59,24 +62,26 @@ function run_tests(to::Union{Nothing, String})
 
 end
 
-function test_responder()::AbstractResponder
-  rs_suffix = reset_response_suffix()
-  response_func_check(s::String)::String = s * rs_suffix
-  pkg = PackageSpec(path="./test/JotTest1")
+function test_responder()::Tuple{AbstractResponder, AbstractResponder}
+  pkg = PackageSpec(path=joinpath(jot_path, "./test/JotTest1"))
   res = Responder(pkg, :response_func)
+  # Create an altered responder and check that the two do not match
+  _ = reset_response_suffix()
+  altered_res = Responder(pkg, :response_func)
   @testset "Test responder" begin
     @test isa(Jot.get_tree_hash(res), String)
     @test isa(Jot.get_commit(res), String)
 
-    # Create an altered responder and check that the two do not match
-    _ = reset_response_suffix()
-    altered_res = Responder(pkg, :respnse_func)
     @test res != altered_res 
   end
-  res
+  (res, altered_res)
 end
 
-function test_local_image(res::AbstractResponder)::LocalImage
+function test_local_image(
+    res::AbstractResponder, 
+    altered_res::AbstractResponder,
+    rf_check::Function,
+  )::LocalImage
   local_image = create_local_image("jot-test-image-"*test_suffix, res, aws_config)
   @testset "Test local image" begin
     @test Jot.matches(res, local_image)
@@ -93,14 +98,14 @@ function test_local_image(res::AbstractResponder)::LocalImage
     @test run_local_test(local_image)
     # Run local test of container, with expected response
     request = randstring(4)
-    expected_response = response_func_check(request)
+    expected_response = rf_check(request)
     @test run_local_test(local_image, request, expected_response)
   end
 
   return local_image
 end
 
-function test_ecr_repo(local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
     @test Jot.matches(local_image, ecr_repo)
@@ -110,6 +115,7 @@ function test_ecr_repo(local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
     ri_check = Jot.get_remote_image(local_image)
     @test !isnothing(ri_check)
     @test Jot.matches(local_image, remote_image)
+    @test Jot.matches(res, remote_image)
   end
   (ecr_repo, remote_image)
 end
@@ -127,6 +133,7 @@ function test_lambda_function(
     ecr_repo::ECRRepo, 
     remote_image::RemoteImage, 
     aws_role::AWSRole,
+    rf_check::Function,
   )::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
@@ -135,7 +142,7 @@ function test_lambda_function(
     @test lambda_function in Jot.get_all_lambda_functions()
     # Invoke it 
     request = randstring(4)
-    expected_response = response_func_check(request)
+    expected_response = rf_check(request)
     while true
       Jot.get_function_state(lambda_function) == active && break
     end
