@@ -8,6 +8,7 @@ using Parameters
 using PrettyTables
 using Base.Filesystem
 using LibCURL
+using OrderedCollections
 using Dates
 using IsURL
 using TOML
@@ -266,8 +267,8 @@ function get_tree_hash(path::String)::String
   Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
-function get_tree_hash(l::LocalImage)::Union{Nothing, String}
-  labels = get_labels(l)
+function get_tree_hash(i::Union{LocalImage, RemoteImage})::Union{Nothing, String}
+  labels = get_labels(i)
   if !isnothing(labels) 
     try
       labels["RESPONDER_TREE_HASH"]
@@ -870,9 +871,9 @@ function combine_if_matches(l1::Lambda, l2::Lambda)::Union{Nothing, Lambda}
   end
 end
   
-function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, Matrix{String}}
+function to_table(lambdas::Vector{Lambda})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
   # TODO refactor common interface for all getters - check component then check sub
-  headers = Dict("AWS Config" => ["Account ID"],
+  headers = OrderedDict("AWS Config" => ["Account ID"],
                  "Response Function" => ["Function Name", "Tree Hash"],
                  "Local Image" => ["Image Name", "ID", "Tag"],
                  "Remote Image" => ["Tag"],
@@ -891,7 +892,7 @@ function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, 
   function d22(l::Lambda)::String
     isnothing(l.local_image) && return "" 
     hsh = get_tree_hash(l.local_image)
-    isnothing(hsh) ? "" : hsh
+    isnothing(hsh) ? "" : hsh[1:docker_hash_limit]
   end
   d31(l::Lambda)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
   d32(l::Lambda)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
@@ -921,7 +922,7 @@ function show_lambdas()
   (headers, data) = to_table(lambdas)
   headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
                     [x for bottom in values(headers) for x in bottom])
-  pretty_table(data; headers_matrix)
+  pretty_table(data; header=headers_matrix)
 end
 
 function get_all_lambdas()::Vector{Lambda}
