@@ -15,11 +15,12 @@ const jot_path = pwd()
 
 @show ARGS
 
-function reset_response_suffix()
+function reset_response_suffix()::String
   response_suffix = randstring(12)
   open(joinpath(jot_path, "./test/JotTest1/response_suffix"), "w") do rsfile
     write(rsfile, response_suffix)
   end
+  response_suffix
 end
 
 function run_tests(to::Union{Nothing, String})
@@ -59,19 +60,18 @@ function run_tests(to::Union{Nothing, String})
 end
 
 function test_responder()::AbstractResponder
-  reset_response_suffix()
+  rs_suffix = reset_response_suffix()
+  response_func_check(s::String)::String = s * rs_suffix
   pkg = PackageSpec(path="./test/JotTest1")
   res = Responder(pkg, :response_func)
   @testset "Test responder" begin
     @test isa(Jot.get_tree_hash(res), String)
     @test isa(Jot.get_commit(res), String)
 
-    # Make a change to ./test/JotTest1
-    #
-    # Check that the tree has is different
-    #
-    # Check that the two != 
-    
+    # Create an altered responder and check that the two do not match
+    _ = reset_response_suffix()
+    altered_res = Responder(pkg, :respnse_func)
+    @test res != altered_res 
   end
   res
 end
@@ -80,6 +80,7 @@ function test_local_image(res::AbstractResponder)::LocalImage
   local_image = create_local_image("jot-test-image-"*test_suffix, res, aws_config)
   @testset "Test local image" begin
     @test Jot.matches(res, local_image)
+    @test !Jot.matches(altered_res, local_image)
     # Test that container runs
     cont = run_image_locally(local_image)
     @test is_container_running(cont)
@@ -92,7 +93,7 @@ function test_local_image(res::AbstractResponder)::LocalImage
     @test run_local_test(local_image)
     # Run local test of container, with expected response
     request = randstring(4)
-    expected_response = JotTest1.response_func(request)
+    expected_response = response_func_check(request)
     @test run_local_test(local_image, request, expected_response)
   end
 
@@ -134,7 +135,7 @@ function test_lambda_function(
     @test lambda_function in Jot.get_all_lambda_functions()
     # Invoke it 
     request = randstring(4)
-    expected_response = JotTest1.response_func(request)
+    expected_response = response_func_check(request)
     while true
       Jot.get_function_state(lambda_function) == active && break
     end

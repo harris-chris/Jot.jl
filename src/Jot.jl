@@ -89,6 +89,10 @@ mutable struct LocalPackageResponder <: AbstractResponder
   end
 end
 
+function Base.:(==)(a::LocalPackageResponder, b::LocalPackageResponder)
+  get_tree_hash(a) == get_tree_hash(b)
+end
+
 function Base.show(res::LocalPackageResponder)::String
   "$(get_response_function_name(res)) from $(res.package_spec.repo.source) with tree hash $(get_tree_hash(res))"
 end
@@ -584,7 +588,7 @@ function delete_ecr_repo!(repo::ECRRepo)
   repo.exists || error("Repo does not exist")
   delete_script = get_delete_ecr_repo_script(repo.repositoryName)
   run(`bash -c $delete_script`)
-  repo.exist = false
+  repo.exists = false
 end
 
 function get_all_aws_roles()::Vector{AWSRole}
@@ -638,7 +642,7 @@ function create_lambda_function(
     remote_image::RemoteImage,
     role::AWSRole;
     function_name::Union{Nothing, String} = nothing,
-    timeout::Int64 = 30,
+    timeout::Int64 = 40,
     memory_size::Int64 = 1000,
   )::LambdaFunction
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
