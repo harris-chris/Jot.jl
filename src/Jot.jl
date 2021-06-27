@@ -508,8 +508,10 @@ function get_labels(image::RemoteImage)::Dict{String, String}
       --accepted-media-types "application/vnd.docker.distribution.manifest.v1+json" --output json`
      ) #|jq -r '.images[].imageManifest' |jq -r '.history[0].v1Compatibility' |jq -r '.config.Labels'
   batch_image = JSON3.read(batch_image_json) 
-  labels = batch_image["images"][1]["imageManifest"]["history"]
-  @debug labels
+  manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+  v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
+  labels = v1_compat["config"]["Labels"]
+  labels
 end
 
 function run_local_test(
@@ -665,7 +667,7 @@ function create_lambda_function(
     role::AWSRole;
     function_name::Union{Nothing, String} = nothing,
     image_tag::String = "latest",
-    timeout::Int64 = 30,
+    timeout::Int64 = 40,
     memory_size::Int64 = 1000,
   )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
@@ -800,10 +802,21 @@ function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
   local_image.Digest == remote_image.imageDigest
 end
 
+function matches(res::AbstractResponder, remote_image::RemoteImage)::Bool
+  get_tree_hash(res) == get_labels(remote_image)["RESPONDER_TREE_HASH"]
+end
+
 function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bool
   hash_only = split(remote_image.imageDigest, ':')[2]
   hash_only == lambda_function.CodeSha256
 end
+
+function combine_if_matches(l1::Lambda, l2::Lambda)::Vector{Lambda}
+  @unpack rs1, l1, r1, f1 = l1
+  @unpack rs2, l2, r2, f2 = l2
+
+end
+  
 
 function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, Matrix{String}}
   headers = Dict("AWS Config" => ["Account ID"],
@@ -841,7 +854,10 @@ function get_all_lambdas()::Vector{Lambda}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  lambdas = [Lambda(get_aws_config(l), get_function_name(l), l, nothing, nothing) for l in all_local]
+  local_lambdas = [Lambda(get_aws_config(l), get_function_name(l), l, nothing, nothing) for l in all_local]
+  remote_lambdas = [Lambda(nothing, nothing, r, nothing) for r in all_remote]
+  func_lambdas = [Lambda(nothing, nothing, nothing, f) for f in all_functions]
+  all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 
   function match_with_lambdas(
       lambdas::Vector{Lambda}, 
