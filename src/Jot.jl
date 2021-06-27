@@ -5,6 +5,7 @@ using Pkg
 using JSON3
 using StructTypes
 using Parameters
+using PrettyTables
 using Base.Filesystem
 using LibCURL
 using Dates
@@ -72,9 +73,7 @@ mutable struct LocalPackageResponder <: AbstractResponder
     build_dir = create_build_directory()
     path = pkg.repo.source
     package_name = get_responder_package_name(path)
-    @show get_tree_hash(path)
     move_local_to_build_directory!(build_dir, path, package_name)
-    @show get_tree_hash(build_dir)
     new(pkg, response_function, build_dir, package_name)
   end
 
@@ -267,6 +266,17 @@ function get_tree_hash(path::String)::String
   Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
+function get_tree_hash(l::LocalImage)::Union{Nothing, String}
+  labels = get_labels(l)
+  if !isnothing(labels) 
+    try
+      labels["RESPONDER_TREE_HASH"]
+    catch e
+      isa(e, KeyError) ? nothing : throw(e)
+    end
+  end
+end
+
 function get_package_name(mod::ModuleDefinition)::String
   mod.package_name
 end
@@ -296,6 +306,10 @@ end
 
 function get_image_full_name_plus_tag(image::LocalImage)::String
   "$(image.Repository):$(image.Tag)"
+end
+
+function is_lambda(image::LocalImage)::Bool
+  occursin(".amazonaws.com/", image.Repository)
 end
 
 function get_aws_id(image::LocalImage)::String
@@ -726,7 +740,12 @@ function get_environment_variables(image_inspect::AbstractDict{String, Any})::Di
 end
 
 function get_labels(image_inspect::AbstractDict{String, Any})::Dict{String, String}
-  image_inspect["ContainerConfig"]["Labels"]
+  try
+    ii = image_inspect["ContainerConfig"]["Labels"]
+    isnothing(ii) ? Dict{String, String}() : ii
+  catch e
+    isa(e, KeyError) ? Dict{String, String}() : throw(e)
+  end
 end
 
 function get_response_function_name(
@@ -735,18 +754,14 @@ function get_response_function_name(
   try
     env_vars["FUNC_FULL_NAME"]
   catch e
-    if isa(e, KeyError)
-      nothing
-    end
+    isa(e, KeyError) ? nothing : throw(e)
   end
 end
 
 function get_response_function_name(image::LocalImage)::Union{Nothing, String}
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  println(image_inspect_json)
   image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
   env_vars = get_environment_variables(image_inspect)
-  println(env_vars)
   get_response_function_name(env_vars)
 end
 
@@ -787,72 +802,117 @@ function get_remote_image(local_image)::Union{Nothing, RemoteImage}
 end
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
-  @debug get_tree_hash(res)
-  @debug get_labels(local_image)["RESPONDER_TREE_HASH"]
-  (get_tree_hash(res) == get_labels(local_image)["RESPONDER_TREE_HASH"])
+  tree_hash = get_tree_hash(local_image)
+  isnothing(tree_hash) ? false : (get_tree_hash(res) == tree_hash)
 end
+matches(local_image::LocalImage, res::AbstractResponder) = matches(res, local_image)
 
 function matches(local_image::LocalImage, ecr_repo::ECRRepo)::Bool
   local_image.Repository == ecr_repo.repositoryUri
 end
+matches(ecr_repo::ECRRepo, local_image::LocalImage) = matches(local_image, ecr_repo)
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
   local_image.Digest == remote_image.imageDigest
 end
+matches(remote_image::RemoteImage, local_image::LocalImage) = matches(local_image, remote_image)
 
 function matches(res::AbstractResponder, remote_image::RemoteImage)::Bool
-  get_tree_hash(res) == get_labels(remote_image)["RESPONDER_TREE_HASH"]
+  tree_hash = get_tree_hash(remote_image)
+  isnothing(tree_hash) ? false : get_tree_hash(res) == tree_hash
 end
+matches(remote_image::RemoteImage, res::AbstractResponder) = matches(res, remote_image)
 
 function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bool
   hash_only = split(remote_image.imageDigest, ':')[2]
   hash_only == lambda_function.CodeSha256
 end
+matches(lambda_function::LambdaFunction, remote_image::RemoteImage) = matches(remote_image, lambda_function)
 
 function combine_if_matches(l1::Lambda, l2::Lambda)::Union{Nothing, Lambda}
-  @unpack l1, r1, f1 = l1
-  @unpack l2, r2, f2 = l2
+  lambda_types = fieldtypes(Lambda)
+  lambda_names = fieldnames(Lambda)
+  l1_fields = [getfield(l1, name) for name in lambda_names]
+  l2_fields = [getfield(l2, name) for name in lambda_names]
 
-  function sm(c1::Union{Nothing, T}, c2::Union{Nothing, T})::Tuple{Bool, T} where {T}
+  function matches(
+      l1_fields::Vector, 
+      l2_fields::Vector,
+    )::Bool where {A, B}
+    for (t_1, nm_1, val_1) in zip(lambda_types, lambda_names, l1_fields)
+      for (t_2, nm_2, val_2) in zip(lambda_types, lambda_names, l2_fields)
+        if hasmethod(matches, Tuple{t_1, t_2})
+          if matches(val_1, val_2)
+            return true
+          end
+        end
+      end
+    end
+    return false
+  end
+
+  function cmb(::Type{T}, c1::Union{Nothing, T}, c2::Union{Nothing, T})::Union{Nothing, T} where {T}
     if isnothing(c1)
-      (true, c2)
+      c2
     elseif isnothing(c2)
-      (true, c1)
+      c1
     else
-      m = c1 == c2
-      (m, m ? c1 : nothing)
+      c1 != c2 && error("Found non-matching element in matched lamda")
+      c1
     end
   end
 
-  s_matched = (sm(l1, l2), sm(r1, r2), sm(f1, f2))
-  if all(map(x -> x[1], s_matched))
-    Lambda(map(last, s_matched)...)
+  if matches(l1_fields, l2_fields)
+    cmb_fields = Dict(sym => cmb(f_1, f_2) for ((sym, _, f_1), (_, _, f_2)) in zip(l1_fields, l2_fields))
+    Lambda(cmb_fields...)
   else
     nothing
   end
 end
   
 function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, Matrix{String}}
+  # TODO refactor common interface for all getters - check component then check sub
   headers = Dict("AWS Config" => ["Account ID"],
-                 "Response Function" => ["Function Name", "Commit"],
+                 "Response Function" => ["Function Name", "Tree Hash"],
                  "Local Image" => ["Image Name", "ID", "Tag"],
                  "Remote Image" => ["Tag"],
                  "Lambda Function" => ["Name", "Last Modified"],
                 )
-  get_datum(aws_config::AWSConfig) = [aws_config.account_id]
-  get_datum(rf::AbstractResponder) = [get_response_function_name(rf), rf.commit]
-  get_datum(img::LocalImage) = [get_image_suffix(img), imd.ID, img.Tag]
-  get_datum(img::RemoteImage) = [img.imageTag]
-  get_datum(lf::LambdaFunction) = [lf.FunctionName, lf.LastModified]
+  function d11(l::Lambda)::String
+    isnothing(l.local_image) && return ""
+    aid = get_aws_config(l.local_image).account_id
+    ismissing(aid) ? "" : aid
+  end
+  function d21(l::Lambda)::String 
+    isnothing(l.local_image) && return ""
+    rfn = get_response_function_name(l.local_image)
+    isnothing(rfn) ? "" : rfn
+  end
+  function d22(l::Lambda)::String
+    isnothing(l.local_image) && return "" 
+    hsh = get_tree_hash(l.local_image)
+    isnothing(hsh) ? "" : hsh
+  end
+  d31(l::Lambda)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
+  d32(l::Lambda)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
+  d33(l::Lambda)::String = isnothing(l.local_image) ? "" : l.local_image.Tag
+  function d41(l::Lambda)::String 
+    isnothing(l.remote_image) && return ""
+    itag = l.remote_image.imageTag
+    ismissing(itag) ? "" : itag
+  end
+  function d51(l::Lambda)::String 
+    isnothing(l.lambda_function) && return ""
+    fn = l.lambda_function.FunctionName 
+    ismissing(fn) ? "" : fn
+  end
+  function d52(l::Lambda)::String 
+    isnothing(l.lambda_function) && return ""
+    lm = l.lambda_function.LastModified
+    ismissing(lm) ? "" : lm
+  end
 
-  data = [
-          [isnothing(l.aws_config) ? [""] : get_datum(l.aws_config) ;
-           isnothing(l.response_function) ? ["", ""] : get_datum(l.response_function) ;
-           isnothing(l.local_image) ? ["", "", ""] : get_datum(l.local_image) ;
-           isnothing(l.remote_image) ? [""] : get_datum(l.remote_image) ;
-           isnothing(l.lambda_function) ? ["", ""] : get_datum(l.lambda_function)
-          ] for l in lambdas
-         ]
+  data = vcat([[d11(l) d21(l) d22(l) d31(l) d32(l) d33(l) d41(l) d51(l) d52(l)] for l in lambdas]...)
   (headers, data)
 end
 
@@ -868,7 +928,7 @@ function get_all_lambdas()::Vector{Lambda}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  local_lambdas = [ Lambda(l, nothing, nothing) for l in all_local ]
+  local_lambdas = [ Lambda(l, nothing, nothing) for l in all_local if is_lambda(l)]
   remote_lambdas = [ Lambda(nothing, r, nothing) for r in all_remote ]
   func_lambdas = [ Lambda(nothing, nothing, f) for f in all_functions ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
@@ -915,45 +975,41 @@ function show_all_lambdas(;
     remote_image_attr::String = "tag",  
     lambda_function_attr::String = "version",
   )
-  lambdas_by_function = get_all_lambdas() |> group_by_function_name
   out = ""
-  for (f_name, lambdas) in lambdas_by_function
-    out *= "\n$f_name"
+  out *= "\tLocal Image\tRemote Image\tLambda Function"
+  for l in get_all_lambdas()
+    out *= "\n$(get_response_function_name(l.local_image))"
     # Header
-    out *= "\n\tLocal Image\tRemote Image\tLambda Function"
-    for lambda in lambdas
-      @debug lambda
-      li_attr = if local_image_attr == "tag"
-        lambda.local_image.Tag
-      elseif local_image_attr == "created at"
-        lambda.local_image.CreatedAt
-      elseif local_image_attr == "id"
-        lambda.local_image.ID[1:docker_hash_limit]
-      elseif local_image_attr == "digest"
-        lambda.local_image.Digest[1:docker_hash_limit]
-      end
-
-      ri_attr = if isnothing(lambda.remote_image)
-        ""
-      else
-        if remote_image_attr == "tag"
-          lambda.remote_image.imageTag
-        elseif remote_image_attr == "digest"
-          lambda.remote_image.imageDigest[1:docker_hash_limit]
-        end
-      end
-
-      lf_attr = if isnothing(lambda.lambda_function)
-        ""
-      else
-        if lambda_function_attr == "version"
-          lambda.lambda_function.Version
-        elseif lambda_function_attr == "digest"
-          lambda.lambda_function.CodeSha256
-        end
-      end
-      out *= "\n\t$li_attr\t$ri_attr\t$lf_attr"
+    li_attr = if local_image_attr == "tag"
+      l.local_image.Tag
+    elseif local_image_attr == "created at"
+      l.local_image.CreatedAt
+    elseif local_image_attr == "id"
+      l.local_image.ID[1:docker_hash_limit]
+    elseif local_image_attr == "digest"
+      l.local_image.Digest[1:docker_hash_limit]
     end
+
+    ri_attr = if isnothing(l.remote_image)
+      ""
+    else
+      if remote_image_attr == "tag"
+        l.remote_image.imageTag
+      elseif remote_image_attr == "digest"
+        l.remote_image.imageDigest[1:docker_hash_limit]
+      end
+    end
+
+    lf_attr = if isnothing(l.lambda_function)
+      ""
+    else
+      if lambda_function_attr == "version"
+        l.lambda_function.Version
+      elseif lambda_function_attr == "digest"
+        l.lambda_function.CodeSha256
+      end
+    end
+    out *= "\t$li_attr\t$ri_attr\t$lf_attr"
   end
   println(out)
 end
