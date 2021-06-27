@@ -17,12 +17,12 @@ export Responder, AbstractResponder
 export LocalImage, RemoteImage, ECRRepo, AWSRole, LambdaFunction
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
-export run_image_locally, create_local_image, delete_local_image, get_local_image
+export run_image_locally, create_local_image, delete_local_image!, get_local_image
 export run_local_test, run_remote_test
-export stop_container, is_container_running, get_all_containers, delete_container
-export create_ecr_repo, delete_ecr_repo, push_to_ecr!
-export create_aws_role, delete_aws_role, get_all_aws_roles
-export create_lambda_function, delete_lambda_function, invoke_function
+export stop_container, is_container_running, get_all_containers, delete_container!
+export create_ecr_repo, delete_ecr_repo!, push_to_ecr!
+export create_aws_role, delete_aws_role!, get_all_aws_roles
+export create_lambda_function, delete_lambda_function!, invoke_function
 
 # EXCEPTIONS
 struct InterpolationNotFoundException <: Exception interpolation::String end
@@ -142,17 +142,19 @@ end
   Repository::String
   Size::Union{Missing, String} = missing
   Tag::String
+  exists::Bool = true
 end
 StructTypes.StructType(::Type{LocalImage}) = StructTypes.Mutable()  
 Base.:(==)(a::LocalImage, b::LocalImage) = a.ID[1:docker_hash_limit] == b.ID[1:docker_hash_limit]
 
-@with_kw struct Container
+@with_kw mutable struct Container
   Command::Union{Missing, String} = missing
   CreatedAt::Union{Missing, String} = missing
   ID::String
   Image::String
   Names::Union{Missing, String} = missing
   Ports::Union{Missing, String} = missing
+  exists::Bool = true
 end
 Base.:(==)(a::Container, b::Container) = a.ID[1:docker_hash_limit] == b.ID[1:docker_hash_limit]
 
@@ -165,6 +167,7 @@ Base.:(==)(a::Container, b::Container) = a.ID[1:docker_hash_limit] == b.ID[1:doc
   imageTagMutability::Union{Missing, String} = missing
   imageScanningConfiguration::Union{Missing, Any} = missing
   encryptionConfiguration::Union{Missing, Any} = missing
+  exists::Bool = true
 end
 StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()  
 Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
@@ -173,6 +176,7 @@ Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
   imageDigest::Union{Missing, String} = missing
   imageTag::Union{Missing, String} = missing
   ecr_repo::Union{Missing, ECRRepo} = missing
+  exists::Bool = true
 end
 StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
 Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
@@ -207,6 +211,7 @@ const lambda_execution_policy_statement = AWSRolePolicyStatement(
   CreateDate::Union{Missing, String} = missing
   AssumeRolePolicyDocument::Union{Missing, AWSRolePolicyDocument} = missing
   MaxSessionDuration::Union{Missing, Int64} = missing
+  exists::Bool = true
 end
 StructTypes.StructType(::Type{AWSRole}) = StructTypes.Mutable()  
 Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
@@ -227,6 +232,7 @@ Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
   TracingConfig::Union{Missing, Dict{String, Any}} = missing
   RevisionId::Union{Missing, String} = missing
   PackageType::Union{Missing, String} = missing
+  exists::Bool = true
 end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.CodeSha256 == b.CodeSha256)
@@ -352,8 +358,10 @@ function stop_container(con::Container)
   end
 end
 
-function delete_container(con::Container)
+function delete_container!(con::Container)
+  con.exists || error("Container does not exist")
   run(`docker container rm $(con.ID)`)
+  con.exists = false
 end
 
 function move_local_to_build_directory!(build_dir::String, path::String, name::String)
@@ -449,8 +457,8 @@ function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T
     # as_lower = lowercase(raw_output)
     by_line = split(raw_output, "\n")
     as_dicts = [JSON3.read(js_str) for js_str in by_line]
-    type_args = [[dict[Symbol(fn)] for fn in fieldnames(T)] for dict in as_dicts]
-    [T(args...) for args in type_args]
+    # type_args = [[dict[Symbol(fn)] for fn in fieldnames(T)] for dict in as_dicts]
+    [T(; filter(p -> p.first in fieldnames(T), dict)..., exists=true) for dict in as_dicts]
   end
 end
 
@@ -478,10 +486,11 @@ function get_all_containers(image::LocalImage; args::Vector{String}=Vector{Strin
                  ])
 end
 
-function delete_local_image(image::LocalImage; force::Bool=false)
+function delete_local_image!(image::LocalImage; force::Bool=false)
+  image.exists || error("Image does not exist")
   args = force ? ["--force"] : []
   run(`docker image rm $(image.ID) $args`)
-end
+  image.exists = false end
 
 function get_labels(image::LocalImage)::Dict{String, String}
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
@@ -497,7 +506,7 @@ function run_local_test(
   running = get_all_containers(image)
   con = length(running) == 0 ? run_image_locally(image) : nothing
   actual = send_local_request(test_input)
-  !isnothing(con) && (stop_container(con); delete_container(con))
+  !isnothing(con) && (stop_container(con); delete_container!(con))
   if !isnothing(expected_response)
     passed = actual == expected_response
     passed && @info "Test passed; result received matched expected $actual"
@@ -519,6 +528,7 @@ function ecr_login_for_image(image::LocalImage)
 end
 
 function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+  image.exists || error("Image does not exist")
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
   repo = if isnothing(existing_repo)
@@ -560,6 +570,7 @@ function get_ecr_repo(repo_name::String)::Union{Nothing, ECRRepo}
 end
 
 function create_ecr_repo(image::LocalImage)::ECRRepo
+  image.exists || error("Image does not exist")
   create_script = get_create_ecr_repo_script(
                                              get_image_suffix(image),
                                              get_aws_region(image),
@@ -569,9 +580,11 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]
 end
 
-function delete_ecr_repo(repo::ECRRepo)
+function delete_ecr_repo!(repo::ECRRepo)
+  repo.exists || error("Repo does not exist")
   delete_script = get_delete_ecr_repo_script(repo.repositoryName)
   run(`bash -c $delete_script`)
+  repo.exist = false
 end
 
 function get_all_aws_roles()::Vector{AWSRole}
@@ -593,14 +606,11 @@ function create_aws_role(role_name::String)::AWSRole
   JSON3.read(role_json, Dict{String, AWSRole})["Role"]
 end
 
-function delete_aws_role(role_name::String)
-  delete_script = get_delete_lambda_role_script(role_name)
-  run(`bash -c $delete_script`)
-end
-
-function delete_aws_role(role::AWSRole)
+function delete_aws_role!(role::AWSRole)
+  role.exists || error("Role does not exist")
   delete_script = get_delete_lambda_role_script(role.RoleName)
   run(`bash -c $delete_script`)
+  role.exists = false
 end
 
 function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
@@ -668,10 +678,11 @@ function create_lambda_function(
   JSON3.read(func_json, LambdaFunction)
 end
 
-function delete_lambda_function(func::LambdaFunction)
+function delete_lambda_function!(func::LambdaFunction)
+  func.exists || error("Function does not exist")
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
-  @debug output
+  func.exists = false 
 end
 
 function run_image_locally(image::LocalImage; detached::Bool=true)::Container

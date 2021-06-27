@@ -156,17 +156,17 @@ function clean_up()
     test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
 
-    foreach(Jot.delete_lambda_function, test_lfs)
-    foreach(Jot.delete_ecr_repo, test_repos)
-    foreach(delete_aws_role, test_roles)
-    foreach(x -> delete_local_image(x, force=true), test_local_images)
-    foreach(delete_container, test_containers)
+    foreach(delete_lambda_function!, test_lfs)
+    foreach(delete_ecr_repo!, test_repos)
+    foreach(delete_aws_role!, test_roles)
+    foreach(x -> delete_local_image!(x, force=true), test_local_images)
+    foreach(delete_container!, test_containers)
 
-    @test all([isnothing(x) for x in test_lfs])
-    @test all([isnothing(x) for x in test_repos])
-    @test all([isnothing(x) for x in test_roles])
-    @test all([isnothing(x) for x in test_local_images])
-    @test all([isnothing(x) for x in test_containers])
+    @test all([!x.exists for x in test_lfs])
+    @test all([!x.exists for x in test_repos])
+    @test all([!x.exists for x in test_roles])
+    @test all([!x.exists for x in test_local_images])
+    @test all([!x.exists for x in test_containers])
   end
 end
 
