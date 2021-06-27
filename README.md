@@ -2,6 +2,15 @@
 
 # WIP, please ignore this until ready
 
+could stick the responder local path as a string in the image labels so that the responder can be reconstructed from the local image
+the thing here is that a local image has to have a responder
+so really it doesn't need to be included in the lambda
+it should be shown but doesn't need to be a component. Also don't want to eg delete it if deleting the lambda
+
+a responder is a temporary thing, as it is currently defined - it has a temporary build_dir
+Should this be made permanent? Store the directories by digest in /tmp?
+
+
 do we want to lock the responsefunction when the object is intitiated? Or when the image is created?
 I think we want the former
 What does this mean?

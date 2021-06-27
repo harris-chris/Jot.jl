@@ -240,8 +240,6 @@ StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.CodeSha256 == b.CodeSha256)
 
 struct Lambda
-  aws_config::Union{Nothing, AWSConfig}
-  response_function::Union{Nothing, AbstractResponder}
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -511,7 +509,7 @@ function get_labels(image::RemoteImage)::Dict{String, String}
   manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
   v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
   labels = v1_compat["config"]["Labels"]
-  labels
+  Dict((String(k) => v) for (k, v) in labels)
 end
 
 function run_local_test(
@@ -811,13 +809,29 @@ function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bo
   hash_only == lambda_function.CodeSha256
 end
 
-function combine_if_matches(l1::Lambda, l2::Lambda)::Vector{Lambda}
-  @unpack rs1, l1, r1, f1 = l1
-  @unpack rs2, l2, r2, f2 = l2
+function combine_if_matches(l1::Lambda, l2::Lambda)::Union{Nothing, Lambda}
+  @unpack l1, r1, f1 = l1
+  @unpack l2, r2, f2 = l2
 
+  function sm(c1::Union{Nothing, T}, c2::Union{Nothing, T})::Tuple{Bool, T} where {T}
+    if isnothing(c1)
+      (true, c2)
+    elseif isnothing(c2)
+      (true, c1)
+    else
+      m = c1 == c2
+      (m, m ? c1 : nothing)
+    end
+  end
+
+  s_matched = (sm(l1, l2), sm(r1, r2), sm(f1, f2))
+  if all(map(x -> x[1], s_matched))
+    Lambda(map(last, s_matched)...)
+  else
+    nothing
+  end
 end
   
-
 function to_table(lambdas::Vector{Lambda})::Tuple{Dict{String, Vector{String}}, Matrix{String}}
   headers = Dict("AWS Config" => ["Account ID"],
                  "Response Function" => ["Function Name", "Commit"],
@@ -854,51 +868,31 @@ function get_all_lambdas()::Vector{Lambda}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  local_lambdas = [Lambda(get_aws_config(l), get_function_name(l), l, nothing, nothing) for l in all_local]
-  remote_lambdas = [Lambda(nothing, nothing, r, nothing) for r in all_remote]
-  func_lambdas = [Lambda(nothing, nothing, nothing, f) for f in all_functions]
+  local_lambdas = [ Lambda(l, nothing, nothing) for l in all_local ]
+  remote_lambdas = [ Lambda(nothing, r, nothing) for r in all_remote ]
+  func_lambdas = [ Lambda(nothing, nothing, f) for f in all_functions ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 
-  function match_with_lambdas(
-      lambdas::Vector{Lambda}, 
-      l2::Vector{T}, 
-      match::Function,
-      add::Function,
-  )::Vector{Lambda} where {T}
-    if length(l2) == 0
-      lambdas
+  function match_off_lambdas(
+      to_match::Vector{Lambda}, 
+      matched::Vector{Lambda}
+  )::Vector{Lambda}
+    if length(to_match) == 0
+      matched
     else
-      curr_l2 = l2[1]; other_l2 = l2[2:end]
-      any_matches = [match(lm, curr_l2) for lm in lambdas]
-      lambdas = [m ? add(lm, curr_l2) : lm for (m, lm) in zip(any_matches, lambdas)]
-      any(any_matches) || push!(lambdas, add(Lambda(nothing, nothing, nothing), curr_l2))
-      match_with_lambdas(lambdas, other_l2, match, add)
+      match_head = to_match[1]; match_tail = to_match[2:end]
+      add_to_matched = match_head
+      for m in matched
+        cmb = combine_if_matches(match_head, m)
+        if !isnothing(cmb) 
+          add_to_matched = cmb
+          break
+        end
+      end
+      match_off_lambdas(match_tail, push!(matched, add_to_matched))
     end
   end
-
-  function match_lambda(lm::Lambda, remote::RemoteImage)::Bool 
-    isnothing(lm.local_image) ? false : matches(lm.local_image, remote)
-  end
-
-  function match_lambda(lm::Lambda, func::LambdaFunction)::Bool 
-    isnothing(lm.remote_image) ? false : matches(lm.remote_image, func)
-  end
-
-  add_lambda(lm::Lambda, remote::RemoteImage)::Lambda = Lambda(lm.local_image, remote, lm.lambda_function)
-  add_lambda(lm::Lambda, func::LambdaFunction)::Lambda = Lambda(lm.local_image, lm.remote_image, func)
-
-  lambdas = match_with_lambdas(lambdas,
-                     all_remote,
-                     match_lambda,
-                     add_lambda,
-                    )
-
-  lambdas = match_with_lambdas(lambdas,
-                     all_functions,
-                     match_lambda,
-                     add_lambda,
-                    )
-  lambdas
+  match_off_lambdas(all_lambdas, Vector{Lambda}())
 end
 
 function group_by_function_name(lambdas::Vector{Lambda})::Dict{String, Vector{Lambda}}
