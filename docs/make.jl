@@ -20,4 +20,5 @@ makedocs(
 
 deploydocs(
   repo = "github.com/harris-chris/Jot.jl.git",
+  devbranch = "main",
 )
