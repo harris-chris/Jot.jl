@@ -1,7 +1,6 @@
 # Jot
 
 
-Pre-launch:
   - more useful terminal output
 
 Future improvements
