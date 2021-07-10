@@ -1,5 +1,7 @@
 # Jot
 
+- change masters to mains
+
 - test update
 
 # WIP, please ignore this until ready

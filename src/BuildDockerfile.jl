@@ -1,7 +1,7 @@
 const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/runtime/julia_depot"
 const temp_path = "/tmp"
-const jot_github_url = "https://github.com/harris-chris/Jot.jl#master"
+const jot_github_url = "https://github.com/harris-chris/Jot.jl#main"
 
 function dockerfile_add_julia_image(julia_base_version::String)::String
   """

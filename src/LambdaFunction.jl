@@ -91,12 +91,12 @@ function get_remote_image(lambda_function::LambdaFunction)::RemoteImage
 end
 
 """
-    delete_lambda_function!(func::LambdaFunction)
+    delete!(func::LambdaFunction)
 
 Deletes a Lambda function hosted on AWS. The LambdaFunction instance continues to exist, but has its
 `exists` attribute set to `false`.
 """
-function delete_lambda_function!(func::LambdaFunction)
+function delete!(func::LambdaFunction)
   func.exists || error("Function does not exist")
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)

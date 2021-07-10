@@ -26,10 +26,10 @@ create_local_image(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
   )
-delete_container!(con::Container)
-delete_ecr_repo!(repo::ECRRepo)
-delete_lambda_function!(func::LambdaFunction)
-delete_local_image!(image::LocalImage; force::Bool=false)
+delete!(con::Container)
+delete!(repo::ECRRepo)
+delete!(func::LambdaFunction)
+delete!(image::LocalImage; force::Bool=false)
 get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
