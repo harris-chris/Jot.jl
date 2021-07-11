@@ -55,6 +55,6 @@ The package is tested against Julia versions `1.5` and above on Linux. It also r
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://harris-chris.github.io/Jot.jl/stable/
-[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
-[docs-stable-url]: https://juliadocs.github.io/Documenter.jl/stable
+[docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
+[docs-dev-url]: https://harris-chris.github.io/Jot.jl/dev/
 
