@@ -23,7 +23,7 @@ end
 function run_tests(; 
     to::AbstractString="lambda_function", 
     package_compile::Bool=false, 
-    clean::Bool=true,
+    clean::String="true",
     example_only::Bool=false,
   )
   if example_only
@@ -223,9 +223,13 @@ end
 function clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
+  @show "running clean up"
   @testset "Clean up" begin
     test_lfs = [x for x in Jot.get_all_lambda_functions() if occursin(test_suffix, x.FunctionName)]
     test_repos = [x for x in Jot.get_all_ecr_repos() if occursin(test_suffix, x.repositoryName)]
+    @debug test_suffix
+    @debug x.repositoryName
+    @debug test_repos
     test_roles = [x for x in Jot.get_all_aws_roles() if occursin(test_suffix, x.RoleName)]
     test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
