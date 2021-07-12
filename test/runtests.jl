@@ -22,13 +22,12 @@ end
 
 function get_jt1_response_suffix()::String
   open(joinpath(jot_path, "test/JotTest1/response_suffix"), "r") do rsfile
-    readchomp(rsfile, String)
+    readchomp(rsfile)
   end
 end
 
 function run_tests(; 
     to::AbstractString="lambda_function", 
-    package_compile::Bool=false, 
     clean::String="true",
     example_only::Bool=false,
   )
@@ -36,7 +35,6 @@ function run_tests(;
     test_documentation_example()
     return
   end
-  package_compile = package_compile == "true" ? true : false
   clean = clean == "true" ? true : false
   rs_suffix = reset_jt1_response_suffix()
 
@@ -48,7 +46,7 @@ function run_tests(;
   ]
 
   responders = @testset "Test Responder" begin 
-    return [test_responder(args...; kwargs...) for (args, kwags) in responder_inputs]
+    return [test_responder(args...; kwargs...) for (args, kwargs) in responder_inputs]
   end
   if to == "responder"
     clean && clean_up()
@@ -63,10 +61,10 @@ function run_tests(;
   ]
 
   local_image_inputs = [
-    (res[1], 1, false, true),
-    (res[2], 2, true, false),
-    (res[3], 3, false, false),
-    (res[4], 4, false, false),
+    (responders[1], 1, false, true),
+    (responders[2], 2, true, false),
+    (responders[3], 3, false, false),
+    (responders[4], 4, false, false),
   ]
 
   local_images = @testset "Local Images" begin
@@ -141,8 +139,9 @@ end
 function test_responder(
     res_obj::Any,
     res_func::Symbol,
-    res_type::Type{IT},
-  )::AbstractResponder
+    res_type::Type{IT};
+    dependencies::Vector{String} = Vector{String}(),
+  )::AbstractResponder{IT} where {IT}
   this_res = get_responder(res_obj, res_func, IT)
   @test isa(Jot.get_tree_hash(this_res), String)
   @test isa(Jot.get_commit(this_res), String)
@@ -202,8 +201,6 @@ function test_local_image(
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
   @test run_test(local_image, test_request, expected) |> first
-
-  package_compile && @test jt1_time < (jt2_time / 2)
   return local_image
 end
 

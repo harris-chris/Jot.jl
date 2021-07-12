@@ -217,7 +217,7 @@ function get_responder(
     response_function_param_type::Type{IT},
   )::LocalPackageResponder{IT} where {IT}
   pkg_path = get_package_path(mod)
-  LocalPackageResponder{IT}(pkg_path, response_function, IT)
+  LocalPackageResponder(pkg_path, response_function, IT)
 end
 
 function get_responder_package_name(path::String)::String
