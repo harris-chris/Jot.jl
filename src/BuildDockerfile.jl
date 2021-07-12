@@ -33,10 +33,16 @@ function dockerfile_copy_build_dir()::String
   """
 end
 
-function dockerfile_add_target_package(package_name::String)::String
-  add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$package_name\\\"); Pkg.instantiate()"
+function dockerfile_add_responder(res::LocalPackageResponder)::String
+  add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); Pkg.instantiate()"
   """
-  RUN echo \$(cat $runtime_path/$package_name/Project.toml)
+  RUN julia -e \"$add_module_script\"
+  """
+end
+
+function dockerfile_add_responder(res::RemoteResponder)::String
+  add_module_script = "using Pkg; Pkg.develop(path=\\\"$(res.url)\\\"); Pkg.instantiate()"
+  """
   RUN julia -e \"$add_module_script\"
   """
 end

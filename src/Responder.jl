@@ -21,6 +21,7 @@ A responder that is located locally (in the temporary `build_dir`) and is a Juli
 usually created by the `Responder` function.
 """
 mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
+  # TODO: remove pkg attribute?
   pkg::Pkg.Types.PackageSpec
   response_function::Symbol
   response_function_param_type::Type{IT}
@@ -60,6 +61,12 @@ mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
     pkg_spec = PackageSpec(path=path)
     LocalPackageResponder(pkg_spec, response_function, IT)
   end
+end
+
+struct RemoteResponder{IT} <: AbstractResponder{IT}
+  url::String
+  response_function::Symbol
+  response_function_param_type::Type{IT}
 end
 
 function LocalScriptResponder(
@@ -134,8 +141,7 @@ function get_responder(
     dependencies = Vector{String}(),
   )::AbstractResponder{IT} where {IT}
   if isurl(path_url)
-    # TODO URL
-    error("Not implemented URL")
+    RemoteResponder(path_url, response_function, IT)
   elseif isrelativeurl(path_url)
     if isdir(path_url) 
       if "Project.toml" in readdir(path_url)

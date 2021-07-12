@@ -167,7 +167,7 @@ function get_dockerfile(
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
     dockerfile_copy_build_dir(),
-    dockerfile_add_target_package(responder.package_name),
+    dockerfile_add_responder(responder),
     dockerfile_add_labels(get_labels(responder)),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
