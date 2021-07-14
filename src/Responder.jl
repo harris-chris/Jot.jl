@@ -69,6 +69,36 @@ struct RemoteResponder{IT} <: AbstractResponder{IT}
   response_function_param_type::Type{IT}
 end
 
+function get_responder_from_package_url(
+    url::String,
+    response_function::Symbol,
+    ::Type{IT};
+  )::LocalPackageResponder{IT} where {IT}
+  build_dir = create_build_directory()
+  dev_dir = get(ENV, "JULIA_PKG_DEVDIR", nothing)
+  current_build_dir_contents = readdir(build_dir)
+  ENV["JULIA_PKG_DEVDIR"] = build_dir
+  Pkg.develop(url=url)
+  if !isnothing(dev_dir) ENV["JULIA_PKG_DEVDIR"] = dev_dir end
+  new_dir = [x for x in readdir(build_dir) if !(x in current_build_dir_contents)] |> last
+  @debug build_dir
+  @debug new_dir
+  @debug readdir(build_dir)
+  pkg_name = get_responder_package_name(joinpath(build_dir, new_dir))
+  Pkg.rm(pkg_name)
+  @debug readdir(build_dir)
+  LocalPackageResponder(
+                        PackageSpec(path=joinpath(build_dir, new_dir)),
+                        response_function,
+                        IT,
+                        build_dir,
+                        pkg_name,
+                       )
+end
+
+
+
+# TODO make this proper function snakecase
 function LocalScriptResponder(
     local_path::String,
     response_function::Symbol,
@@ -77,18 +107,11 @@ function LocalScriptResponder(
   )::LocalPackageResponder{IT} where {IT}
   build_dir = create_build_directory()
   pkg_name = "jot_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
-  @show pwd()
-  @show readdir()
   cd(build_dir) do
     Pkg.generate(pkg_name)
     Pkg.activate("./$pkg_name")
     length(dependencies) > 0 && Pkg.add(dependencies)
-    open("./$pkg_name/Project.toml", "r") do f
-      @debug read(f)
-    end
   end
-  @show readdir(joinpath(build_dir, pkg_name))
-  @show dependencies
   script = open(local_path, "r") do f
     read(f) |> String
   end
@@ -97,7 +120,6 @@ function LocalScriptResponder(
   $script\n
   end\n
   """
-  @show readdir(joinpath(build_dir, pkg_name, "src"))
   open(joinpath(build_dir, pkg_name, "src", pkg_name * ".jl"), "w") do f
     write(f, pkg_code)
   end
@@ -141,7 +163,7 @@ function get_responder(
     dependencies = Vector{String}(),
   )::AbstractResponder{IT} where {IT}
   if isurl(path_url)
-    RemoteResponder(path_url, response_function, IT)
+    get_responder_from_package_url(path_url, response_function, IT)
   elseif isrelativeurl(path_url)
     if isdir(path_url) 
       if "Project.toml" in readdir(path_url)

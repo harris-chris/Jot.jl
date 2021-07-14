@@ -39,14 +39,19 @@ function run_tests(;
   rs_suffix = reset_jt1_response_suffix()
 
   responder_inputs = [
-    ((JotTest1, :response_func, Dict), Dict{Symbol, String}()),
-    ((PackageSpec(path=joinpath(jot_path, "./test/JotTest1")), :response_func, Dict), Dict{Symbol, String}()),
+    ((JotTest1, :response_func, Dict), Dict()),
+    ((PackageSpec(path=joinpath(jot_path, "./test/JotTest1")), :response_func, Dict), Dict()),
     ((joinpath(jot_path, "./test/JotTest2/response_func.jl"), :response_func, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
-    (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict{Symbol, String}()),
+    (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
   ]
 
-  responders = @testset "Test Responder" begin 
-    return [test_responder(args...; kwargs...) for (args, kwargs) in responder_inputs]
+  responders = Vector{AbstractResponder}()
+  @testset "Test Responder" begin 
+    foreach(responder_inputs) do input
+      args = first(input)
+      kwargs = last(input)
+      push!(responders, test_responder(args...; kwargs)) 
+    end
   end
   if to == "responder"
     clean && clean_up()
@@ -67,8 +72,28 @@ function run_tests(;
     (responders[4], 4, false, false),
   ]
 
-  local_images = @testset "Local Images" begin
-    return [test_local_image(li_input..., datum[1], datum[2]) for (li_input, datum) in zip(local_image_inputs, test_data)]
+  if !(length(responders) == length(test_data) == length(local_image_inputs))
+    error("Input lengths do not match")
+  end
+
+  for res in responders
+    @show res.package_name
+  end
+
+  for li in local_image_inputs
+    @show li[1].package_name
+  end
+
+  local_images = Vector{LocalImage}()
+  @testset "Local Images" begin
+    foreach(zip(local_image_inputs, test_data)) do args_test
+      li_input = first(args_test)
+      this_res = li_input[1]
+      @show "RESPONDER PACKAGE $(this_res.package_name)"
+      test = last(args_test)
+      this_li = test_local_image(li_input..., test[1], test[2])
+      push!(local_images, this_li)
+    end
   end
   
   if to == "local_image"
@@ -140,9 +165,9 @@ function test_responder(
     res_obj::Any,
     res_func::Symbol,
     res_type::Type{IT};
-    dependencies::Vector{String} = Vector{String}(),
+    kwargs::Dict = Dict(),
   )::AbstractResponder{IT} where {IT}
-  this_res = get_responder(res_obj, res_func, IT)
+  this_res = get_responder(res_obj, res_func, IT; kwargs...)
   @test isa(Jot.get_tree_hash(this_res), String)
   @test isa(Jot.get_commit(this_res), String)
   this_res

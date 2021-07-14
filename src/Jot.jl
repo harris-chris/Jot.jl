@@ -161,6 +161,12 @@ function get_dockerfile(
     julia_base_version::String,
     package_compile::Bool,
   )::String
+  @debug responder.build_dir
+  @debug readdir(responder.build_dir)
+  @debug responder.package_name
+  @debug joinpath(responder.build_dir, responder.package_name)
+  @debug readdir(joinpath(responder.build_dir, responder.package_name))
+  @debug get_responder_package_name(joinpath(responder.build_dir, responder.package_name))
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
