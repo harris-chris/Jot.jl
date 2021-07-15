@@ -1,4 +1,4 @@
-@enum LambdaFunctionState pending active
+@enum LambdaFunctionState Pending Active Inactive Failed
 
 struct LambdaException <: Exception
   msg::String
@@ -140,7 +140,7 @@ function invoke_function(
   )::Any
   if check_state
     while true
-      Jot.get_function_state(lambda_function) == active && break
+      Jot.get_function_state(lambda_function) == Active && break
     end
   end
   request_json = JSON3.write(request)

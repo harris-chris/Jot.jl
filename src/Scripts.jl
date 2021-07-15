@@ -191,6 +191,14 @@ function get_create_lambda_function_script(
   """
 end
 
+function get_lambda_function_status(
+    function_name::String,
+  )::String
+  """
+  aws lambda get-function-configuration --function-name $function_name
+  """
+end
+
 function get_delete_lambda_function_script(function_arn::String)::String
   """
   aws lambda delete-function \\

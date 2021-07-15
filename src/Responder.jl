@@ -142,9 +142,14 @@ end
 Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
 Lambda calls. 
 
-`path_url` may point to either a script or a package. If a script, `dependencies` 
+`path_url` may be either a local filesystem path, or a url. 
+
+If a filesystem path, it may point to either a script or a package. If a script, `dependencies`
 may be passed to specify any dependencies used in the script. If a package, the dependencies will
 be found automatically from its `Project.toml`.
+
+If a url, it should be a remote package, for example the URL for a github repo. The url given will
+be passed to `Pkg` as a url, so any url valid in a `PackageSpec` will also be valid here.
 
 `response_function` is a function within this module that you would like to use to respond to AWS 
 Lambda calls. `response_function_param_type` specifies the type that the response function is 

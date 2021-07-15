@@ -28,14 +28,16 @@ end
 
 function run_tests(; 
     to::AbstractString="lambda_function", 
-    clean::String="true",
+    clean::Bool=true,
     example_only::Bool=false,
+    partial::Bool=true,
   )
   if example_only
     test_documentation_example()
     return
   end
   clean = clean == "true" ? true : false
+  partial = partial == "true" ? true : false
   rs_suffix = reset_jt1_response_suffix()
 
   responder_inputs = [
@@ -106,9 +108,23 @@ function run_tests(;
     return
   end
 
-  # Randomly select one of our lambdas
-  use_num = rand(1:length(responders))
-  (ecr_repo, remote_image) = test_ecr_repo(responders[use_num], local_images[use_num])
+  # If partial, randomly select one of our lambdas
+  test_list = partial ? [i == rand(1:4) ? true : false for i in 1:4] : fill(true, length(responders))
+
+  repos = Vector{Union{Nothing, ECRRepo}}()
+  remote_images = Vector{Union{Nothing, RemoteImage}}()
+  @testset "ECR Repo" begin 
+    foreach(enumerate(test_list)) do (num, use_bl)
+      if use_bl
+        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num])  
+      else
+        (this_repo, this_remote_image) = (nothing, nothing)
+      end
+      push!(repos, this_repo)
+      push!(remote_images, this_remote_image)
+    end
+  end
+
   if to == "ecr_repo"
     clean && clean_up()
     return
@@ -120,7 +136,18 @@ function run_tests(;
     return
   end
 
-  lambda_function = test_lambda_function(ecr_repo, remote_image, aws_role, test_data[use_num]...)
+  lambda_functions = Vector{Union{Nothing, LambdaFunction}}()
+  @testset "Lambda Function" begin 
+    foreach(enumerate(test_list)) do (num, use_bl)
+      if use_bl
+        this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)  
+      else
+        this_lambda_function = nothing
+      end
+      push!(lambda_functions, this_lambda_function)
+    end
+  end
+
   if to == "lambda_function"
     clean && clean_up()
     return
@@ -218,6 +245,7 @@ end
 
 function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
+  @debug "pushed to ecr"
   @testset "Test remote image" begin 
     @test Jot.matches(local_image, ecr_repo)
     # Check we can find the repo

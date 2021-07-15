@@ -67,6 +67,7 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
                                              get_image_suffix(image),
                                              get_aws_region(image),
                                             )
+  @debug create_script
   repo_json = readchomp(`bash -c $create_script`)
   @debug repo_json
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]

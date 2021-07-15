@@ -467,17 +467,20 @@ function create_lambda_function(
   while true
     out = Pipe(); err = Pipe()
     proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
-    close(out.in)
-    close(err.in)
+    close(out.in); close(err.in)
+    @debug proc.exitcode
     if proc.exitcode == 254
-      sleep(1)
+      @debug read(out, String)
+      sleep(2)
       continue
     elseif proc.exitcode == 0
       func_json = read(out, String)
+      @debug func_json
       return JSON3.read(func_json, LambdaFunction)
     else
       error("Unable to create lambda function; process exits with $(read(err, String))")
     end
+    close(out); close(in)
   end
 end
 

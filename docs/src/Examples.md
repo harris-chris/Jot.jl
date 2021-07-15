@@ -27,19 +27,26 @@ ex3_responder = get_responder("/path/to/project", :response_func, Vector)
 ex3_local_image = create_local_image("ex3", ex3_responder; package_compile=true)
 ```
 
+### To make a package on github into a responder...
+... where the package url is `https://github.com/harris-chris/JotTest3/blob/main/Project.toml`, and the package contains a function called `response_func`, that takes a single argument of type `Vector{T} where {T <: Number}`:
+```
+ex4_responder = get_responder("https://github.com/harris-chris/JotTest3/blob/main/Project.toml", :response_func, Vector)
+ex4_local_image = create_local_image("ex4", ex4_responder)
+```
+
 ### To make a package in scope into a Responder...
 ... where the package contains a function called `response_func`, that takes a single argument of type `Vector{Int64}`:
 ```
 using IntVectorResponder
-ex4_responder = get_responder(IntVectorResponder, :response_func, Vector{Int64})
+ex5_responder = get_responder(IntVectorResponder, :response_func, Vector{Int64})
 ```
 
 ### To make a package into a local docker image, and test it...
 ... where the package root (containing the Project.toml) is `/path/to/project`, and the package contains a function called `response_func`, that takes a single argument of type `String` and appends " Responded" to the end of it:
 ```
-ex5_responder = get_responder("/path/to/project", :response_func, String)
-ex5_local_image = create_local_image("ex5", ex5_responder)
-run_test(ex5_local_image, "test", "test Responded")
+ex6_responder = get_responder("/path/to/project", :response_func, String)
+ex6_local_image = create_local_image("ex6", ex6_responder)
+run_test(ex6_local_image, "test", "test Responded")
 ```
 
 ### To see if a local docker image has the same function as a remote image...
