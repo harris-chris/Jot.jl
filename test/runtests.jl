@@ -58,7 +58,7 @@ function run_tests(;
     return
   end
 
-  test_data = [
+  test_data = [ # Actual, expected, bad input
     (Dict("double" => 4.5), 9.0, [1,2]),
     (Dict("add suffix" => "test-"), "test-"*get_jt1_response_suffix(), [1,2]),
     ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
@@ -89,7 +89,6 @@ function run_tests(;
     foreach(zip(local_image_inputs, test_data)) do args_test
       li_input = first(args_test)
       this_res = li_input[1]
-      @show "RESPONDER PACKAGE $(this_res.package_name)"
       test = last(args_test)
       this_li = test_local_image(li_input..., test[1], test[2])
       push!(local_images, this_li)
@@ -101,7 +100,7 @@ function run_tests(;
     return
   end
 
-  test_package_compile(local_images[2], local_images[1])
+  test_package_compile(local_images[2], local_images[1], test_data[2][1:2], test_data[1][1:2])
   if to == "package_compiler"
     clean && clean_up()
     return
@@ -173,34 +172,6 @@ function test_responder(
   this_res
 end
 
-function test_responder(
-    jt1_rf_check::Function,
-  )::Tuple{AbstractResponder, AbstractResponder, AbstractResponder}
-  jt1_pkg = PackageSpec(path=joinpath(jot_path, "./test/JotTest1"))
-  jt1_res = get_responder(jt1_pkg, :response_func, Dict)
-  # Create an altered responder and check that the two do not match
-  @testset "Test original JT1 responder" begin
-    @test jt1_rf_check(Dict("add suffix" => "t")) == JotTest1.response_func(Dict("add suffix" => "t"))
-    @test jt1_rf_check(Dict("double" => 2.4)) == JotTest1.response_func(Dict("double" => 2.4))
-    @test isa(Jot.get_tree_hash(jt1_res), String)
-    @test isa(Jot.get_commit(jt1_res), String)
-  end
-  _ = reset_jt1_response_suffix()
-  jt1_alt_res = get_responder(jt1_pkg, :response_func, Dict)
-  @testset "Test responder" begin
-    @test jt1_rf_check(Dict("add suffix" => "t")) != JotTest1.response_func(Dict("add suffix" => "t"))
-    @test jt1_res != jt1_alt_res 
-  end
-  jt2_res = get_responder(joinpath(jot_path, "./test/JotTest2/response_func.jl"), 
-                      :response_func, 
-                      Vector{Float64}; 
-                      dependencies=["SpecialFunctions"])
-  jt3_res = get_responder("./test/JotTest2/response_func.jl", 
-                      :response_func, 
-                      Vector{Float64})
-  (jt1_res, jt1_alt_res, jt2_res)
-end
-
 function test_local_image(
     res::AbstractResponder, 
     num::Int64,
@@ -225,17 +196,22 @@ function test_local_image(
   # Run local test of container, without value
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
-  @test run_test(local_image, test_request, expected) |> first
+  @test run_test(local_image, test_request, expected; then_stop=true) |> first
   return local_image
 end
 
 function test_package_compile(
     li_uncompiled::LocalImage,
     li_compiled::LocalImage,
+    uncompiled_test_data::Tuple{Any, Any},
+    compiled_test_data::Tuple{Any, Any},
   )
-  (_, uncompiled_time) = run_test(li_uncompiled)
-  (_, compiled_time) = run_test(li_compiled)
   @testset "Package compiler" begin
+    (_, compiled_time) = run_test(li_compiled, compiled_test_data...; then_stop=true)
+    @show "first test ran"
+    @show (readchomp(`docker container ls`))
+    (_, uncompiled_time) = run_test(li_uncompiled, uncompiled_test_data...; then_stop=true)
+    @show "second test ran"
     @test compiled_time < (uncompiled_time / 2)
   end
 end

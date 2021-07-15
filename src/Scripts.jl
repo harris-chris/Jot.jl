@@ -101,10 +101,9 @@ function get_precompile_jl(
   """
   using Jot
   using $package_name
+  using Pkg
 
-  if isfile("./$package_name/test/runtests.jl")
-    include("./$package_name/test/runtests.jl")
-  end
+  Pkg.test("$package_name")
 
   rf(i::Int64) = i + 1
 

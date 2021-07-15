@@ -40,13 +40,6 @@ function dockerfile_add_responder(res::LocalPackageResponder)::String
   """
 end
 
-function dockerfile_add_responder(res::RemoteResponder)::String
-  add_module_script = "using Pkg; Pkg.develop(path=\\\"$(res.url)\\\"); Pkg.instantiate()"
-  """
-  RUN julia -e \"$add_module_script\"
-  """
-end
-
 function dockerfile_add_jot()::String
   """
   RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_github_url\\\")"

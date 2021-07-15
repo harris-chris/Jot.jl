@@ -63,12 +63,6 @@ mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
   end
 end
 
-struct RemoteResponder{IT} <: AbstractResponder{IT}
-  url::String
-  response_function::Symbol
-  response_function_param_type::Type{IT}
-end
-
 function get_responder_from_package_url(
     url::String,
     response_function::Symbol,
