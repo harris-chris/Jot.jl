@@ -104,10 +104,11 @@ function delete!(func::LambdaFunction)
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState
-  state_json = readchomp(`aws lambda get-function-configuration --function-name=$func_name`)
+  get_state_script = get_lambda_function_status(func_name)
+  state_json = readchomp(`bash -c $get_state_script`)
   state_data = JSON3.read(state_json)
-  if state_data["State"] == "Pending" pending
-  elseif state_data["State"] == "Active" active
+  if state_data["State"] == "Pending" Pending
+  elseif state_data["State"] == "Active" Active
   end
 end
 

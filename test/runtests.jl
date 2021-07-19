@@ -67,7 +67,7 @@ function run_tests(;
     ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
   ]
 
-  local_image_inputs = [
+  local_image_inputs = [ # Responder, number, use_config, package_compile
     (responders[1], 1, false, true),
     (responders[2], 2, true, false),
     (responders[3], 3, false, false),
@@ -102,7 +102,12 @@ function run_tests(;
     return
   end
 
-  test_package_compile(local_images[2], local_images[1], test_data[2][1:2], test_data[1][1:2])
+  test_package_compile(;
+    compiled_image=local_images[1], 
+    uncompiled_image=local_images[2], 
+    compiled_test_data=test_data[1][1:2], 
+    uncompiled_test_data[2][1:2],
+  )
   if to == "package_compiler"
     clean && clean_up()
     return
@@ -140,6 +145,7 @@ function run_tests(;
   @testset "Lambda Function" begin 
     foreach(enumerate(test_list)) do (num, use_bl)
       if use_bl
+        @debug "testing lambda function $num"
         this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)  
       else
         this_lambda_function = nothing
@@ -207,6 +213,7 @@ function test_local_image(
     test_request::Any,
     expected::Any,
   )::LocalImage
+  @debug "test_local_image"
   local_image = create_local_image("jt$(num)-local-"*test_suffix, 
                                    res; 
                                    aws_config = use_config ? aws_config : nothing, 
@@ -223,27 +230,35 @@ function test_local_image(
   # Run local test of container, without value
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
+  @debug "test with $(res.package_name), responder $num"
   @test run_test(local_image, test_request, expected; then_stop=true) |> first
+  sleep(1)
   return local_image
 end
 
-function test_package_compile(
-    li_uncompiled::LocalImage,
-    li_compiled::LocalImage,
+function test_package_compile(;
+    uncompiled_image::LocalImage,
+    compiled_image::LocalImage,
     uncompiled_test_data::Tuple{Any, Any},
     compiled_test_data::Tuple{Any, Any},
   )
+  @debug "test_package_compile"
   @testset "Package compiler" begin
-    (_, compiled_time) = run_test(li_compiled, compiled_test_data...; then_stop=true)
+    sleep(2)
+    @show "running test on compiled"
+    @debug compiled_test_data
+    (_, compiled_time) = run_test(compiled_image, compiled_test_data...; then_stop=true)
     @show "first test ran"
     @show (readchomp(`docker container ls`))
-    (_, uncompiled_time) = run_test(li_uncompiled, uncompiled_test_data...; then_stop=true)
+    sleep(2)
+    (_, uncompiled_time) = run_test(uncompiled_image, uncompiled_test_data...; then_stop=true)
     @show "second test ran"
     @test compiled_time < (uncompiled_time / 2)
   end
 end
 
 function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+  @debug "test_ecr_repo"
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @debug "pushed to ecr"
   @testset "Test remote image" begin 
@@ -275,6 +290,7 @@ function test_lambda_function(
     expected::Any,
     exception_request::Any,
   )::LambdaFunction
+  @debug "test_lambda_function"
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
     @test Jot.matches(remote_image, lambda_function)

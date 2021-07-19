@@ -453,35 +453,49 @@ end
 function create_lambda_function(
     image_uri::String,
     role::AWSRole,
-    function_name::Union{Nothing, String},
+    function_name::String,
     timeout::Int64,
     memory_size::Int64,
   )::LambdaFunction
+  existing_lf = get_lambda_function(function_name)
+  if !isnothing(existing_lf)
+    @info "Lambda function $function_name already exists; overwriting"
+    delete!(existing_lf)
+  end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
+
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,
                                                     timeout,
                                                     memory_size,
                                                    )
-  while true
-    out = Pipe(); err = Pipe()
-    proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
-    close(out.in); close(err.in)
-    @debug proc.exitcode
-    if proc.exitcode == 254
-      @debug read(out, String)
-      sleep(2)
-      continue
-    elseif proc.exitcode == 0
-      func_json = read(out, String)
-      @debug func_json
-      return JSON3.read(func_json, LambdaFunction)
-    else
-      error("Unable to create lambda function; process exits with $(read(err, String))")
-    end
-    close(out); close(in)
+
+  out = Pipe(); err = Pipe()
+  @debug "ABOUT TO RUN CREATE LAMBDA SCRIPT"
+  @debug create_script
+  proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
+  @debug proc.exitcode
+  # proc = run(pipeline(`bash -c $create_script`, stdout=out, stderr=err), wait=true)
+
+  close(out.in); close(err.in)
+  if proc.exitcode != 0
+    @debug read(out, String)
+    @debug read(err, String)
+    error("proc exited with $(proc.exitcode)")
   end
+
+  while true
+    sleep(1)
+    @debug get_function_state(function_name)
+    if get_function_state(function_name) == Active
+      break
+    end
+  end
+
+  func_json = read(out, String)
+  @debug func_json
+  return JSON3.read(func_json, LambdaFunction)
 end
 
 """
