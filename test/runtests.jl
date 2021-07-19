@@ -102,12 +102,14 @@ function run_tests(;
     return
   end
 
-  test_package_compile(;
-    compiled_image=local_images[1], 
-    uncompiled_image=local_images[2], 
-    compiled_test_data=test_data[1][1:2], 
-    uncompiled_test_data[2][1:2],
-  )
+  @testset "Package compiler" begin
+    test_package_compile(;
+      compiled_image=local_images[1], 
+      uncompiled_image=local_images[2], 
+      compiled_test_data=test_data[1][1:2], 
+      uncompiled_test_data=test_data[2][1:2],
+    )
+  end
   if to == "package_compiler"
     clean && clean_up()
     return
@@ -230,7 +232,8 @@ function test_local_image(
   # Run local test of container, without value
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
-  @debug "test with $(res.package_name), responder $num"
+  @show test_request
+  @show expected
   @test run_test(local_image, test_request, expected; then_stop=true) |> first
   sleep(1)
   return local_image
@@ -242,19 +245,17 @@ function test_package_compile(;
     uncompiled_test_data::Tuple{Any, Any},
     compiled_test_data::Tuple{Any, Any},
   )
-  @debug "test_package_compile"
-  @testset "Package compiler" begin
-    sleep(2)
-    @show "running test on compiled"
-    @debug compiled_test_data
-    (_, compiled_time) = run_test(compiled_image, compiled_test_data...; then_stop=true)
-    @show "first test ran"
-    @show (readchomp(`docker container ls`))
-    sleep(2)
-    (_, uncompiled_time) = run_test(uncompiled_image, uncompiled_test_data...; then_stop=true)
-    @show "second test ran"
-    @test compiled_time < (uncompiled_time / 2)
-  end
+  @show "test_package_compile"
+  sleep(2)
+  @show "running test on compiled"
+  @show compiled_test_data
+  (_, compiled_time) = run_test(compiled_image, compiled_test_data...; then_stop=true)
+  @show "first test ran"
+  @show (readchomp(`docker container ls`))
+  sleep(2)
+  (_, uncompiled_time) = run_test(uncompiled_image, uncompiled_test_data...; then_stop=true)
+  @show "second test ran"
+  @test compiled_time < (uncompiled_time / 2)
 end
 
 function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}

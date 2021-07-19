@@ -88,7 +88,7 @@ function create_aws_role(role_name::String)::AWSRole
   role_json = readchomp(`bash -c $create_script`)
   @debug role_json
   @info "Creating role $role_name ..."
-  sleep(4);
+  sleep(5);
   JSON3.read(role_json, Dict{String, AWSRole})["Role"]
 end
 
