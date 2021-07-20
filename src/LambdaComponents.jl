@@ -1,12 +1,14 @@
 
 """
     struct LambdaComponents
+        aws_config::AWSConfig
         local_image::Union{Nothing, LocalImage}
         remote_image::Union{Nothing, RemoteImage}
         lambda_function::Union{Nothing, LambdaFunction}
     end
 """
 struct LambdaComponents
+  aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -81,55 +83,90 @@ function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{N
     nothing
   end
 end
-  
+
+struct TableComponent
+  name::String
+  value_function::Function
+end
+
 function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
-  # TODO refactor common interface for all getters - check component then check sub
-  headers = OrderedDict("AWS Config" => ["Account ID"],
-                 "Response Function" => ["Function Name", "Tree Hash"],
-                 "Local Image" => ["Image Name", "ID", "Tag"],
-                 "Remote Image" => ["Tag"],
-                 "Lambda Function" => ["Name", "Last Modified"],
-                )
-  function d11(l::LambdaComponents)::String
-    isnothing(l.local_image) && return ""
-    aid = get_aws_config(l.local_image).account_id
-    ismissing(aid) ? "" : aid
+  
+  function account_id_f(l::LambdaComponents)::String
+    l.aws_config.account_id
   end
-  function d21(l::LambdaComponents)::String 
+  account_id_component = TableComponent("Account ID", account_id_f)
+
+  function function_name_f(l::LambdaComponents)::String 
     isnothing(l.local_image) && return ""
     rfn = get_response_function_name(l.local_image)
     isnothing(rfn) ? "" : rfn
   end
-  function d22(l::LambdaComponents)::String
+  function_name_component = TableComponent("Function Name", function_name_f)
+
+  function tree_hash_f(l::LambdaComponents)::String
     isnothing(l.local_image) && return "" 
     hsh = get_tree_hash(l.local_image)
     isnothing(hsh) ? "" : hsh[1:docker_hash_limit]
   end
-  d31(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
-  d32(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
-  d33(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.Tag
-  function d41(l::LambdaComponents)::String 
+  tree_hash_component = TableComponent("Tree Hash", tree_hash_f)
+
+  local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
+  local_image_name_component = TableComponent("Image Name", local_image_name_f)
+
+  local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
+  local_image_id_component = TableComponent("Image ID", local_image_id_f)
+
+  local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.Tag
+  local_image_tag_component = TableComponent("Image Tag", local_image_tag_f)
+
+  function remote_image_tag_f(l::LambdaComponents)::String 
     isnothing(l.remote_image) && return ""
     itag = l.remote_image.imageTag
     ismissing(itag) ? "" : itag
   end
-  function d51(l::LambdaComponents)::String 
+  remote_image_tag_component = TableComponent("Image Tag", remote_image_tag_f)
+
+  function remote_image_digest_f(l::LambdaComponents)::String 
+    isnothing(l.remote_image) && return ""
+    digest = l.remote_image.imageDigest
+    ismissing(digest) ? "" : digest[begin:docker_hash_limit]
+  end
+  remote_image_digest = TableComponent("Image Digest", remote_image_digest_f)
+
+  function lambda_function_name_f(l::LambdaComponents)::String 
     isnothing(l.lambda_function) && return ""
     fn = l.lambda_function.FunctionName 
     ismissing(fn) ? "" : fn
   end
-  function d52(l::LambdaComponents)::String 
+  lambda_function_name_component = TableComponent("Function Name", lambda_function_name_f)
+
+  function lambda_function_last_modified_f(l::LambdaComponents)::String 
     isnothing(l.lambda_function) && return ""
     lm = l.lambda_function.LastModified
     ismissing(lm) ? "" : lm
   end
+  lambda_function_last_modified_component = TableComponent("Last Modified", lambda_function_last_modified_f)
 
-  data = vcat([[d11(l) d21(l) d22(l) d31(l) d32(l) d33(l) d41(l) d51(l) d52(l)] for l in lambdas]...)
-  (headers, data)
+  # TODO refactor common interface for all getters - check component then check sub
+  headers = OrderedDict("AWS Config" => [account_id_component],
+                 "Response Function" => [function_name_component],
+                 "Local Image" => [local_image_name_component, local_image_tag_component],
+                 "Remote Image" => [remote_image_digest],
+                 "Lambda Function" => [lambda_function_name_component],
+                )
+
+  all_funcs = [f for funcs in values(headers) for f in funcs]
+  data_rows = [map(tc -> tc.value_function(l), all_funcs) for l in lambdas]
+  data_rows = map(row-> reshape(row, (1, :)), data_rows)
+  data = vcat(data_rows...)
+  headers_with_string = OrderedDict(k => map(tc -> tc.name, vals) for (k, vals) in headers)
+  (headers_with_string, data)
 end
 
 function show_lambdas()
   lambdas = get_all_lambdas()
+  @debug length(lambdas)
+  @debug lambdas
   (headers, data) = to_table(lambdas)
   headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
                     [x for bottom in values(headers) for x in bottom])
@@ -140,9 +177,10 @@ function get_all_lambdas()::Vector{LambdaComponents}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  local_lambdas = [ LambdaComponents(l, nothing, nothing) for l in all_local if is_lambda(l)]
-  remote_lambdas = [ LambdaComponents(nothing, r, nothing) for r in all_remote ]
-  func_lambdas = [ LambdaComponents(nothing, nothing, f) for f in all_functions ]
+  aws_config = get_aws_config()
+  local_lambdas = [ LambdaComponents(aws_config, l, nothing, nothing) for l in all_local if is_lambda(l)]
+  remote_lambdas = [ LambdaComponents(aws_config, nothing, r, nothing) for r in all_remote ]
+  func_lambdas = [ LambdaComponents(aws_config, nothing, nothing, f) for f in all_functions ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 
   function match_off_lambdas(

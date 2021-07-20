@@ -216,7 +216,7 @@ function create_local_image(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
   )::LocalImage
-  aws_config = isnothing(aws_config) ? find_aws_config() : aws_config
+  aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
                               julia_base_version, 

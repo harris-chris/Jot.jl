@@ -99,7 +99,7 @@ function get_responder_from_local_script(
     dependencies = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   build_dir = create_build_directory()
-  pkg_name = "jot_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
+  pkg_name = "script_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 8)
   cd(build_dir) do
     Pkg.generate(pkg_name)
     Pkg.activate("./$pkg_name")
