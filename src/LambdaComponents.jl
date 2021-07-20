@@ -1,12 +1,15 @@
 
 """
     struct LambdaComponents
+        aws_config::AWSConfig
         local_image::Union{Nothing, LocalImage}
         remote_image::Union{Nothing, RemoteImage}
         lambda_function::Union{Nothing, LambdaFunction}
     end
 """
-struct LambdaComponents
+@with_kw struct LambdaComponents
+  function_name::String
+  aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
@@ -42,18 +45,20 @@ end
 matches(lambda_function::LambdaFunction, remote_image::RemoteImage) = matches(remote_image, lambda_function)
 
 function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{Nothing, LambdaComponents}
-  lambda_types = fieldtypes(LambdaComponents)
+  get_non_nothing_type(x::Type{IT}) where {IT} = typeof(x) == Union ? x.b : x
+
+  lambda_types = map(get_non_nothing_type, fieldtypes(LambdaComponents))
   lambda_names = fieldnames(LambdaComponents)
   l1_fields = [getfield(l1, name) for name in lambda_names]
   l2_fields = [getfield(l2, name) for name in lambda_names]
 
-  function matches(
-      l1_fields::Vector, 
-      l2_fields::Vector,
-    )::Bool where {A, B}
-    for (t_1, nm_1, val_1) in zip(lambda_types, lambda_names, l1_fields)
-      for (t_2, nm_2, val_2) in zip(lambda_types, lambda_names, l2_fields)
-        if hasmethod(matches, Tuple{t_1, t_2})
+  function match_across_fields(
+      l1_flds::Vector, 
+      l2_flds::Vector,
+    )::Bool
+    for (fieldtype_1, val_1) in zip(lambda_types, l1_flds)
+      for (fieldtype_2, val_2) in zip(lambda_types, l2_flds)
+        if !isnothing(val_1) && !isnothing(val_2) && hasmethod(matches, Tuple{fieldtype_1, fieldtype_2})
           if matches(val_1, val_2)
             return true
           end
@@ -63,86 +68,192 @@ function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{N
     return false
   end
 
-  function cmb(::Type{T}, c1::Union{Nothing, T}, c2::Union{Nothing, T})::Union{Nothing, T} where {T}
+  function cmb(c1::Union{Nothing, T}, c2::Union{Nothing, T})::Union{Nothing, T} where {T}
     if isnothing(c1)
       c2
     elseif isnothing(c2)
       c1
     else
-      c1 != c2 && error("Found non-matching element in matched lamda")
+      c1 != c2 && error("Found non-matching element in matched lambda")
       c1
     end
   end
 
-  if matches(l1_fields, l2_fields)
-    cmb_fields = Dict(sym => cmb(f_1, f_2) for ((sym, _, f_1), (_, _, f_2)) in zip(l1_fields, l2_fields))
-    LambdaComponents(cmb_fields...)
+  function cmb(c1::T, c2::T)::T where {T}
+    c1 != c2 && error("Found non-matching element in matched lambda")
+    c1
+  end
+
+  if match_across_fields(l1_fields, l2_fields)
+    cmb_fields = Dict(sym => cmb(f_1, f_2) for (sym, f_1, f_2) in zip(lambda_names, l1_fields, l2_fields))
+    LambdaComponents(; cmb_fields...)
   else
     nothing
   end
 end
-  
-function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
-  # TODO refactor common interface for all getters - check component then check sub
-  headers = OrderedDict("AWS Config" => ["Account ID"],
-                 "Response Function" => ["Function Name", "Tree Hash"],
-                 "Local Image" => ["Image Name", "ID", "Tag"],
-                 "Remote Image" => ["Tag"],
-                 "Lambda Function" => ["Name", "Last Modified"],
-                )
-  function d11(l::LambdaComponents)::String
-    isnothing(l.local_image) && return ""
-    aid = get_aws_config(l.local_image).account_id
-    ismissing(aid) ? "" : aid
-  end
-  function d21(l::LambdaComponents)::String 
-    isnothing(l.local_image) && return ""
-    rfn = get_response_function_name(l.local_image)
-    isnothing(rfn) ? "" : rfn
-  end
-  function d22(l::LambdaComponents)::String
-    isnothing(l.local_image) && return "" 
-    hsh = get_tree_hash(l.local_image)
-    isnothing(hsh) ? "" : hsh[1:docker_hash_limit]
-  end
-  d31(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
-  d32(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
-  d33(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.Tag
-  function d41(l::LambdaComponents)::String 
-    isnothing(l.remote_image) && return ""
-    itag = l.remote_image.imageTag
-    ismissing(itag) ? "" : itag
-  end
-  function d51(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return ""
-    fn = l.lambda_function.FunctionName 
-    ismissing(fn) ? "" : fn
-  end
-  function d52(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return ""
-    lm = l.lambda_function.LastModified
-    ismissing(lm) ? "" : lm
+
+struct TableComponent
+  name::String
+  value_function::Function
+  highlighter_f::Union{Function, Nothing}
+end
+
+const not_present = "-"
+
+function_name_f(l::LambdaComponents)::String = l.function_name
+const function_name_component = TableComponent("Function Name", function_name_f, nothing)
+
+function account_id_f(l::LambdaComponents)::String
+  l.aws_config.account_id
+end
+const account_id_component = TableComponent("Account ID", account_id_f, nothing)
+
+function responder_source_f(l::LambdaComponents)::String
+  src = get_labels(l).RESPONDER_PKG_SOURCE
+  isnothing(src) ? not_present : src
+end
+function responder_source_h_f(
+    headers::OrderedDict{String, TableComponent}, lambdas::Vector{LambdaComponents},
+  )::Vector{Highlighter}
+  h1 = Highlighter(bold = true, foreground = :blue) do table_data, i, j
+    comps = values(headers) |> collect
+    if comps[j] == responder_source_component
+      responder_path = table_data[i, j]
+      lc_tree_hash = get_tree_hash(lambdas[i])
+      if ispath(responder_path)
+        get_tree_hash(responder_path) == lc_tree_hash
+      else
+        false
+      end
+    else
+      false
+    end
   end
 
-  data = vcat([[d11(l) d21(l) d22(l) d31(l) d32(l) d33(l) d41(l) d51(l) d52(l)] for l in lambdas]...)
-  (headers, data)
+  h2 = Highlighter(foreground = :dark_gray) do table_data, i, j
+    comps = values(headers) |> collect
+    if comps[j] == responder_source_component
+      responder_path = table_data[i, j]
+      ispath(responder_path) ? false : true
+    else
+      false
+    end
+  end
+  [h1, h2]
+end
+const responder_source_component = TableComponent("Responder Source", responder_source_f, responder_source_h_f)
+
+function tree_hash_f(l::LambdaComponents)::String
+  isnothing(l.local_image) && return not_present 
+  hsh = get_tree_hash(l.local_image)
+  isnothing(hsh) ? not_present : hsh[1:docker_hash_limit]
+end
+const tree_hash_component = TableComponent("Tree Hash", tree_hash_f, nothing)
+
+local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
+const local_image_name_component = TableComponent("Image Name", local_image_name_f, nothing)
+
+local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
+const local_image_id_component = TableComponent("Image ID", local_image_id_f, nothing)
+
+local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.Tag
+const local_image_tag_component = TableComponent("Image Tag", local_image_tag_f, nothing)
+
+function remote_image_tag_f(l::LambdaComponents)::String 
+  isnothing(l.remote_image) && return not_present
+  itag = l.remote_image.imageTag
+  ismissing(itag) ? not_present : itag
+end
+const remote_image_tag_component = TableComponent("Image Tag", remote_image_tag_f, nothing)
+
+function remote_image_digest_f(l::LambdaComponents)::String 
+  isnothing(l.remote_image) && return "-"
+  digest = l.remote_image.imageDigest
+  if ismissing(digest)
+    "-"
+  else
+    hash_only = split(digest, ':') |> last
+    hash_only[begin:docker_hash_limit]
+  end
+end
+const remote_image_digest_component = TableComponent("Image Digest", remote_image_digest_f, nothing)
+
+function lambda_function_name_f(l::LambdaComponents)::String 
+  isnothing(l.lambda_function) && return not_present
+  fn = l.lambda_function.FunctionName 
+  ismissing(fn) ? not_present : fn
+end
+const lambda_function_name_component = TableComponent("Function Name", lambda_function_name_f, nothing)
+
+function lambda_function_last_modified_f(l::LambdaComponents)::String 
+  isnothing(l.lambda_function) && return not_present
+  lm = l.lambda_function.LastModified
+  ismissing(lm) ? not_present : lm
+end
+const lambda_function_last_modified_component = TableComponent(
+  "Last Modified", lambda_function_last_modified_f, nothing
+)
+
+function get_table_data(
+    headers::OrderedDict{String, TableComponent},
+    lambdas::Vector{LambdaComponents}, 
+  )::Matrix{String}
+
+  # TODO refactor common interface for all getters - check component then check sub
+  # TODO highlight responder path if not current - probably put it in grey
+  all_funcs = values(headers) |> collect
+  data_rows = [map(tc -> tc.value_function(l), all_funcs) for l in lambdas]
+  data_rows = map(row-> reshape(row, (1, :)), data_rows)
+  data = vcat(data_rows...)
 end
 
 function show_lambdas()
+  @info "Collecting lambda components; this may take a few seconds..."
   lambdas = get_all_lambdas()
-  (headers, data) = to_table(lambdas)
-  headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
-                    [x for bottom in values(headers) for x in bottom])
-  pretty_table(data; header=headers_matrix)
+
+  table_headers = OrderedDict(
+    "Function Name" => function_name_component,
+    "Responder" => responder_source_component,
+    "Local Image" => local_image_id_component,
+    "Remote Image" => remote_image_digest_component,
+    "Lambda Function" => lambda_function_name_component,
+  )
+
+  table_data = get_table_data(table_headers, lambdas)
+  headers_matrix = (keys(table_headers) |> collect, [tc.name for tc in values(table_headers)])
+
+  table_comps = filter(tc -> !isnothing(tc.highlighter_f), values(table_headers) |> collect)
+  highlighter_funcs = map(tc -> tc.highlighter_f, table_comps)
+  highlighters = [h for hf in highlighter_funcs for h in hf(table_headers, lambdas)]
+  highlighters = tuple(highlighters...)
+  
+  pretty_table(
+    table_data; 
+    header=headers_matrix, 
+    show_row_number=true, 
+    crop=:none,
+    maximum_columns_width=30,
+    highlighters=highlighters,
+  )
 end
 
 function get_all_lambdas()::Vector{LambdaComponents}
   all_local = get_all_local_images()
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
-  local_lambdas = [ LambdaComponents(l, nothing, nothing) for l in all_local if is_lambda(l)]
-  remote_lambdas = [ LambdaComponents(nothing, r, nothing) for r in all_remote ]
-  func_lambdas = [ LambdaComponents(nothing, nothing, f) for f in all_functions ]
+  aws_config = get_aws_config()
+  local_lambdas = [ 
+    LambdaComponents(get_labels(l) |> get_responder_full_function_name, aws_config, l, nothing, nothing) 
+    for l in all_local if (is_lambda(l) && is_jot_generated(l))
+  ]
+  remote_lambdas = [
+    LambdaComponents(get_labels(r) |> get_responder_full_function_name, aws_config, nothing, r, nothing) 
+    for r in all_remote if is_jot_generated(r)
+  ]
+  func_lambdas = [
+    LambdaComponents(get_labels(f) |> get_responder_full_function_name, aws_config, nothing, nothing, f) 
+    for f in all_functions if is_jot_generated(f)
+  ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 
   function match_off_lambdas(
@@ -154,14 +265,15 @@ function get_all_lambdas()::Vector{LambdaComponents}
     else
       match_head = to_match[1]; match_tail = to_match[2:end]
       add_to_matched = match_head
-      for m in matched
+      for (i, m) in enumerate(matched)
         cmb = combine_if_matches(match_head, m)
         if !isnothing(cmb) 
           add_to_matched = cmb
+          deleteat!(matched, i)
           break
         end
       end
-      match_off_lambdas(match_tail, push!(matched, add_to_matched))
+      match_off_lambdas(match_tail, [matched; [add_to_matched]])
     end
   end
   match_off_lambdas(all_lambdas, Vector{LambdaComponents}())
@@ -182,11 +294,32 @@ function group_by_function_name(lambdas::Vector{LambdaComponents})::Dict{String,
   lambdas_by_function
 end
 
+"""
+    show_all_lambdas(
+      local_image_attr::String = "tag", 
+      remote_image_attr::String = "tag",  
+      lambda_function_attr::String = "version",
+    )::Nothing
+
+Displays a table of all objects generated using Jot.jl.
+
+Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
+on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
+image and lambda function on a given row of the table are guaranteed to share the same underlying 
+function code.
+
+The Responder column is colour-coded:
+- Grey indicates that this path no longer exists.
+- White indicates that this path still exists, but the code has changed since the objects shown
+in the row were created.
+- Blue indicates that the underlying code for this row (eg the code present in the local image,
+remote image etc) is the same as is currently present at this path.
+"""
 function show_all_lambdas(; 
     local_image_attr::String = "tag", 
     remote_image_attr::String = "tag",  
     lambda_function_attr::String = "version",
-  )
+  )::Nothing
   out = ""
   out *= "\tLocal Image\tRemote Image\tLambda Function"
   for l in get_all_lambdas()

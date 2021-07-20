@@ -63,11 +63,12 @@ end
 
 function create_ecr_repo(image::LocalImage)::ECRRepo
   image.exists || error("Image does not exist")
+  labels = get_labels(image)
   create_script = get_create_ecr_repo_script(
                                              get_image_suffix(image),
                                              get_aws_region(image),
+                                             labels,
                                             )
-  @debug create_script
   repo_json = readchomp(`bash -c $create_script`)
   @debug repo_json
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]

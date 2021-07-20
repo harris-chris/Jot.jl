@@ -14,7 +14,7 @@ Represents a docker image on the local machine, and stores associated metadata. 
 instantiated directly. If `exists` is `true`, then the image is assumed to exit and so should be 
 visible from utilities such as `docker image ls`.
 """
-@with_kw mutable struct LocalImage
+@with_kw mutable struct LocalImage <: LambdaComponent
   CreatedAt::Union{Missing, String} = missing
   Digest::String
   ID::String
@@ -32,22 +32,27 @@ end
 
 """
     get_local_image(
-      repository::String,
+      identity::String,
     )::Union{Nothing, LocalImage}
 
 Returns a `LocalImage` object, representing a locally-stored docker image.
-"""
-function get_local_image(repository::String)::Union{Nothing, LocalImage}
-  all = get_all_local_images()
-  index = findfirst(x -> x.Repository == repository, all)
-  isnothing(index) ? nothing : all[index]
-end
 
-function get_local_image_from_id(id::AbstractString)::Union{Nothing, LocalImage}
-  all_images = get_all_local_images()
-  short_id = id[1:docker_hash_limit]
-  index = findfirst(img -> img.ID == short_id, all_images)
-  isnothing(index) ? nothing : all_images[index]
+The passed `identity` string may be the repository name, or the docker image ID. If the image ID,
+it must be at least four characters in length.
+"""
+function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
+  all = get_all_local_images()
+  index = findfirst(all) do li
+    (li.Repository == identity || begin
+      @debug identity
+      @debug li.Repository
+      @debug li.ID
+       check_len = minimum([length(li.ID), length(identity)])
+       li.ID[check_len] == identity[check_len] && check_len >= 4
+    end
+    )
+  end
+  isnothing(index) ? nothing : all[index]
 end
 
 """

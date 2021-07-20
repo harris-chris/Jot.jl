@@ -16,7 +16,7 @@ see available profiles, run `aws configure list-profiles`.
 end
 StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()  
 
-function find_aws_config()::AWSConfig
+function get_aws_config()::AWSConfig
   AWSConfig(
             readchomp(`aws sts get-caller-identity --query Account --output text`),
             readchomp(`aws configure get region`)
@@ -76,6 +76,7 @@ function get_aws_role(role_name::String)::Union{Nothing, AWSRole}
   all = get_all_aws_roles()
   index = findfirst(role -> role.RoleName == role_name, all)
   isnothing(index) ? nothing : all[index]
+  nothing
 end
 
 """

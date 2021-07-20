@@ -28,7 +28,7 @@ Represents a Lambda function, hosted on AWS. Should not be instantiated directly
 `true`, then the image is assumed to exit and so should be visible from utilities such as `aws 
 lambda list-functions`
 """
-@with_kw mutable struct LambdaFunction
+@with_kw mutable struct LambdaFunction <: LambdaComponent
   FunctionName::Union{Missing, String} = missing
   FunctionArn::Union{Missing, String} = missing
   Runtime::Union{Missing, String} = missing
@@ -101,6 +101,7 @@ function delete!(func::LambdaFunction)
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
   func.exists = false 
+  nothing
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState

@@ -29,9 +29,12 @@ export get_remote_image
 export create_aws_role, get_all_aws_roles
 export create_lambda_function, get_lambda_function, invoke_function
 export delete!
+export show_lambdas
 
 # CONSTANTS
 const docker_hash_limit = 12
+
+abstract type LambdaComponent end
 
 include("Responder.jl")
 include("LocalImage.jl")
@@ -41,6 +44,7 @@ include("Container.jl")
 include("LambdaFunction.jl")
 include("AWS.jl")
 include("LambdaComponents.jl")
+include("Labels.jl")
 
 function get_commit(path::String)::Union{Missing, String}
   try
@@ -74,14 +78,21 @@ function get_tree_hash(path::String)::String
   Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
-function get_tree_hash(i::Union{LocalImage, RemoteImage})::Union{Nothing, String}
-  labels = get_labels(i)
-  if !isnothing(labels) 
-    try
-      labels["RESPONDER_TREE_HASH"]
-    catch e
-      isa(e, KeyError) ? nothing : throw(e)
-    end
+function get_tree_hash(i::Union{LocalImage, RemoteImage})::String
+  get_labels(i).RESPONDER_TREE_HASH
+end
+
+function get_tree_hash(l::LambdaFunction)::String
+  get_labels(l).RESPONDER_TREE_HASH
+end
+
+function get_tree_hash(lc::LambdaComponents)::String
+  if !isnothing(lc.local_image) 
+    get_tree_hash(lc.local_image)
+  elseif !isnothing(lc.remote_image) 
+    get_tree_hash(lc.remote_image)
+  else 
+    get_tree_hash(lc.lambda_function)
   end
 end
 
@@ -161,12 +172,6 @@ function get_dockerfile(
     julia_base_version::String,
     package_compile::Bool,
   )::String
-  @debug responder.build_dir
-  @debug readdir(responder.build_dir)
-  @debug responder.package_name
-  @debug joinpath(responder.build_dir, responder.package_name)
-  @debug readdir(joinpath(responder.build_dir, responder.package_name))
-  @debug get_responder_package_name(joinpath(responder.build_dir, responder.package_name))
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
@@ -216,7 +221,7 @@ function create_local_image(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
   )::LocalImage
-  aws_config = isnothing(aws_config) ? find_aws_config() : aws_config
+  aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
                               julia_base_version, 
@@ -234,7 +239,7 @@ function create_local_image(
   run(Cmd(build_cmd, dir=responder.build_dir))
   # Locate it and return it
   image_id = open(joinpath(responder.build_dir, "id"), "r") do f String(read(f)) end |> x -> split(x, ':')[2]
-  this_image = get_local_image_from_id(image_id)
+  this_image = get_local_image(image_id)
   isnothing(this_image) ? error("Unable to locate created local image") : this_image
 end
 
@@ -252,43 +257,97 @@ end
 
 # -- get_labels --
 
-function get_labels(image::LocalImage)::Dict{String, String}
-  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
-  get_labels(image_inspect)
+function get_labels(
+    res::LocalPackageResponder,
+  )::Labels
+  @debug "HERE"
+  @debug get_responder_path(res)
+  Labels(res.package_name,
+          get_responder_function_name(res),
+          get_commit(res),
+          get_tree_hash(res),
+          get_responder_path(res),
+          "true",
+         )
 end
 
-function get_labels(image::RemoteImage)::Dict{String, String}
+function get_labels(image::LocalImage)::Labels
+  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  iis = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})
+  if length(iis) == 0 
+    error("Unable to find labels for image $(image.Repository)")
+  else
+    get_labels(iis[1])
+  end
+end
+
+function get_labels(ecr_repo::ECRRepo)::Labels
+  tags_json = readchomp(
+    `aws ecr list-tags-for-resource
+       --resource-arn $(ecr_repo.repositoryArn)`
+  )
+  tags_raw = JSON3.read(tags_json)
+  haskey(tags_raw, "tags") || error("ECR Repo $(ecr_repo.repositoryName) has no tags")
+  tags_dict = Dict(Symbol(d["Key"]) => d["Value"] for d in tags_raw["tags"])
+  Labels(; tags_dict...) 
+end
+
+function get_labels(image::RemoteImage)::Labels
   batch_image_json = readchomp(
     `aws ecr batch-get-image 
       --repository-name $(image.ecr_repo.repositoryName) 
       --image-id imageTag=$(image.imageTag) 
       --accepted-media-types "application/vnd.docker.distribution.manifest.v1+json" --output json`
-     ) #|jq -r '.images[].imageManifest' |jq -r '.history[0].v1Compatibility' |jq -r '.config.Labels'
+     ) 
   batch_image = JSON3.read(batch_image_json) 
-  manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
-  v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
-  labels = v1_compat["config"]["Labels"]
-  Dict((String(k) => v) for (k, v) in labels)
-end
-
-function get_labels(image_inspect::AbstractDict{String, Any})::Dict{String, String}
-  try
-    ii = image_inspect["ContainerConfig"]["Labels"]
-    isnothing(ii) ? Dict{String, String}() : ii
-  catch e
-    isa(e, KeyError) ? Dict{String, String}() : throw(e)
+  try 
+    manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+    v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
+    labels = v1_compat["config"]["Labels"]
+    Labels(; labels...)
+  catch e 
+    if isa(e, BoundsError) || isa(e, KeyError)
+      error("Unable to find labels for image $(image.ecr_repo.repositoryName)")
+    else
+      throw(e)
+    end
   end
 end
 
-function get_labels(
-    res::LocalPackageResponder,
-  )::Dict{String, String}
-  img_labels = Dict("RESPONDER_PACKAGE_NAME" => res.package_name,
-                    "RESPONDER_FUNCTION_NAME" => get_responder_function_name(res),
-                    "RESPONDER_COMMIT" => get_commit(res),
-                    "RESPONDER_TREE_HASH" => get_tree_hash(res),
-                   )
+function get_labels(image_inspect::AbstractDict{String, Any})::Labels
+  ii = image_inspect["ContainerConfig"]["Labels"]
+  isnothing(ii) && error("Unable to get labels")
+  ii_sym = Dict(Symbol(k) => v for (k, v) in ii)
+  Labels(; ii_sym...)
+end
+
+function get_labels(lambda_function::LambdaFunction)::Labels
+  get_lf_tags_script = get_lambda_function_tags_script(lambda_function)
+  tags_json = readchomp(`bash -c $get_lf_tags_script`)
+  try
+    JSON3.read(tags_json, Dict{String, Labels})["Tags"]
+  catch e
+    error("Unable to find labels for lambda function $(lambda_function.FunctionName)")
+  end
+end
+
+function get_labels(lc::LambdaComponents)::Labels
+  if !isnothing(lc.local_image) 
+    get_labels(lc.local_image)
+  elseif !isnothing(lc.remote_image) 
+    get_labels(lc.remote_image)
+  else 
+    get_labels(lc.lambda_function)
+  end
+end
+
+function is_jot_generated(c::LambdaComponent)::Bool
+  try 
+    labels = get_labels(c)
+    Meta.parse(labels.IS_JOT_GENERATED)
+  catch e
+    false
+  end
 end
 
 """
@@ -421,7 +480,8 @@ function create_lambda_function(
   )::LambdaFunction
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
+  labels = get_labels(remote_image)
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
 end
 
 """
@@ -447,7 +507,8 @@ function create_lambda_function(
   )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
+  labels = get_labels(repo)
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
 end
 
 function create_lambda_function(
@@ -456,6 +517,7 @@ function create_lambda_function(
     function_name::String,
     timeout::Int64,
     memory_size::Int64,
+    labels::Labels,
   )::LambdaFunction
   existing_lf = get_lambda_function(function_name)
   if !isnothing(existing_lf)
@@ -464,19 +526,19 @@ function create_lambda_function(
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
 
+  @debug "HERE"
+  @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,
                                                     timeout,
-                                                    memory_size,
+                                                    memory_size;
+                                                    labels=labels,
                                                    )
 
-  out = Pipe(); err = Pipe()
-  @debug "ABOUT TO RUN CREATE LAMBDA SCRIPT"
   @debug create_script
+  out = Pipe(); err = Pipe()
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
-  @debug proc.exitcode
-  # proc = run(pipeline(`bash -c $create_script`, stdout=out, stderr=err), wait=true)
 
   close(out.in); close(err.in)
   if proc.exitcode != 0

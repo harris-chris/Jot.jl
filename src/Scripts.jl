@@ -111,6 +111,12 @@ function get_precompile_jl(
   """
 end
 
+function get_lambda_function_tags_script(lambda_function::LambdaFunction)::String
+  """
+  aws lambda list-tags --resource $(lambda_function.FunctionArn)
+  """
+end
+
 function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
   image_full_name = get_image_full_name(aws_config, image_suffix)
   """
@@ -126,12 +132,17 @@ get_docker_push_script(image_full_name_plus_tag::String) = """
 docker push $image_full_name_plus_tag
 """
 
-function get_create_ecr_repo_script(image_suffix::String, aws_region::String)::String
+function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
+  tags_json = [
+    OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(labels, k)) ? "" : getfield(labels, k)))
+    for k in fieldnames(Labels)
+  ] |> JSON3.write
   """
   aws ecr create-repository \\
     --repository-name $(image_suffix) \\
     --image-scanning-configuration scanOnPush=true \\
-    --region $(aws_region)
+    --region $(aws_region) \\
+    --tags '$tags_json'
   """
 end
 
@@ -178,8 +189,11 @@ function get_create_lambda_function_script(
     repo_uri::String,
     role_arn::String,
     timeout::Int64,
-    memory_size::Int64,
+    memory_size::Int64;
+    labels::Labels,
   )::String
+  tags_shorthand = to_aws_shorthand(labels)
+  @debug tags_shorthand
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\
@@ -187,7 +201,8 @@ function get_create_lambda_function_script(
     --role $(role_arn) \\
     --package-type Image \\
     --timeout=$(timeout) \\
-    --memory-size=$(memory_size)
+    --memory-size=$(memory_size) \\
+    --tags $tags_shorthand
   """
 end
 

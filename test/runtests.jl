@@ -33,7 +33,7 @@ function run_tests(;
     partial::Bool=true,
   )
   if example_only
-    test_documentation_example()
+    test_documentation_example(clean)
     return
   end
   clean = clean == "true" ? true : false
@@ -162,7 +162,7 @@ function run_tests(;
   clean && clean_up()
 end
 
-function test_documentation_example()
+function test_documentation_example(clean_up::Bool)
   @testset "Documentation example" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -186,11 +186,13 @@ function test_documentation_example()
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
 
     # Clean up 
-    delete!(increment_vector_lambda)
-    delete!(ecr_repo)
-    delete!(aws_role)
-    delete!(local_image)
-    rm("./increment_vector.jl")
+    if clean_up
+      delete!(increment_vector_lambda)
+      delete!(ecr_repo)
+      delete!(aws_role)
+      delete!(local_image)
+      rm("./increment_vector.jl")
+    end
   end
 end
 
@@ -219,6 +221,7 @@ function test_local_image(
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile)
   @test Jot.matches(res, local_image)
+  @test Jot.is_jot_generated(local_image)
   # Test that container runs
   cont = run_image_locally(local_image)
   @test is_container_running(cont)
@@ -259,6 +262,7 @@ end
 function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
+    @test Jot.is_jot_generated(remote_image)
     @test Jot.matches(local_image, ecr_repo)
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(local_image))
@@ -289,6 +293,7 @@ function test_lambda_function(
   )::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
+    @test Jot.is_jot_generated(lambda_function)
     @test Jot.matches(remote_image, lambda_function)
     # Check that we can find it
     @test lambda_function in Jot.get_all_lambda_functions()
