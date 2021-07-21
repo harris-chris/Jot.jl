@@ -126,12 +126,14 @@ get_docker_push_script(image_full_name_plus_tag::String) = """
 docker push $image_full_name_plus_tag
 """
 
-function get_create_ecr_repo_script(image_suffix::String, aws_region::String)::String
+function get_create_ecr_repo_script(image_suffix::String, aws_region::String, tags::AbstractDict)::String
+  tags_json = [Dict("Key" => k, "Value" => v) for (k, v) in tags] |> JSON3.write
   """
   aws ecr create-repository \\
     --repository-name $(image_suffix) \\
     --image-scanning-configuration scanOnPush=true \\
     --region $(aws_region)
+    --tags $tags_json
   """
 end
 
@@ -178,8 +180,10 @@ function get_create_lambda_function_script(
     repo_uri::String,
     role_arn::String,
     timeout::Int64,
-    memory_size::Int64,
+    memory_size::Int64;
+    tags::AbstractDict,
   )::String
+  tags_json = JSON3.write(tags)
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\
@@ -187,7 +191,8 @@ function get_create_lambda_function_script(
     --role $(role_arn) \\
     --package-type Image \\
     --timeout=$(timeout) \\
-    --memory-size=$(memory_size)
+    --memory-size=$(memory_size) \\
+    --tags $tags_json
   """
 end
 

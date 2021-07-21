@@ -421,8 +421,7 @@ function create_lambda_function(
   )::LambdaFunction
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
-  labels = get_labels(remote_image)
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
 end
 
 """
@@ -448,8 +447,7 @@ function create_lambda_function(
   )::LambdaFunction
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
-  labels = get_labels(repo)
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  create_lambda_function(image_uri, role, function_name, timeout, memory_size)
 end
 
 function create_lambda_function(
@@ -477,6 +475,7 @@ function create_lambda_function(
 
   out = Pipe(); err = Pipe()
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
+  # proc = run(pipeline(`bash -c $create_script`, stdout=out, stderr=err), wait=true)
 
   close(out.in); close(err.in)
   if proc.exitcode != 0

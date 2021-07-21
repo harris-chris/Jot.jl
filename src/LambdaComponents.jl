@@ -7,7 +7,7 @@
         lambda_function::Union{Nothing, LambdaFunction}
     end
 """
-struct LambdaComponents
+@with_kw struct LambdaComponents
   aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
@@ -44,19 +44,27 @@ end
 matches(lambda_function::LambdaFunction, remote_image::RemoteImage) = matches(remote_image, lambda_function)
 
 function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{Nothing, LambdaComponents}
-  lambda_types = fieldtypes(LambdaComponents)
+  @debug "HERE"
+  get_non_nothing_type(x::Type{IT}) where {IT} = typeof(x) == Union ? x.b : x
+
+  lambda_types = map(get_non_nothing_type, fieldtypes(LambdaComponents))
   lambda_names = fieldnames(LambdaComponents)
   l1_fields = [getfield(l1, name) for name in lambda_names]
   l2_fields = [getfield(l2, name) for name in lambda_names]
 
-  function matches(
-      l1_fields::Vector, 
-      l2_fields::Vector,
-    )::Bool where {A, B}
-    for (t_1, nm_1, val_1) in zip(lambda_types, lambda_names, l1_fields)
-      for (t_2, nm_2, val_2) in zip(lambda_types, lambda_names, l2_fields)
-        if hasmethod(matches, Tuple{t_1, t_2})
+  function match_across_fields(
+      l1_flds::Vector, 
+      l2_flds::Vector,
+    )::Bool
+    @debug "RUNNING MATCHES VECTORS"
+    for (fieldtype_1, val_1) in zip(lambda_types, l1_flds)
+      for (fieldtype_2, val_2) in zip(lambda_types, l2_flds)
+        @debug Tuple{fieldtype_1, fieldtype_2}
+        @debug hasmethod(matches, Tuple{fieldtype_1, fieldtype_2})
+        if !isnothing(val_1) && !isnothing(val_2) && hasmethod(matches, Tuple{fieldtype_1, fieldtype_2})
+          @debug "CHECKING"
           if matches(val_1, val_2)
+            @debug "TRUE"
             return true
           end
         end
@@ -65,20 +73,29 @@ function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{N
     return false
   end
 
-  function cmb(::Type{T}, c1::Union{Nothing, T}, c2::Union{Nothing, T})::Union{Nothing, T} where {T}
+  function cmb(c1::Union{Nothing, T}, c2::Union{Nothing, T})::Union{Nothing, T} where {T}
     if isnothing(c1)
       c2
     elseif isnothing(c2)
       c1
     else
-      c1 != c2 && error("Found non-matching element in matched lamda")
+      c1 != c2 && error("Found non-matching element in matched lambda")
       c1
     end
   end
 
-  if matches(l1_fields, l2_fields)
-    cmb_fields = Dict(sym => cmb(f_1, f_2) for ((sym, _, f_1), (_, _, f_2)) in zip(l1_fields, l2_fields))
-    LambdaComponents(cmb_fields...)
+  function cmb(c1::T, c2::T)::T where {T}
+    c1 != c2 && error("Found non-matching element in matched lambda")
+    c1
+  end
+
+  if match_across_fields(l1_fields, l2_fields)
+    @debug l1_fields
+    @debug l1_fields[1]
+    cmb_fields = Dict(sym => cmb(f_1, f_2) for (sym, f_1, f_2) in zip(lambda_names, l1_fields, l2_fields))
+    @debug cmb_fields
+    @debug typeof(cmb_fields)
+    LambdaComponents(; cmb_fields...)
   else
     nothing
   end
