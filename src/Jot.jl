@@ -472,9 +472,10 @@ function create_lambda_function(
                                                     role.Arn,
                                                     timeout,
                                                     memory_size;
-                                                    labels
+                                                    tags=labels
                                                    )
 
+  @debug create_script
   out = Pipe(); err = Pipe()
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
 

@@ -132,8 +132,8 @@ function get_create_ecr_repo_script(image_suffix::String, aws_region::String, ta
   aws ecr create-repository \\
     --repository-name $(image_suffix) \\
     --image-scanning-configuration scanOnPush=true \\
-    --region $(aws_region)
-    --tags $tags_json
+    --region $(aws_region) \\
+    --tags '$tags_json'
   """
 end
 
@@ -192,7 +192,7 @@ function get_create_lambda_function_script(
     --package-type Image \\
     --timeout=$(timeout) \\
     --memory-size=$(memory_size) \\
-    --tags $tags_json
+    --tags '$tags_json'
   """
 end
 
