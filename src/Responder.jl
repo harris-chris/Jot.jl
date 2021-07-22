@@ -248,6 +248,10 @@ function get_responder_package_name(path::String)::String
   end
 end
 
+function get_responder_path(res::LocalPackageResponder)::Union{Nothing, String}
+  res.pkg.repo.source
+end
+
 function get_commit(res::LocalPackageResponder)::String
   get_commit(res.build_dir)
 end

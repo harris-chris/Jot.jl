@@ -19,3 +19,5 @@ Local image -> identifier via environment variables
 
 this relies on us being able to recover the general identifier from all components
 
+made Labels a struct
+

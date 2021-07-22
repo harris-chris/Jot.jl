@@ -33,6 +33,8 @@ export delete!
 # CONSTANTS
 const docker_hash_limit = 12
 
+abstract type LambdaComponent end
+
 include("Responder.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
@@ -41,6 +43,7 @@ include("Container.jl")
 include("LambdaFunction.jl")
 include("AWS.jl")
 include("LambdaComponents.jl")
+include("Labels.jl")
 
 function get_commit(path::String)::Union{Missing, String}
   try
@@ -74,15 +77,8 @@ function get_tree_hash(path::String)::String
   Pkg.GitTools.tree_hash(path) |> bytes2hex
 end
 
-function get_tree_hash(i::Union{LocalImage, RemoteImage})::Union{Nothing, String}
-  labels = get_labels(i)
-  if !isnothing(labels) 
-    try
-      labels["RESPONDER_TREE_HASH"]
-    catch e
-      isa(e, KeyError) ? nothing : throw(e)
-    end
-  end
+function get_tree_hash(i::Union{LocalImage, RemoteImage})::String
+  get_labels(i).RESPONDER_TREE_HASH
 end
 
 function get_image_full_name(
@@ -252,27 +248,52 @@ end
 
 # -- get_labels --
 
-function get_labels(image::LocalImage)::Dict{String, String}
-  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
-  get_labels(image_inspect)
+function get_labels(
+    res::LocalPackageResponder,
+  )::Labels
+  Labels(res.package_name,
+          get_responder_function_name(res),
+          get_commit(res),
+          get_tree_hash(res),
+          get_responder_path(res),
+          true,
+         )
 end
 
-function get_labels(image::RemoteImage)::Dict{String, String}
+function get_labels(image::LocalImage)::Labels
+  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  labels = JSON3.read(image_inspect_json, Vector{Labels})
+  if length(labels) == 0 
+    error("Unable to find labels for image $(image.Repository)")
+  else
+    labels[1]
+  end
+  # get_labels(image_inspect)
+end
+
+function get_labels(image::RemoteImage)::Labels
   batch_image_json = readchomp(
     `aws ecr batch-get-image 
       --repository-name $(image.ecr_repo.repositoryName) 
       --image-id imageTag=$(image.imageTag) 
       --accepted-media-types "application/vnd.docker.distribution.manifest.v1+json" --output json`
-     ) #|jq -r '.images[].imageManifest' |jq -r '.history[0].v1Compatibility' |jq -r '.config.Labels'
+     ) 
   batch_image = JSON3.read(batch_image_json) 
-  manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
-  v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
-  labels = v1_compat["config"]["Labels"]
-  Dict((String(k) => v) for (k, v) in labels)
+  try 
+    manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+    v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
+    labels = v1_compat["config"]["Labels"]
+    Labels(; labels...)
+  catch e 
+    if isa(e, BoundsError) || isa(e, KeyError)
+      error("Unable to find labels for image $(image.ecr_repo.repositoryName)")
+    else
+      throw(e)
+    end
+  end
 end
 
-function get_labels(image_inspect::AbstractDict{String, Any})::Dict{String, String}
+function get_labels(image_inspect::AbstractDict{String, Any})::Labels
   try
     ii = image_inspect["ContainerConfig"]["Labels"]
     isnothing(ii) ? Dict{String, String}() : ii
@@ -281,14 +302,32 @@ function get_labels(image_inspect::AbstractDict{String, Any})::Dict{String, Stri
   end
 end
 
-function get_labels(
-    res::LocalPackageResponder,
-  )::Dict{String, String}
-  img_labels = Dict("RESPONDER_PACKAGE_NAME" => res.package_name,
-                    "RESPONDER_FUNCTION_NAME" => get_responder_function_name(res),
-                    "RESPONDER_COMMIT" => get_commit(res),
-                    "RESPONDER_TREE_HASH" => get_tree_hash(res),
-                   )
+function get_labels(lambda_function::LambdaFunction)::Labels
+  get_lf_tags_script = get_lambda_function_tags_script(lambda_function)
+  tags_json = readchomp(`bash -c $get_lf_tags_script`)
+  try
+    JSON3.read(tags_json, Labels)
+  catch e
+    error("Unable to find labels for lambda function $(lambda_function.FunctionName)")
+  end
+end
+
+function get_labels(lc::LambdaComponents)::Labels
+  if !isnothing(lc.local_image) 
+    get_labels(lc.local_image)
+  elseif !isnothing(lc.remote_image) 
+    get_labels(lc.remote_image)
+  else 
+    get_labels(lc.lambda_function)
+  end
+end
+
+function is_jot_generated(c::LambdaComponent)::Bool
+  try get_labels(c)
+    labels.IS_JOT_GENERATED
+  catch e
+    false
+  end
 end
 
 """
@@ -458,7 +497,7 @@ function create_lambda_function(
     function_name::String,
     timeout::Int64,
     memory_size::Int64,
-    labels::AbstractDict,
+    labels::Labels,
   )::LambdaFunction
   existing_lf = get_lambda_function(function_name)
   if !isnothing(existing_lf)
@@ -472,7 +511,7 @@ function create_lambda_function(
                                                     role.Arn,
                                                     timeout,
                                                     memory_size;
-                                                    tags=labels
+                                                    labels=labels,
                                                    )
 
   @debug create_script

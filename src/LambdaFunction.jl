@@ -28,7 +28,7 @@ Represents a Lambda function, hosted on AWS. Should not be instantiated directly
 `true`, then the image is assumed to exit and so should be visible from utilities such as `aws 
 lambda list-functions`
 """
-@with_kw mutable struct LambdaFunction
+@with_kw mutable struct LambdaFunction <: LambdaComponent
   FunctionName::Union{Missing, String} = missing
   FunctionArn::Union{Missing, String} = missing
   Runtime::Union{Missing, String} = missing

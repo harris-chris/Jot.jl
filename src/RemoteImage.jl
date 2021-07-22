@@ -9,7 +9,7 @@
 Represents a docker image stored in an AWS ECR Repository. The `exists` attribute indicates whether
 the RemoteImage still exists.
 """
-@with_kw mutable struct RemoteImage
+@with_kw mutable struct RemoteImage <: LambdaComponent
   imageDigest::Union{Missing, String} = missing
   imageTag::Union{Missing, String} = missing
   ecr_repo::Union{Missing, ECRRepo} = missing

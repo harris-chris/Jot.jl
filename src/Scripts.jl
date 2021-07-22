@@ -111,6 +111,12 @@ function get_precompile_jl(
   """
 end
 
+function get_lambda_function_tags_script(lambda_function::LambdaFunction)::String
+  """
+  aws lambda list-tags --resource $(lambda_function.FunctionArn)
+  """
+end
+
 function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
   image_full_name = get_image_full_name(aws_config, image_suffix)
   """
@@ -126,8 +132,11 @@ get_docker_push_script(image_full_name_plus_tag::String) = """
 docker push $image_full_name_plus_tag
 """
 
-function get_create_ecr_repo_script(image_suffix::String, aws_region::String, tags::AbstractDict)::String
-  tags_json = [Dict("Key" => k, "Value" => v) for (k, v) in tags] |> JSON3.write
+function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
+  tags_json = [
+   OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(labels, k)) ? "" : getfield(labels, k)))
+    for k in fieldnames(Labels)
+  ] |> JSON3.write
   """
   aws ecr create-repository \\
     --repository-name $(image_suffix) \\
@@ -181,9 +190,9 @@ function get_create_lambda_function_script(
     role_arn::String,
     timeout::Int64,
     memory_size::Int64;
-    tags::AbstractDict,
+    labels::Labels,
   )::String
-  tags_json = JSON3.write(tags)
+  tags_json = JSON3.write(labels)
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\

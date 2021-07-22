@@ -14,7 +14,7 @@ Represents a docker image on the local machine, and stores associated metadata. 
 instantiated directly. If `exists` is `true`, then the image is assumed to exit and so should be 
 visible from utilities such as `docker image ls`.
 """
-@with_kw mutable struct LocalImage
+@with_kw mutable struct LocalImage <: LambdaComponent
   CreatedAt::Union{Missing, String} = missing
   Digest::String
   ID::String

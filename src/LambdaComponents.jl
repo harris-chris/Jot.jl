@@ -8,6 +8,7 @@
     end
 """
 @with_kw struct LambdaComponents
+  function_name::String
   aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
   remote_image::Union{Nothing, RemoteImage}
@@ -107,70 +108,75 @@ struct TableComponent
 end
 
 function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
-  
+  not_present = "-"
+
   function account_id_f(l::LambdaComponents)::String
     l.aws_config.account_id
   end
   account_id_component = TableComponent("Account ID", account_id_f)
 
-  function function_name_f(l::LambdaComponents)::String 
-    isnothing(l.local_image) && return ""
-    rfn = get_response_function_name(l.local_image)
-    isnothing(rfn) ? "" : rfn
-  end
+  function_name_f(l::LambdaComponents)::String = l.name
   function_name_component = TableComponent("Function Name", function_name_f)
 
+  function responder_path_f(l::LambdaComponents)::String
+    src = get_labels(l).RESPONDER_PKG_SOURCE
+    isnothing(src) ? not_present : src
+  end
+  responder_source_component = TableComponent("Responder Source", responder_path_f)
+
   function tree_hash_f(l::LambdaComponents)::String
-    isnothing(l.local_image) && return "" 
+    isnothing(l.local_image) && return not_present 
     hsh = get_tree_hash(l.local_image)
-    isnothing(hsh) ? "" : hsh[1:docker_hash_limit]
+    isnothing(hsh) ? not_present : hsh[1:docker_hash_limit]
   end
   tree_hash_component = TableComponent("Tree Hash", tree_hash_f)
 
-  local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : get_image_suffix(l.local_image)
+  local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
   local_image_name_component = TableComponent("Image Name", local_image_name_f)
 
-  local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.ID 
+  local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
   local_image_id_component = TableComponent("Image ID", local_image_id_f)
 
-  local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? "" : l.local_image.Tag
+  local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.Tag
   local_image_tag_component = TableComponent("Image Tag", local_image_tag_f)
 
   function remote_image_tag_f(l::LambdaComponents)::String 
-    isnothing(l.remote_image) && return ""
+    isnothing(l.remote_image) && return not_present
     itag = l.remote_image.imageTag
-    ismissing(itag) ? "" : itag
+    ismissing(itag) ? not_present : itag
   end
   remote_image_tag_component = TableComponent("Image Tag", remote_image_tag_f)
 
   function remote_image_digest_f(l::LambdaComponents)::String 
-    isnothing(l.remote_image) && return ""
+    isnothing(l.remote_image) && return "-"
     digest = l.remote_image.imageDigest
-    ismissing(digest) ? "" : digest[begin:docker_hash_limit]
+    ismissing(digest) ? "-" : digest[begin:docker_hash_limit]
   end
-  remote_image_digest = TableComponent("Image Digest", remote_image_digest_f)
+  remote_image_digest_component = TableComponent("Image Digest", remote_image_digest_f)
 
   function lambda_function_name_f(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return ""
+    isnothing(l.lambda_function) && return not_present
     fn = l.lambda_function.FunctionName 
-    ismissing(fn) ? "" : fn
+    ismissing(fn) ? not_present : fn
   end
   lambda_function_name_component = TableComponent("Function Name", lambda_function_name_f)
 
   function lambda_function_last_modified_f(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return ""
+    isnothing(l.lambda_function) && return not_present
     lm = l.lambda_function.LastModified
-    ismissing(lm) ? "" : lm
+    ismissing(lm) ? not_present : lm
   end
   lambda_function_last_modified_component = TableComponent("Last Modified", lambda_function_last_modified_f)
 
   # TODO refactor common interface for all getters - check component then check sub
-  headers = OrderedDict("AWS Config" => [account_id_component],
-                 "Response Function" => [function_name_component],
-                 "Local Image" => [local_image_name_component, local_image_tag_component],
-                 "Remote Image" => [remote_image_digest],
-                 "Lambda Function" => [lambda_function_name_component],
-                )
+  # TODO highlight responder path if not current - probably put it in grey
+  headers = OrderedDict(
+    "Function Name" => [function_name_component],
+    "Responder" => [responder_source_component],
+    "Local Image" => [local_image_id_component],
+    "Remote Image" => [remote_image_digest_component],
+    "Lambda Function" => [lambda_function_name_component],
+  )
 
   all_funcs = [f for funcs in values(headers) for f in funcs]
   data_rows = [map(tc -> tc.value_function(l), all_funcs) for l in lambdas]
@@ -195,9 +201,18 @@ function get_all_lambdas()::Vector{LambdaComponents}
   all_remote = get_all_remote_images()
   all_functions = get_all_lambda_functions()
   aws_config = get_aws_config()
-  local_lambdas = [ LambdaComponents(aws_config, l, nothing, nothing) for l in all_local if is_lambda(l)]
-  remote_lambdas = [ LambdaComponents(aws_config, nothing, r, nothing) for r in all_remote ]
-  func_lambdas = [ LambdaComponents(aws_config, nothing, nothing, f) for f in all_functions ]
+  local_lambdas = [ 
+    LambdaComponents(get_labels(l) |> get_responder_full_function_name, aws_config, l, nothing, nothing) 
+    for l in all_local if (is_lambda(l) && is_jot_generated(l))
+  ]
+  remote_lambdas = [
+    LambdaComponents(get_labels(r) |> get_responder_full_function_name, aws_config, nothing, r, nothing) 
+    for r in all_remote if is_jot_generated(l)
+  ]
+  func_lambdas = [
+    LambdaComponents(get_labels(f) |> get_responder_full_function_name, aws_config, nothing, nothing, f) 
+    for f in all_functions if is_jot_generated(l)
+  ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 
   function match_off_lambdas(

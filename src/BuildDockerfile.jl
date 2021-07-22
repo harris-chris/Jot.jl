@@ -75,10 +75,10 @@ function dockerfile_add_precompile(package_compile::Bool)::String
 end
 
 
-function dockerfile_add_labels(labels::Dict{String, String})::String
-  labels = join(["$k=$v" for (k, v) in labels], " ")
+function dockerfile_add_labels(labels::Labels)::String
+  labels_str = join(["$(String(k))=$(getfield(labels, k))" for k in fieldnames(Labels)], " ")
   """
-  LABEL $labels
+  LABEL $labels_str
   """
 end
 
