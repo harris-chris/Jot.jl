@@ -219,6 +219,7 @@ function test_local_image(
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile)
   @test Jot.matches(res, local_image)
+  @test Jot.is_jot_generated(local_image)
   # Test that container runs
   cont = run_image_locally(local_image)
   @test is_container_running(cont)
@@ -259,6 +260,7 @@ end
 function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
+    @test Jot.is_jot_generated(remote_image)
     @test Jot.matches(local_image, ecr_repo)
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(local_image))
@@ -289,6 +291,7 @@ function test_lambda_function(
   )::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo, aws_role)
   @testset "Lambda Function test" begin
+    @test Jot.is_jot_generated(lambda_function)
     @test Jot.matches(remote_image, lambda_function)
     # Check that we can find it
     @test lambda_function in Jot.get_all_lambda_functions()

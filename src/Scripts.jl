@@ -134,7 +134,7 @@ docker push $image_full_name_plus_tag
 
 function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
   tags_json = [
-   OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(labels, k)) ? "" : getfield(labels, k)))
+    OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(labels, k)) ? "" : getfield(labels, k)))
     for k in fieldnames(Labels)
   ] |> JSON3.write
   """

@@ -256,19 +256,29 @@ function get_labels(
           get_commit(res),
           get_tree_hash(res),
           get_responder_path(res),
-          true,
+          "true",
          )
 end
 
 function get_labels(image::LocalImage)::Labels
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  labels = JSON3.read(image_inspect_json, Vector{Labels})
-  if length(labels) == 0 
+  iis = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})
+  if length(iis) == 0 
     error("Unable to find labels for image $(image.Repository)")
   else
-    labels[1]
+    get_labels(iis[1])
   end
-  # get_labels(image_inspect)
+end
+
+function get_labels(ecr_repo::ECRRepo)::Labels
+  tags_json = readchomp(
+    `aws ecr list-tags-for-resource
+       --resource-arn $(ecr_repo.repositoryArn)`
+  )
+  tags_raw = JSON3.read(tags_json)
+  haskey(tags_raw, "tags") || error("ECR Repo $(ecr_repo.repositoryName) has no tags")
+  tags_dict = Dict(Symbol(d["Key"]) => d["Value"] for d in tags_raw["tags"])
+  Labels(; tags_dict...) 
 end
 
 function get_labels(image::RemoteImage)::Labels
@@ -294,12 +304,10 @@ function get_labels(image::RemoteImage)::Labels
 end
 
 function get_labels(image_inspect::AbstractDict{String, Any})::Labels
-  try
-    ii = image_inspect["ContainerConfig"]["Labels"]
-    isnothing(ii) ? Dict{String, String}() : ii
-  catch e
-    isa(e, KeyError) ? Dict{String, String}() : throw(e)
-  end
+  ii = image_inspect["ContainerConfig"]["Labels"]
+  isnothing(ii) && error("Unable to get labels")
+  ii_sym = Dict(Symbol(k) => v for (k, v) in ii)
+  Labels(; ii_sym...)
 end
 
 function get_labels(lambda_function::LambdaFunction)::Labels
@@ -324,7 +332,7 @@ end
 
 function is_jot_generated(c::LambdaComponent)::Bool
   try get_labels(c)
-    labels.IS_JOT_GENERATED
+    eval(labels.IS_JOT_GENERATED)
   catch e
     false
   end
