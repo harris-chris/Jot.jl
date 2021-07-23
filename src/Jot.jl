@@ -29,6 +29,7 @@ export get_remote_image
 export create_aws_role, get_all_aws_roles
 export create_lambda_function, get_lambda_function, invoke_function
 export delete!
+export show_lambdas
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -171,12 +172,6 @@ function get_dockerfile(
     julia_base_version::String,
     package_compile::Bool,
   )::String
-  @debug responder.build_dir
-  @debug readdir(responder.build_dir)
-  @debug responder.package_name
-  @debug joinpath(responder.build_dir, responder.package_name)
-  @debug readdir(joinpath(responder.build_dir, responder.package_name))
-  @debug get_responder_package_name(joinpath(responder.build_dir, responder.package_name))
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
