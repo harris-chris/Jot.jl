@@ -251,6 +251,8 @@ end
 function get_labels(
     res::LocalPackageResponder,
   )::Labels
+  @debug "HERE"
+  @debug get_responder_path(res)
   Labels(res.package_name,
           get_responder_function_name(res),
           get_commit(res),
@@ -314,7 +316,7 @@ function get_labels(lambda_function::LambdaFunction)::Labels
   get_lf_tags_script = get_lambda_function_tags_script(lambda_function)
   tags_json = readchomp(`bash -c $get_lf_tags_script`)
   try
-    JSON3.read(tags_json, Labels)
+    JSON3.read(tags_json, Dict{String, Labels})["Tags"]
   catch e
     error("Unable to find labels for lambda function $(lambda_function.FunctionName)")
   end
@@ -331,8 +333,9 @@ function get_labels(lc::LambdaComponents)::Labels
 end
 
 function is_jot_generated(c::LambdaComponent)::Bool
-  try get_labels(c)
-    eval(labels.IS_JOT_GENERATED)
+  try 
+    labels = get_labels(c)
+    Meta.parse(labels.IS_JOT_GENERATED)
   catch e
     false
   end
@@ -514,6 +517,8 @@ function create_lambda_function(
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
 
+  @debug "HERE"
+  @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,

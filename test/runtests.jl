@@ -33,7 +33,7 @@ function run_tests(;
     partial::Bool=true,
   )
   if example_only
-    test_documentation_example()
+    test_documentation_example(clean)
     return
   end
   clean = clean == "true" ? true : false
@@ -162,7 +162,7 @@ function run_tests(;
   clean && clean_up()
 end
 
-function test_documentation_example()
+function test_documentation_example(clean_up::Bool)
   @testset "Documentation example" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -186,11 +186,13 @@ function test_documentation_example()
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
 
     # Clean up 
-    delete!(increment_vector_lambda)
-    delete!(ecr_repo)
-    delete!(aws_role)
-    delete!(local_image)
-    rm("./increment_vector.jl")
+    if clean_up
+      delete!(increment_vector_lambda)
+      delete!(ecr_repo)
+      delete!(aws_role)
+      delete!(local_image)
+      rm("./increment_vector.jl")
+    end
   end
 end
 

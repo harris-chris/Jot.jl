@@ -11,3 +11,8 @@ StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()
 function get_responder_full_function_name(labels::Labels)::String
   labels.RESPONDER_PACKAGE_NAME * "." * labels.RESPONDER_FUNCTION_NAME
 end
+
+function to_aws_shorthand(l::Labels)::String
+  join(["$k=$(getfield(l, k))" for k in fieldnames(Labels)], ",")
+end
+

@@ -21,3 +21,8 @@ this relies on us being able to recover the general identifier from all componen
 
 made Labels a struct
 
+COPY . . -chown
+
+add to guide:
+    IOError(Base.IOError("read: connection reset by peer (ECONNRESET)", -104) during request(http://localhost:9000/2015-03-31/functions/function/invocations))
+

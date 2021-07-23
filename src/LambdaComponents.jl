@@ -207,11 +207,11 @@ function get_all_lambdas()::Vector{LambdaComponents}
   ]
   remote_lambdas = [
     LambdaComponents(get_labels(r) |> get_responder_full_function_name, aws_config, nothing, r, nothing) 
-    for r in all_remote if is_jot_generated(l)
+    for r in all_remote if is_jot_generated(r)
   ]
   func_lambdas = [
     LambdaComponents(get_labels(f) |> get_responder_full_function_name, aws_config, nothing, nothing, f) 
-    for f in all_functions if is_jot_generated(l)
+    for f in all_functions if is_jot_generated(f)
   ]
   all_lambdas = [ local_lambdas ; remote_lambdas ; func_lambdas ]
 

@@ -101,6 +101,7 @@ function delete!(func::LambdaFunction)
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
   func.exists = false 
+  nothing
 end
 
 function get_function_state(func_name::String)::LambdaFunctionState

@@ -192,7 +192,8 @@ function get_create_lambda_function_script(
     memory_size::Int64;
     labels::Labels,
   )::String
-  tags_json = JSON3.write(labels)
+  tags_shorthand = to_aws_shorthand(labels)
+  @debug tags_shorthand
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\
@@ -201,7 +202,7 @@ function get_create_lambda_function_script(
     --package-type Image \\
     --timeout=$(timeout) \\
     --memory-size=$(memory_size) \\
-    --tags '$tags_json'
+    --tags $tags_shorthand
   """
 end
 
