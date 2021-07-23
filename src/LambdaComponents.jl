@@ -95,117 +95,145 @@ end
 struct TableComponent
   name::String
   value_function::Function
+  highlighter_f::Union{Function, Nothing}
 end
 
+const not_present = "-"
+
 function_name_f(l::LambdaComponents)::String = l.function_name
-const function_name_component = TableComponent("Function Name", function_name_f)
+const function_name_component = TableComponent("Function Name", function_name_f, nothing)
 
-function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
-  not_present = "-"
+function account_id_f(l::LambdaComponents)::String
+  l.aws_config.account_id
+end
+const account_id_component = TableComponent("Account ID", account_id_f, nothing)
 
-  function account_id_f(l::LambdaComponents)::String
-    l.aws_config.account_id
-  end
-  account_id_component = TableComponent("Account ID", account_id_f)
-
-
-  function responder_path_f(l::LambdaComponents)::String
-    src = get_labels(l).RESPONDER_PKG_SOURCE
-    isnothing(src) ? not_present : src
-  end
-  responder_source_component = TableComponent("Responder Source", responder_path_f)
-
-  function tree_hash_f(l::LambdaComponents)::String
-    isnothing(l.local_image) && return not_present 
-    hsh = get_tree_hash(l.local_image)
-    isnothing(hsh) ? not_present : hsh[1:docker_hash_limit]
-  end
-  tree_hash_component = TableComponent("Tree Hash", tree_hash_f)
-
-  local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
-  local_image_name_component = TableComponent("Image Name", local_image_name_f)
-
-  local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
-  local_image_id_component = TableComponent("Image ID", local_image_id_f)
-
-  local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.Tag
-  local_image_tag_component = TableComponent("Image Tag", local_image_tag_f)
-
-  function remote_image_tag_f(l::LambdaComponents)::String 
-    isnothing(l.remote_image) && return not_present
-    itag = l.remote_image.imageTag
-    ismissing(itag) ? not_present : itag
-  end
-  remote_image_tag_component = TableComponent("Image Tag", remote_image_tag_f)
-
-  function remote_image_digest_f(l::LambdaComponents)::String 
-    isnothing(l.remote_image) && return "-"
-    digest = l.remote_image.imageDigest
-    if ismissing(digest)
-      "-"
+function responder_source_f(l::LambdaComponents)::String
+  src = get_labels(l).RESPONDER_PKG_SOURCE
+  isnothing(src) ? not_present : src
+end
+function responder_source_h_f(
+    headers::OrderedDict{String, TableComponent}, lambdas::Vector{LambdaComponents},
+  )::Vector{Highlighter}
+  h1 = Highlighter(bold = true, foreground = :blue) do table_data, i, j
+    comps = values(headers) |> collect
+    if comps[j] == responder_source_component
+      responder_path = table_data[i, j]
+      lc_tree_hash = get_tree_hash(lambdas[i])
+      if ispath(responder_path)
+        get_tree_hash(responder_path) == lc_tree_hash
+      else
+        false
+      end
     else
-      hash_only = split(digest, ':') |> last
-      hash_only[begin:docker_hash_limit]
+      false
     end
   end
-  remote_image_digest_component = TableComponent("Image Digest", remote_image_digest_f)
 
-  function lambda_function_name_f(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return not_present
-    fn = l.lambda_function.FunctionName 
-    ismissing(fn) ? not_present : fn
+  h2 = Highlighter(foreground = :dark_gray) do table_data, i, j
+    comps = values(headers) |> collect
+    if comps[j] == responder_source_component
+      responder_path = table_data[i, j]
+      ispath(responder_path) ? false : true
+    else
+      false
+    end
   end
-  lambda_function_name_component = TableComponent("Function Name", lambda_function_name_f)
+  [h1, h2]
+end
+const responder_source_component = TableComponent("Responder Source", responder_source_f, responder_source_h_f)
 
-  function lambda_function_last_modified_f(l::LambdaComponents)::String 
-    isnothing(l.lambda_function) && return not_present
-    lm = l.lambda_function.LastModified
-    ismissing(lm) ? not_present : lm
+function tree_hash_f(l::LambdaComponents)::String
+  isnothing(l.local_image) && return not_present 
+  hsh = get_tree_hash(l.local_image)
+  isnothing(hsh) ? not_present : hsh[1:docker_hash_limit]
+end
+const tree_hash_component = TableComponent("Tree Hash", tree_hash_f, nothing)
+
+local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
+const local_image_name_component = TableComponent("Image Name", local_image_name_f, nothing)
+
+local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
+const local_image_id_component = TableComponent("Image ID", local_image_id_f, nothing)
+
+local_image_tag_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.Tag
+const local_image_tag_component = TableComponent("Image Tag", local_image_tag_f, nothing)
+
+function remote_image_tag_f(l::LambdaComponents)::String 
+  isnothing(l.remote_image) && return not_present
+  itag = l.remote_image.imageTag
+  ismissing(itag) ? not_present : itag
+end
+const remote_image_tag_component = TableComponent("Image Tag", remote_image_tag_f, nothing)
+
+function remote_image_digest_f(l::LambdaComponents)::String 
+  isnothing(l.remote_image) && return "-"
+  digest = l.remote_image.imageDigest
+  if ismissing(digest)
+    "-"
+  else
+    hash_only = split(digest, ':') |> last
+    hash_only[begin:docker_hash_limit]
   end
-  lambda_function_last_modified_component = TableComponent("Last Modified", lambda_function_last_modified_f)
+end
+const remote_image_digest_component = TableComponent("Image Digest", remote_image_digest_f, nothing)
+
+function lambda_function_name_f(l::LambdaComponents)::String 
+  isnothing(l.lambda_function) && return not_present
+  fn = l.lambda_function.FunctionName 
+  ismissing(fn) ? not_present : fn
+end
+const lambda_function_name_component = TableComponent("Function Name", lambda_function_name_f, nothing)
+
+function lambda_function_last_modified_f(l::LambdaComponents)::String 
+  isnothing(l.lambda_function) && return not_present
+  lm = l.lambda_function.LastModified
+  ismissing(lm) ? not_present : lm
+end
+const lambda_function_last_modified_component = TableComponent(
+  "Last Modified", lambda_function_last_modified_f, nothing
+)
+
+function get_table_data(
+    headers::OrderedDict{String, TableComponent},
+    lambdas::Vector{LambdaComponents}, 
+  )::Matrix{String}
 
   # TODO refactor common interface for all getters - check component then check sub
   # TODO highlight responder path if not current - probably put it in grey
-  headers = OrderedDict(
-    "Function Name" => [function_name_component],
-    "Responder" => [responder_source_component],
-    "Local Image" => [local_image_id_component],
-    "Remote Image" => [remote_image_digest_component],
-    "Lambda Function" => [lambda_function_name_component],
-  )
-
-  all_funcs = [f for funcs in values(headers) for f in funcs]
+  all_funcs = values(headers) |> collect
   data_rows = [map(tc -> tc.value_function(l), all_funcs) for l in lambdas]
   data_rows = map(row-> reshape(row, (1, :)), data_rows)
   data = vcat(data_rows...)
-  headers_with_string = OrderedDict(k => map(tc -> tc.name, vals) for (k, vals) in headers)
-  (headers_with_string, data)
 end
 
 function show_lambdas()
+  @info "Collecting lambda components; this may take a few seconds..."
   lambdas = get_all_lambdas()
-  (headers, data) = to_table(lambdas)
-  headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
-                    [x for bottom in values(headers) for x in bottom])
 
-  # h1 = Highlighter(bold = true, foreground = :blue) do table_data, i, j
-    # header_components = values(headers) |> collect
-    # if header_components[j] == [responder_source_component]
-      # responder_path = table_data[i, j]
-      # lc_tree_hash = get_tree_hash(lambdas[i])
-      # get_tree_hash(responder_path) == lc_tree_hash
-    # else
-      # false
-    # end
-  # end
+  table_headers = OrderedDict(
+    "Function Name" => function_name_component,
+    "Responder" => responder_source_component,
+    "Local Image" => local_image_id_component,
+    "Remote Image" => remote_image_digest_component,
+    "Lambda Function" => lambda_function_name_component,
+  )
+
+  table_data = get_table_data(table_headers, lambdas)
+  headers_matrix = (keys(table_headers) |> collect, [tc.name for tc in values(table_headers)])
+
+  table_comps = filter(tc -> !isnothing(tc.highlighter_f), values(table_headers) |> collect)
+  highlighter_funcs = map(tc -> tc.highlighter_f, table_comps)
+  highlighters = [h for hf in highlighter_funcs for h in hf(table_headers, lambdas)]
+  highlighters = tuple(highlighters...)
   
   pretty_table(
-    data; 
+    table_data; 
     header=headers_matrix, 
     show_row_number=true, 
     crop=:none,
     maximum_columns_width=30,
-    # highlighters=(h1),
+    highlighters=highlighters,
   )
 end
 
@@ -271,7 +299,6 @@ function show_all_lambdas(;
     remote_image_attr::String = "tag",  
     lambda_function_attr::String = "version",
   )
-  @info "Collecting lambda components; this may take a few seconds..."
   out = ""
   out *= "\tLocal Image\tRemote Image\tLambda Function"
   for l in get_all_lambdas()
