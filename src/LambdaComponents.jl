@@ -294,11 +294,32 @@ function group_by_function_name(lambdas::Vector{LambdaComponents})::Dict{String,
   lambdas_by_function
 end
 
+"""
+    show_all_lambdas(
+      local_image_attr::String = "tag", 
+      remote_image_attr::String = "tag",  
+      lambda_function_attr::String = "version",
+    )::Nothing
+
+Displays a table of all objects generated using Jot.jl.
+
+Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
+on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
+image and lambda function on a given row of the table are guaranteed to share the same underlying 
+function code.
+
+The Responder column is colour-coded:
+- Grey indicates that this path no longer exists.
+- White indicates that this path still exists, but the code has changed since the objects shown
+in the row were created.
+- Blue indicates that the underlying code for this row (eg the code present in the local image,
+remote image etc) is the same as is currently present at this path.
+"""
 function show_all_lambdas(; 
     local_image_attr::String = "tag", 
     remote_image_attr::String = "tag",  
     lambda_function_attr::String = "version",
-  )
+  )::Nothing
   out = ""
   out *= "\tLocal Image\tRemote Image\tLambda Function"
   for l in get_all_lambdas()

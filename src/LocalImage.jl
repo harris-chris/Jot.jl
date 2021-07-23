@@ -40,11 +40,16 @@ Returns a `LocalImage` object, representing a locally-stored docker image.
 The passed `identity` string may be the repository name, or the docker image ID. If the image ID,
 it must be at least four characters in length.
 """
-function get_local_image(identity::String)::Union{Nothing, LocalImage}
+function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
-    (li.Repository == identity ||
-     (li.ID[begin:length(identity)] == identity && length(identity) >= 4)
+    (li.Repository == identity || begin
+      @debug identity
+      @debug li.Repository
+      @debug li.ID
+       check_len = minimum([length(li.ID), length(identity)])
+       li.ID[check_len] == identity[check_len] && check_len >= 4
+    end
     )
   end
   isnothing(index) ? nothing : all[index]

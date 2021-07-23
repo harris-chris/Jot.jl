@@ -28,3 +28,4 @@ COPY . . -chown
 add to guide:
     IOError(Base.IOError("read: connection reset by peer (ECONNRESET)", -104) during request(http://localhost:9000/2015-03-31/functions/function/invocations))
 
+Don't think URLs are being stored correctly in responder

@@ -76,6 +76,7 @@ function get_aws_role(role_name::String)::Union{Nothing, AWSRole}
   all = get_all_aws_roles()
   index = findfirst(role -> role.RoleName == role_name, all)
   isnothing(index) ? nothing : all[index]
+  nothing
 end
 
 """

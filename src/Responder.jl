@@ -1,5 +1,4 @@
 
-# TODO some way to make this have abstract attributes eg package_name?
 """
     abstract type AbstractResponder{IT} end
 
@@ -75,12 +74,8 @@ function get_responder_from_package_url(
   Pkg.develop(url=url)
   if !isnothing(dev_dir) ENV["JULIA_PKG_DEVDIR"] = dev_dir end
   new_dir = [x for x in readdir(build_dir) if !(x in current_build_dir_contents)] |> last
-  @debug build_dir
-  @debug new_dir
-  @debug readdir(build_dir)
   pkg_name = get_responder_package_name(joinpath(build_dir, new_dir))
   Pkg.rm(pkg_name)
-  @debug readdir(build_dir)
   LocalPackageResponder(
                         PackageSpec(path=joinpath(build_dir, new_dir)),
                         response_function,
