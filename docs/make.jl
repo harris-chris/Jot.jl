@@ -9,7 +9,8 @@ makedocs(
     "Home" => "index.md",
     "Manual" => [
       "Guide" => "Guide.md",
-      "Examples" => "Examples.md"
+      "Examples" => "Examples.md",
+      "Managing Lambdas" => "Managing_lambdas.md",
     ],
     "API" => [
       "Functions" => "Functions.md",

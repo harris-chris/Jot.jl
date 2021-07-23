@@ -77,7 +77,7 @@ function get_responder_from_package_url(
   pkg_name = get_responder_package_name(joinpath(build_dir, new_dir))
   Pkg.rm(pkg_name)
   LocalPackageResponder(
-                        PackageSpec(path=joinpath(build_dir, new_dir)),
+                        PackageSpec(url=url),
                         response_function,
                         IT,
                         build_dir,
