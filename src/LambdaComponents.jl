@@ -45,7 +45,6 @@ end
 matches(lambda_function::LambdaFunction, remote_image::RemoteImage) = matches(remote_image, lambda_function)
 
 function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{Nothing, LambdaComponents}
-  @debug "HERE"
   get_non_nothing_type(x::Type{IT}) where {IT} = typeof(x) == Union ? x.b : x
 
   lambda_types = map(get_non_nothing_type, fieldtypes(LambdaComponents))
@@ -57,15 +56,10 @@ function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{N
       l1_flds::Vector, 
       l2_flds::Vector,
     )::Bool
-    @debug "RUNNING MATCHES VECTORS"
     for (fieldtype_1, val_1) in zip(lambda_types, l1_flds)
       for (fieldtype_2, val_2) in zip(lambda_types, l2_flds)
-        @debug Tuple{fieldtype_1, fieldtype_2}
-        @debug hasmethod(matches, Tuple{fieldtype_1, fieldtype_2})
         if !isnothing(val_1) && !isnothing(val_2) && hasmethod(matches, Tuple{fieldtype_1, fieldtype_2})
-          @debug "CHECKING"
           if matches(val_1, val_2)
-            @debug "TRUE"
             return true
           end
         end
@@ -91,11 +85,7 @@ function combine_if_matches(l1::LambdaComponents, l2::LambdaComponents)::Union{N
   end
 
   if match_across_fields(l1_fields, l2_fields)
-    @debug l1_fields
-    @debug l1_fields[1]
     cmb_fields = Dict(sym => cmb(f_1, f_2) for (sym, f_1, f_2) in zip(lambda_names, l1_fields, l2_fields))
-    @debug cmb_fields
-    @debug typeof(cmb_fields)
     LambdaComponents(; cmb_fields...)
   else
     nothing
@@ -107,6 +97,9 @@ struct TableComponent
   value_function::Function
 end
 
+function_name_f(l::LambdaComponents)::String = l.function_name
+const function_name_component = TableComponent("Function Name", function_name_f)
+
 function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, Vector{String}}, Matrix{String}}
   not_present = "-"
 
@@ -115,8 +108,6 @@ function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, 
   end
   account_id_component = TableComponent("Account ID", account_id_f)
 
-  function_name_f(l::LambdaComponents)::String = l.name
-  function_name_component = TableComponent("Function Name", function_name_f)
 
   function responder_path_f(l::LambdaComponents)::String
     src = get_labels(l).RESPONDER_PKG_SOURCE
@@ -150,7 +141,12 @@ function to_table(lambdas::Vector{LambdaComponents})::Tuple{OrderedDict{String, 
   function remote_image_digest_f(l::LambdaComponents)::String 
     isnothing(l.remote_image) && return "-"
     digest = l.remote_image.imageDigest
-    ismissing(digest) ? "-" : digest[begin:docker_hash_limit]
+    if ismissing(digest)
+      "-"
+    else
+      hash_only = split(digest, ':') |> last
+      hash_only[begin:docker_hash_limit]
+    end
   end
   remote_image_digest_component = TableComponent("Image Digest", remote_image_digest_f)
 
@@ -188,12 +184,29 @@ end
 
 function show_lambdas()
   lambdas = get_all_lambdas()
-  @debug length(lambdas)
-  @debug lambdas
   (headers, data) = to_table(lambdas)
   headers_matrix = ([x for (top, bottom) in headers for x in fill(top, length(bottom))],
                     [x for bottom in values(headers) for x in bottom])
-  pretty_table(data; header=headers_matrix)
+
+  # h1 = Highlighter(bold = true, foreground = :blue) do table_data, i, j
+    # header_components = values(headers) |> collect
+    # if header_components[j] == [responder_source_component]
+      # responder_path = table_data[i, j]
+      # lc_tree_hash = get_tree_hash(lambdas[i])
+      # get_tree_hash(responder_path) == lc_tree_hash
+    # else
+      # false
+    # end
+  # end
+  
+  pretty_table(
+    data; 
+    header=headers_matrix, 
+    show_row_number=true, 
+    crop=:none,
+    maximum_columns_width=30,
+    # highlighters=(h1),
+  )
 end
 
 function get_all_lambdas()::Vector{LambdaComponents}
@@ -224,14 +237,15 @@ function get_all_lambdas()::Vector{LambdaComponents}
     else
       match_head = to_match[1]; match_tail = to_match[2:end]
       add_to_matched = match_head
-      for m in matched
+      for (i, m) in enumerate(matched)
         cmb = combine_if_matches(match_head, m)
         if !isnothing(cmb) 
           add_to_matched = cmb
+          deleteat!(matched, i)
           break
         end
       end
-      match_off_lambdas(match_tail, push!(matched, add_to_matched))
+      match_off_lambdas(match_tail, [matched; [add_to_matched]])
     end
   end
   match_off_lambdas(all_lambdas, Vector{LambdaComponents}())
@@ -257,6 +271,7 @@ function show_all_lambdas(;
     remote_image_attr::String = "tag",  
     lambda_function_attr::String = "version",
   )
+  @info "Collecting lambda components; this may take a few seconds..."
   out = ""
   out *= "\tLocal Image\tRemote Image\tLambda Function"
   for l in get_all_lambdas()

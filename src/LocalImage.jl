@@ -32,22 +32,22 @@ end
 
 """
     get_local_image(
-      repository::String,
+      identity::String,
     )::Union{Nothing, LocalImage}
 
 Returns a `LocalImage` object, representing a locally-stored docker image.
-"""
-function get_local_image(repository::String)::Union{Nothing, LocalImage}
-  all = get_all_local_images()
-  index = findfirst(x -> x.Repository == repository, all)
-  isnothing(index) ? nothing : all[index]
-end
 
-function get_local_image_from_id(id::AbstractString)::Union{Nothing, LocalImage}
-  all_images = get_all_local_images()
-  short_id = id[1:docker_hash_limit]
-  index = findfirst(img -> img.ID == short_id, all_images)
-  isnothing(index) ? nothing : all_images[index]
+The passed `identity` string may be the repository name, or the docker image ID. If the image ID,
+it must be at least four characters in length.
+"""
+function get_local_image(identity::String)::Union{Nothing, LocalImage}
+  all = get_all_local_images()
+  index = findfirst(all) do li
+    (li.Repository == identity ||
+     (li.ID[begin:length(identity)] == identity && length(identity) >= 4)
+    )
+  end
+  isnothing(index) ? nothing : all[index]
 end
 
 """

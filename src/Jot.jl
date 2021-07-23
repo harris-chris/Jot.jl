@@ -81,6 +81,20 @@ function get_tree_hash(i::Union{LocalImage, RemoteImage})::String
   get_labels(i).RESPONDER_TREE_HASH
 end
 
+function get_tree_hash(l::LambdaFunction)::String
+  get_labels(l).RESPONDER_TREE_HASH
+end
+
+function get_tree_hash(lc::LambdaComponents)::String
+  if !isnothing(lc.local_image) 
+    get_tree_hash(lc.local_image)
+  elseif !isnothing(lc.remote_image) 
+    get_tree_hash(lc.remote_image)
+  else 
+    get_tree_hash(lc.lambda_function)
+  end
+end
+
 function get_image_full_name(
     aws_config::AWSConfig, 
     image_suffix::String,
@@ -230,7 +244,7 @@ function create_local_image(
   run(Cmd(build_cmd, dir=responder.build_dir))
   # Locate it and return it
   image_id = open(joinpath(responder.build_dir, "id"), "r") do f String(read(f)) end |> x -> split(x, ':')[2]
-  this_image = get_local_image_from_id(image_id)
+  this_image = get_local_image(image_id)
   isnothing(this_image) ? error("Unable to locate created local image") : this_image
 end
 

@@ -45,3 +45,14 @@ function get_remote_image(local_image::LocalImage)::Union{Nothing, RemoteImage}
   isnothing(index) ? nothing : all_remote_images[index]
 end
 
+function get_remote_image(image_hash::String)::Union{Nothing, RemoteImage}
+  all_remote_images = get_all_remote_images()
+  search_hash = split(image_hash, ":") |> last
+  index = findfirst(all_remote_images) do ri
+    ri_hash = split(ri.imageDigest, ":") |> last
+    ri_hash[begin:length(hash)] == search_hash
+  end
+  isnothing(index) ? nothing : all_remote_images[index]
+end
+
+

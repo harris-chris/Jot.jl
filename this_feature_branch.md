@@ -21,6 +21,8 @@ this relies on us being able to recover the general identifier from all componen
 
 made Labels a struct
 
+delete remoteimage by id
+
 COPY . . -chown
 
 add to guide:
