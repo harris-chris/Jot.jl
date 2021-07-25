@@ -41,8 +41,17 @@ function dockerfile_add_responder(res::LocalPackageResponder)::String
 end
 
 function dockerfile_add_jot()::String
+  test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
+  jot_url = if isnothing(test_running) || test_running == "false"
+    jot_github_url
+  else
+    this_branch = readchomp(`git branch --show-current`)
+    jot_github_url * "#$this_branch"
+  end
+  @debug jot_url
+  
   """
-  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_github_url\\\")"
+  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_url\\\")"
   """
 end
 
@@ -76,7 +85,7 @@ end
 
 
 function dockerfile_add_labels(labels::Labels)::String
-  labels_str = join(["$(String(k))=$(getfield(labels, k))" for k in fieldnames(Labels)], " ")
+  labels_str = to_docker_buildfile_format(labels)
   """
   LABEL $labels_str
   """

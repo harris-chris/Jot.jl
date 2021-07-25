@@ -44,9 +44,6 @@ function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
     (li.Repository == identity || begin
-      @debug identity
-      @debug li.Repository
-      @debug li.ID
        check_len = minimum([length(li.ID), length(identity)])
        li.ID[check_len] == identity[check_len] && check_len >= 4
     end

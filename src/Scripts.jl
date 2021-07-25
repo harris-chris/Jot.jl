@@ -133,10 +133,7 @@ docker push $image_full_name_plus_tag
 """
 
 function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
-  tags_json = [
-    OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(labels, k)) ? "" : getfield(labels, k)))
-    for k in fieldnames(Labels)
-  ] |> JSON3.write
+  tags_json = to_json(labels)
   """
   aws ecr create-repository \\
     --repository-name $(image_suffix) \\
@@ -193,7 +190,6 @@ function get_create_lambda_function_script(
     labels::Labels,
   )::String
   tags_shorthand = to_aws_shorthand(labels)
-  @debug tags_shorthand
   """
   aws lambda create-function \\
     --function-name=$(function_name) \\

@@ -30,6 +30,7 @@ export create_aws_role, get_all_aws_roles
 export create_lambda_function, get_lambda_function, invoke_function
 export delete!
 export show_lambdas
+export get_labels
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -170,8 +171,14 @@ create a local docker image.
 function get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
-    package_compile::Bool,
+    package_compile::Bool;
+    user_defined_labels::Dict{String, String},
   )::String
+  overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
+  if length(overlapped_keys) > 0 
+    error("User-defined labels $(join(overlapped_keys, ", ")) overlap with Jot-defined labels")
+  end
+  combined_labels = add_user_defined_labels(get_labels(responder), user_defined_labels)
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
@@ -179,7 +186,7 @@ function get_dockerfile(
     dockerfile_add_runtime_directories(),
     dockerfile_copy_build_dir(),
     dockerfile_add_responder(responder),
-    dockerfile_add_labels(get_labels(responder)),
+    dockerfile_add_labels(combined_labels),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
     dockerfile_add_bootstrap(responder.package_name, 
@@ -199,6 +206,7 @@ end
         julia_base_version::String = "1.6.1",
         julia_cpu_target::String = "x86-64",
         package_compile::Bool = false,
+        user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
       )::LocalImage
 
 Creates a locally-stored docker image containing the specified responder. This can be tested
@@ -210,6 +218,11 @@ this is not necessarily for testing/exploration but is highly recommended for pr
 Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
 if nothing locally has changed, but the image is querying a remote object (say, a github repo)
 which has changed.
+
+If `user_defined_labels` are defined, these will be added to the generated `LocalImage`, as well 
+as all subsequent types based on the `LocalImage`, like the remote image or the ultimate Lambda 
+function. They can be retrieved using the `get_labels` function, alongside the Jot-generated 
+labels.
 """
 function create_local_image(
     image_suffix::String,
@@ -220,19 +233,22 @@ function create_local_image(
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
                               julia_base_version, 
-                              package_compile)
+                              package_compile;
+                              user_defined_labels,
+                             )
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
   image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
                                                      image_suffix,
                                                      image_tag)
-  # Buid the actual image
+  # Build the actual image
   build_cmd = get_dockerfile_build_cmd(dockerfile, 
                                        image_name_plus_tag,
                                        no_cache)
@@ -242,6 +258,8 @@ function create_local_image(
   this_image = get_local_image(image_id)
   isnothing(this_image) ? error("Unable to locate created local image") : this_image
 end
+
+function do_user_defined_labels_overlap(user_defined_labels::AbstractDict{String, String})
 
 function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T} where {T}
   if raw_output == ""
@@ -260,14 +278,12 @@ end
 function get_labels(
     res::LocalPackageResponder,
   )::Labels
-  @debug "HERE"
-  @debug get_responder_path(res)
-  Labels(res.package_name,
-          get_responder_function_name(res),
-          get_commit(res),
-          get_tree_hash(res),
-          get_responder_path(res),
-          "true",
+  Labels( RESPONDER_PACKAGE_NAME=res.package_name,
+          RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
+          RESPONDER_COMMIT=get_commit(res),
+          RESPONDER_TREE_HASH=get_tree_hash(res),
+          RESPONDER_PKG_SOURCE=get_responder_path(res),
+          IS_JOT_GENERATED="true",
          )
 end
 
@@ -288,8 +304,8 @@ function get_labels(ecr_repo::ECRRepo)::Labels
   )
   tags_raw = JSON3.read(tags_json)
   haskey(tags_raw, "tags") || error("ECR Repo $(ecr_repo.repositoryName) has no tags")
-  tags_dict = Dict(Symbol(d["Key"]) => d["Value"] for d in tags_raw["tags"])
-  Labels(; tags_dict...) 
+  tags_dict = Dict(d["Key"] => d["Value"] for d in tags_raw["tags"])
+  Labels(tags_dict) 
 end
 
 function get_labels(image::RemoteImage)::Labels
@@ -304,7 +320,9 @@ function get_labels(image::RemoteImage)::Labels
     manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
     labels = v1_compat["config"]["Labels"]
-    Labels(; labels...)
+    labels = OrderedDict{Symbol, String}(labels)
+    labels = OrderedDict(String(k) => v for (k, v) in labels)
+    Labels(labels)
   catch e 
     if isa(e, BoundsError) || isa(e, KeyError)
       error("Unable to find labels for image $(image.ecr_repo.repositoryName)")
@@ -317,8 +335,8 @@ end
 function get_labels(image_inspect::AbstractDict{String, Any})::Labels
   ii = image_inspect["ContainerConfig"]["Labels"]
   isnothing(ii) && error("Unable to get labels")
-  ii_sym = Dict(Symbol(k) => v for (k, v) in ii)
-  Labels(; ii_sym...)
+  ii_sym = Dict(k => v for (k, v) in ii)
+  Labels(ii_sym)
 end
 
 function get_labels(lambda_function::LambdaFunction)::Labels
@@ -526,7 +544,6 @@ function create_lambda_function(
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
 
-  @debug "HERE"
   @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,

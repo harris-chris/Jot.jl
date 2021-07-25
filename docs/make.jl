@@ -11,6 +11,7 @@ makedocs(
       "Guide" => "Guide.md",
       "Examples" => "Examples.md",
       "Managing Lambdas" => "Managing_lambdas.md",
+      "Labels" => "Labels.md",
     ],
     "API" => [
       "Functions" => "Functions.md",
