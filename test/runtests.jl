@@ -74,6 +74,34 @@ function run_tests(;
     (responders[4], 4, false, false),
   ]
 
+  struct ExpectedLabels
+    RESPONDER_PACKAGE_NAME::String
+    RESPONDER_FUNCTION_NAME::String
+    RESPONDER_PKG_SOURCE::String
+    user_defined_labels::Dict{String, String}
+  end
+
+  function test_actual_labels_against_expected(
+      actual::Labels,
+      expected::ExpectedLabels,
+    )::Bool
+    all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
+  end
+
+  user_labels = [
+                 Dict("TEST"=>"1"), 
+                 Dict("TEST"=>"2"),
+                 Dict("TEST"=>"3"),
+                 Dict("TEST"=>"4"),
+                ]
+
+  expected_labels = [
+    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "./test/JotTest1"), user_labels[1]),
+    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "./test/JotTest1"), user_labels[2]),
+    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "./test/JotTest2"), user_labels[3]),
+    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[4]),
+  ]
+
   if !(length(responders) == length(test_data) == length(local_image_inputs))
     error("Input lengths do not match")
   end
@@ -88,11 +116,8 @@ function run_tests(;
 
   local_images = Vector{LocalImage}()
   @testset "Local Images" begin
-    foreach(zip(local_image_inputs, test_data)) do args_test
-      li_input = first(args_test)
-      this_res = li_input[1]
-      test = last(args_test)
-      this_li = test_local_image(li_input..., test[1], test[2])
+    foreach(zip(local_image_inputs, expected_labels, test_data)) do li_inputs, labels, test_datum
+      this_li = test_local_image(li_inputs..., test_datum[1], test_datum[2], labels)
       push!(local_images, this_li)
     end
   end
@@ -123,7 +148,7 @@ function run_tests(;
   @testset "ECR Repo" begin 
     foreach(enumerate(test_list)) do (num, use_bl)
       if use_bl
-        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num])  
+        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num], expected_labels[num])  
       else
         (this_repo, this_remote_image) = (nothing, nothing)
       end
@@ -215,13 +240,17 @@ function test_local_image(
     package_compile::Bool,
     test_request::Any,
     expected::Any,
+    expected_labels::ExpectedLabels,
   )::LocalImage
   local_image = create_local_image("jt$(num)-local-"*test_suffix, 
                                    res; 
                                    aws_config = use_config ? aws_config : nothing, 
-                                   package_compile = package_compile)
+                                   package_compile = package_compile,
+                                   user_defined_labels = expected_labels.user_defined_labels,
+                                  )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
+  @test test_actual_labels_against_expected(get_labels(local_image), expected_labels)
   # Test that container runs
   cont = run_image_locally(local_image)
   @test is_container_running(cont)
@@ -259,11 +288,16 @@ function test_package_compile(;
   @test compiled_time < (uncompiled_time / 2)
 end
 
-function test_ecr_repo(res::AbstractResponder, local_image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+function test_ecr_repo(
+    res::AbstractResponder, 
+    local_image::LocalImage, 
+    expected_labels::ExpectedLabels,
+  )::Tuple{ECRRepo, RemoteImage}
   (ecr_repo, remote_image) = push_to_ecr!(local_image)
   @testset "Test remote image" begin 
-    @test Jot.is_jot_generated(remote_image)
     @test Jot.matches(local_image, ecr_repo)
+    @test Jot.is_jot_generated(remote_image)
+    @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
     # Check we can find the repo
     @test !isnothing(Jot.get_ecr_repo(local_image))
     # Check that we can find the remote image which matches our local image

@@ -170,8 +170,10 @@ create a local docker image.
 function get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
-    package_compile::Bool,
+    package_compile::Bool;
+    user_defined_labels::Dict{String, String},
   )::String
+  combined_labels = add_user_defined_labels(get_labels(responder), user_defined_labels)
   foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
@@ -179,7 +181,7 @@ function get_dockerfile(
     dockerfile_add_runtime_directories(),
     dockerfile_copy_build_dir(),
     dockerfile_add_responder(responder),
-    dockerfile_add_labels(get_labels(responder)),
+    dockerfile_add_labels(combined_labels),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
     dockerfile_add_bootstrap(responder.package_name, 
@@ -220,19 +222,22 @@ function create_local_image(
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
+    user_defined_labels::Dict{String, String} = Dict{String, String}(),
   )::LocalImage
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
                               julia_base_version, 
-                              package_compile)
+                              package_compile;
+                              user_defined_labels,
+                             )
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
   image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
                                                      image_suffix,
                                                      image_tag)
-  # Buid the actual image
+  # Build the actual image
   build_cmd = get_dockerfile_build_cmd(dockerfile, 
                                        image_name_plus_tag,
                                        no_cache)
@@ -260,8 +265,6 @@ end
 function get_labels(
     res::LocalPackageResponder,
   )::Labels
-  @debug "HERE"
-  @debug get_responder_path(res)
   Labels(res.package_name,
           get_responder_function_name(res),
           get_commit(res),

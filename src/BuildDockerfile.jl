@@ -76,7 +76,7 @@ end
 
 
 function dockerfile_add_labels(labels::Labels)::String
-  labels_str = join(["$(String(k))=$(getfield(labels, k))" for k in fieldnames(Labels)], " ")
+  labels_str = to_docker_buildfile_format(labels)
   """
   LABEL $labels_str
   """
