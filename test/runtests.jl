@@ -39,6 +39,7 @@ function run_tests(;
     example_only::Bool=false,
     partial::Bool=true,
   )
+  ENV["JOT_TEST_RUNNING"] = "true"
   if example_only
     test_documentation_example(clean)
     return
