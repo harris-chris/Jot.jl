@@ -30,6 +30,7 @@ export create_aws_role, get_all_aws_roles
 export create_lambda_function, get_lambda_function, invoke_function
 export delete!
 export show_lambdas
+export get_labels
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -292,8 +293,8 @@ function get_labels(ecr_repo::ECRRepo)::Labels
   )
   tags_raw = JSON3.read(tags_json)
   haskey(tags_raw, "tags") || error("ECR Repo $(ecr_repo.repositoryName) has no tags")
-  tags_dict = Dict(Symbol(d["Key"]) => d["Value"] for d in tags_raw["tags"])
-  Labels(; tags_dict...) 
+  tags_dict = Dict(d["Key"] => d["Value"] for d in tags_raw["tags"])
+  Labels(tags_dict) 
 end
 
 function get_labels(image::RemoteImage)::Labels
@@ -305,10 +306,10 @@ function get_labels(image::RemoteImage)::Labels
      ) 
   batch_image = JSON3.read(batch_image_json) 
   try 
-    manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+    # manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
     labels = v1_compat["config"]["Labels"]
-    Labels(; labels...)
+    Labels(labels)
   catch e 
     if isa(e, BoundsError) || isa(e, KeyError)
       error("Unable to find labels for image $(image.ecr_repo.repositoryName)")
@@ -321,8 +322,8 @@ end
 function get_labels(image_inspect::AbstractDict{String, Any})::Labels
   ii = image_inspect["ContainerConfig"]["Labels"]
   isnothing(ii) && error("Unable to get labels")
-  ii_sym = Dict(Symbol(k) => v for (k, v) in ii)
-  Labels(; ii_sym...)
+  ii_sym = Dict(k => v for (k, v) in ii)
+  Labels(ii_sym)
 end
 
 function get_labels(lambda_function::LambdaFunction)::Labels
