@@ -41,8 +41,17 @@ function dockerfile_add_responder(res::LocalPackageResponder)::String
 end
 
 function dockerfile_add_jot()::String
+  test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
+  if isnothing(test_running)
+    jot_url = $jot_github_url
+  else
+    this_branch = readchomp(`git branch --show-current`)
+    jot_url = $jot_github_url * "#$this_branch"
+  end
+  @debug jot_url
+  
   """
-  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_github_url\\\")"
+  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_url\\\")"
   """
 end
 

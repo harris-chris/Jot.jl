@@ -231,6 +231,7 @@ function create_local_image(
                               package_compile;
                               user_defined_labels,
                              )
+  @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
@@ -265,12 +266,12 @@ end
 function get_labels(
     res::LocalPackageResponder,
   )::Labels
-  Labels(res.package_name,
-          get_responder_function_name(res),
-          get_commit(res),
-          get_tree_hash(res),
-          get_responder_path(res),
-          "true",
+  Labels( RESPONDER_PACKAGE_NAME=res.package_name,
+          RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
+          RESPONDER_COMMIT=get_commit(res),
+          RESPONDER_TREE_HASH=get_tree_hash(res),
+          RESPONDER_PKG_SOURCE=get_responder_path(res),
+          IS_JOT_GENERATED="true",
          )
 end
 

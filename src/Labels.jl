@@ -9,6 +9,11 @@
 end
 StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()  
 
+function copy(l::Labels)::Labels
+  flds = Dict(Symbol(fn) => getfield(l, fn) for fn in fieldnames(Labels))
+  Labels(;flds...)
+end
+
 function get_responder_full_function_name(labels::Labels)::String
   labels.RESPONDER_PACKAGE_NAME * "." * labels.RESPONDER_FUNCTION_NAME
 end
@@ -20,12 +25,17 @@ function to_aws_shorthand(l::Labels)::String
 end
 
 function to_docker_buildfile_format(l::Labels)::String
-  normal_labels = join(["$(String(k))=$(getfield(labels, k))" for k in fieldnames(Labels)], " ")
+  normal_labels = join(
+    ["$(String(k))=$(getfield(l, k))" for k in fieldnames(Labels) if k != :user_defined_labels], 
+    " ",
+  )
   user_defined_labels = join(["$k=$v" for (k, v) in l.user_defined_labels], " ") 
   normal_labels * " " * user_defined_labels
 end
 
-function add_user_defined_labels(l::Labels, new_tags::Dict{String, String})
-  l.user_defined_labels = merge(l.user_defined_labels, new_tags)
+function add_user_defined_labels(l::Labels, new_tags::Dict{String, String})::Labels
+  c_l = copy(l)
+  c_l.user_defined_labels = merge(c_l.user_defined_labels, new_tags)
+  c_l
 end
 

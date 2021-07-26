@@ -26,6 +26,13 @@ function get_jt1_response_suffix()::String
   end
 end
 
+struct ExpectedLabels
+  RESPONDER_PACKAGE_NAME::String
+  RESPONDER_FUNCTION_NAME::String
+  RESPONDER_PKG_SOURCE::String
+  user_defined_labels::Dict{String, String}
+end
+
 function run_tests(; 
     to::AbstractString="lambda_function", 
     clean::Bool=true,
@@ -74,15 +81,8 @@ function run_tests(;
     (responders[4], 4, false, false),
   ]
 
-  struct ExpectedLabels
-    RESPONDER_PACKAGE_NAME::String
-    RESPONDER_FUNCTION_NAME::String
-    RESPONDER_PKG_SOURCE::String
-    user_defined_labels::Dict{String, String}
-  end
-
   function test_actual_labels_against_expected(
-      actual::Labels,
+      actual::Jot.Labels,
       expected::ExpectedLabels,
     )::Bool
     all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
@@ -116,8 +116,9 @@ function run_tests(;
 
   local_images = Vector{LocalImage}()
   @testset "Local Images" begin
-    foreach(zip(local_image_inputs, expected_labels, test_data)) do li_inputs, labels, test_datum
-      this_li = test_local_image(li_inputs..., test_datum[1], test_datum[2], labels)
+    foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
+      (test_input, expected_result) = (test_datum[1], test_datum[2])
+      this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
       push!(local_images, this_li)
     end
   end
@@ -239,7 +240,7 @@ function test_local_image(
     use_config::Bool,
     package_compile::Bool,
     test_request::Any,
-    expected::Any,
+    expected_test_result::Any,
     expected_labels::ExpectedLabels,
   )::LocalImage
   local_image = create_local_image("jt$(num)-local-"*test_suffix, 
@@ -263,8 +264,7 @@ function test_local_image(
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
   @show test_request
-  @show expected
-  @test run_test(local_image, test_request, expected; then_stop=true) |> first
+  @test run_test(local_image, test_request, expected_test_result; then_stop=true) |> first
   sleep(1)
   return local_image
 end
