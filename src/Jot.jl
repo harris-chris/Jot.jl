@@ -311,8 +311,12 @@ function get_labels(image::RemoteImage)::Labels
     @debug manifest
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
     @debug v1_compat
-    labels = JSON3.read(v1_compat["config"]["Labels"], Dict)
+    labels = v1_compat["config"]["Labels"]
     @debug labels
+    @debug typeof(labels)
+    labels = OrderedDict{Symbol, String}(labels)
+    @debug labels
+    labels = OrderedDict(String(k) => v for (k, v) in labels)
     Labels(labels)
   catch e 
     if isa(e, BoundsError) || isa(e, KeyError)

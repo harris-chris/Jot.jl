@@ -9,7 +9,7 @@
 end
 StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()  
 
-function Labels(d::Dict{String, String})::Labels
+function Labels(d::AbstractDict{String, String})::Labels
   field_names = map(String, fieldnames(Labels))
   kwargs = Dict{Symbol, Any}()
   user_defined_labels = Dict{String, String}()
