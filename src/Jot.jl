@@ -232,7 +232,6 @@ function create_local_image(
                               package_compile;
                               user_defined_labels,
                              )
-  @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end
@@ -306,16 +305,10 @@ function get_labels(image::RemoteImage)::Labels
      ) 
   batch_image = JSON3.read(batch_image_json) 
   try 
-    @debug batch_image
     manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
-    @debug manifest
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
-    @debug v1_compat
     labels = v1_compat["config"]["Labels"]
-    @debug labels
-    @debug typeof(labels)
     labels = OrderedDict{Symbol, String}(labels)
-    @debug labels
     labels = OrderedDict(String(k) => v for (k, v) in labels)
     Labels(labels)
   catch e 
@@ -539,7 +532,6 @@ function create_lambda_function(
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
 
-  @debug "HERE"
   @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,

@@ -37,8 +37,8 @@ function test_actual_labels_against_expected(
     actual::Jot.Labels,
     expected::ExpectedLabels,
   )::Bool
-  @debug [getfield(actual, fn) for fn in fieldnames([ExpectedLabels])]
-  @debug [getfield(expected, fn) for fn in fieldnames([ExpectedLabels])]
+  @show [getfield(actual, fn) for fn in fieldnames([ExpectedLabels])]
+  @show [getfield(expected, fn) for fn in fieldnames([ExpectedLabels])]
   all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
 end
 
