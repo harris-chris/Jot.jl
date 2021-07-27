@@ -27,7 +27,7 @@ function get_jt1_response_suffix()::String
 end
 
 struct ExpectedLabels
-  RESPONDER_PACKAGE_NAME::String
+  RESPONDER_PACKAGE_NAME::Union{Nothing, String}
   RESPONDER_FUNCTION_NAME::String
   RESPONDER_PKG_SOURCE::String
   user_defined_labels::Dict{String, String}
@@ -37,8 +37,8 @@ function test_actual_labels_against_expected(
     actual::Jot.Labels,
     expected::ExpectedLabels,
   )::Bool
-  @show [getfield(actual, fn) for fn in fieldnames([ExpectedLabels])]
-  @show [getfield(expected, fn) for fn in fieldnames([ExpectedLabels])]
+  @info [getfield(actual, fn) for fn in fieldnames(ExpectedLabels) if !isnothing(getfield(expected, fn))]
+  @info [getfield(expected, fn) for fn in fieldnames(ExpectedLabels) if !isnothing(getfield(expected, fn))]
   all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
 end
 
@@ -90,8 +90,6 @@ function run_tests(;
     (responders[3], 3, false, false),
     (responders[4], 4, false, false),
   ]
-
-
   user_labels = [
                  Dict("TEST"=>"1"), 
                  Dict("TEST"=>"2"),
@@ -100,9 +98,9 @@ function run_tests(;
                 ]
 
   expected_labels = [
-    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "./test/JotTest1"), user_labels[1]),
-    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "./test/JotTest1"), user_labels[2]),
-    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "./test/JotTest2"), user_labels[3]),
+    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[1]),
+    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[2]),
+    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), user_labels[3]),
     ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[4]),
   ]
 
