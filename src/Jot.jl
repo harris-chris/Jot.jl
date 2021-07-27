@@ -306,9 +306,13 @@ function get_labels(image::RemoteImage)::Labels
      ) 
   batch_image = JSON3.read(batch_image_json) 
   try 
-    # manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+    @debug batch_image
+    manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
+    @debug manifest
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
-    labels = v1_compat["config"]["Labels"]
+    @debug v1_compat
+    labels = JSON3.read(v1_compat["config"]["Labels"], Dict)
+    @debug labels
     Labels(labels)
   catch e 
     if isa(e, BoundsError) || isa(e, KeyError)

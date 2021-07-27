@@ -41,6 +41,15 @@ function to_aws_shorthand(l::Labels)::String
   normal_tags * "," * addnl_tags
 end
 
+function to_json(l::Labels)::String
+  normal_tags = [
+    OrderedDict("Key" => String(k), "Value" => (isnothing(getfield(l, k)) ? "" : getfield(l, k)))
+    for k in fieldnames(Labels) if k != :user_defined_labels
+  ] 
+  addnl_tags = [OrderedDict("Key" => k, "Value" => v) for (k, v) in l.user_defined_labels]
+  JSON3.write([ normal_tags ; addnl_tags ])
+end
+
 function to_docker_buildfile_format(l::Labels)::String
   normal_labels = join(
     ["$(String(k))=$(getfield(l, k))" for k in fieldnames(Labels) if k != :user_defined_labels], 

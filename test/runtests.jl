@@ -33,6 +33,13 @@ struct ExpectedLabels
   user_defined_labels::Dict{String, String}
 end
 
+function test_actual_labels_against_expected(
+    actual::Jot.Labels,
+    expected::ExpectedLabels,
+  )::Bool
+  all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
+end
+
 function run_tests(; 
     to::AbstractString="lambda_function", 
     clean::Bool=true,
@@ -82,12 +89,6 @@ function run_tests(;
     (responders[4], 4, false, false),
   ]
 
-  function test_actual_labels_against_expected(
-      actual::Jot.Labels,
-      expected::ExpectedLabels,
-    )::Bool
-    all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
-  end
 
   user_labels = [
                  Dict("TEST"=>"1"), 
