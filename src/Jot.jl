@@ -259,8 +259,6 @@ function create_local_image(
   isnothing(this_image) ? error("Unable to locate created local image") : this_image
 end
 
-function do_user_defined_labels_overlap(user_defined_labels::AbstractDict{String, String})
-
 function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T} where {T}
   if raw_output == ""
     Vector{T}()
