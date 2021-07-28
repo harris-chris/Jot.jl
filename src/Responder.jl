@@ -10,6 +10,7 @@ abstract type AbstractResponder{IT} end
 """
     struct LocalPackageResponder{IT} <: AbstractResponder{IT}
         pkg::Pkg.Types.PackageSpec
+        original_path::String
         response_function::Symbol
         response_function_param_type::Type{IT}
         build_dir::String
@@ -22,22 +23,26 @@ usually created by the `Responder` function.
 mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
   # TODO: remove pkg attribute?
   pkg::Pkg.Types.PackageSpec
+  original_path::String
   response_function::Symbol
   response_function_param_type::Type{IT}
   build_dir::String
   package_name::String
+end
 
-  function LocalPackageResponder(
-      pkg::Pkg.Types.PackageSpec,
-      response_function::Symbol,
-      ::Type{IT},
-      build_dir::String,
-      package_name::String,
-    )::LocalPackageResponder{IT} where {IT}
-    new{IT}(pkg, response_function, IT, build_dir, package_name)
-  end
+function get_responder_from_local_package(
+    path::String,
+    response_function::Symbol,
+    ::Type{IT},
+  )::LocalPackageResponder{IT} where {IT}
+  isdir(path) || error("Unable to find local directory $(path)")
+  "Project.toml" in readdir(path) || error("Unable to find Project.toml in $path")
+  path = path[end] == '/' ? path[1:end-1] : path |> abspath
+  pkg_spec = PackageSpec(path=path)
+  get_responder_from_package_spec(pkg_spec, response_function, IT)
+end
 
-  function LocalPackageResponder(
+function get_responder_from_package_spec(
       pkg::Pkg.Types.PackageSpec,
       response_function::Symbol,
       ::Type{IT},
@@ -47,20 +52,8 @@ mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
     package_name = get_responder_package_name(path)
     move_local_to_build_directory(build_dir, path, package_name)
     println("Pinned $package_name.$response_function with tree hash $(get_tree_hash(build_dir)) to $build_dir")
-    new{IT}(pkg, response_function, IT, build_dir, package_name)
+    LocalPackageResponder(pkg, path, response_function, IT, build_dir, package_name)
   end
-
-  function LocalPackageResponder(
-      path::String,
-      response_function::Symbol,
-      ::Type{IT},
-    )::LocalPackageResponder{IT} where {IT}
-    isdir(path) || error("Unable to find local directory $(path)")
-    path = path[end] == '/' ? path[1:end-1] : path |> abspath
-    pkg_spec = PackageSpec(path=path)
-    LocalPackageResponder(pkg_spec, response_function, IT)
-  end
-end
 
 function get_responder_from_package_url(
     url::String,
@@ -78,6 +71,7 @@ function get_responder_from_package_url(
   Pkg.rm(pkg_name)
   LocalPackageResponder(
                         PackageSpec(url=url),
+                        url,
                         response_function,
                         IT,
                         build_dir,
@@ -93,8 +87,11 @@ function get_responder_from_local_script(
     ::Type{IT};
     dependencies = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
+  !isfile(local_path) && error("$local_path does not point to a file")
   build_dir = create_build_directory()
-  pkg_name = "script_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 8)
+  # pkg_name = "script_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 8)
+  script_filename = basename(local_path)
+  pkg_name = get_package_name_from_script_name(script_filename)
   cd(build_dir) do
     Pkg.generate(pkg_name)
     Pkg.activate("./$pkg_name")
@@ -111,13 +108,25 @@ function get_responder_from_local_script(
   open(joinpath(build_dir, pkg_name, "src", pkg_name * ".jl"), "w") do f
     write(f, pkg_code)
   end
-  LocalPackageResponder(
+  out = LocalPackageResponder(
                         PackageSpec(path=joinpath(build_dir, pkg_name)),
+                        local_path,
                         response_function,
                         IT,
                         build_dir,
                         pkg_name,
                        )
+  @debug out
+  out
+end
+
+function get_package_name_from_script_name(filename::String)::String
+  pkg_name = filename[end-2:end] == ".jl" ? filename[begin:end-3] : filename
+  replace_chars = ["-", ".", ",", ":", ";"]
+  for r in replace_chars
+    pkg_name = replace(pkg_name, r => "_")
+  end
+  pkg_name * "_package"
 end
 
 Base.:(==)(a::LocalPackageResponder, b::LocalPackageResponder) = get_tree_hash(a) == get_tree_hash(b)
@@ -165,10 +174,10 @@ function get_responder(
           Dependencies have been passed, but path_url leads to a package; please specify dependencies in the Package's Project.toml
           """
         )
-        LocalPackageResponder(path_url, response_function, IT)
+        get_responder_from_local_package(path_url, response_function, IT)
       else
         error("""
-        Path points to a directory, but no Project.toml exists; please provide a path to either a package directory, or a script file"
+        Path points to a directory, but no Project.toml exists; please provide a path to either a package directory, or a script file
         """)
       end
     elseif(isfile(path_url))
@@ -233,7 +242,7 @@ function get_responder(
     response_function_param_type::Type{IT},
   )::LocalPackageResponder{IT} where {IT}
   pkg_path = get_package_path(mod)
-  LocalPackageResponder(pkg_path, response_function, IT)
+  get_responder_from_local_package(pkg_path, response_function, IT)
 end
 
 function get_responder_package_name(path::String)::String
@@ -244,7 +253,7 @@ function get_responder_package_name(path::String)::String
 end
 
 function get_responder_path(res::LocalPackageResponder)::Union{Nothing, String}
-  res.pkg.repo.source
+  res.original_path
 end
 
 function get_commit(res::LocalPackageResponder)::String

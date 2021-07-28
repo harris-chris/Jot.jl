@@ -59,8 +59,8 @@ function run_tests(;
 
   responder_inputs = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "./test/JotTest1")), :response_func, Dict), Dict()),
-    ((joinpath(jot_path, "./test/JotTest2/response_func.jl"), :response_func, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
+    ((PackageSpec(path=joinpath(jot_path, "test/JotTest1")), :response_func, Dict), Dict()),
+    ((joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
   ]
 
@@ -100,7 +100,11 @@ function run_tests(;
   expected_labels = [
     ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[1]),
     ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[2]),
-    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), user_labels[3]),
+    ExpectedLabels(
+      Jot.get_package_name_from_script_name("jot-test-2.jl"), 
+      "map_log_gamma", 
+      joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), 
+      user_labels[3]),
     ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[4]),
   ]
 
