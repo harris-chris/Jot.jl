@@ -37,11 +37,29 @@ get_dockerfile(
   )
 get_ecr_repo(image::LocalImage)
 get_ecr_repo(repo_name::String)
+create_lambda_components(
+    res::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
+    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    image_tag::String = "latest",
+    no_cache::Bool = false,
+    julia_base_version::String = "1.6.1",
+    julia_cpu_target::String = "x86-64",
+    package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+  )
+get_all_aws_roles()
+get_all_containers(args::Vector{String} = Vector{String}())
+get_all_ecr_repos(jot_generated_only::Bool = true)
+get_all_lambda_functions(jot_generated_only::Bool = true)
+get_all_local_images(; args::Vector{String} = Vector{String}(), jot_generated_only::Bool = true)
+get_all_remote_images(jot_generated_only::Bool = true)
 get_lambda_function(function_name::String)
 get_lambda_function(repo::ECRRepo)
 get_local_image(repository::String)
 get_remote_image(lambda_function::LambdaFunction)
 get_remote_image(local_image::LocalImage)
+get_remote_image(identity::AbstractString)
 get_responder( 
     path_url::String, 
     response_function::Symbol,
@@ -59,6 +77,7 @@ get_responder(
     response_function::Symbol,
     response_function_param_type::Type,
   )
+get_user_labels(l::Union{LambdaComponent, ECRRepo})
 invoke_function(
     request::Any,
     lambda_function::LambdaFunction;
@@ -73,7 +92,10 @@ run_test(
   expected_response::Any = nothing;
   then_stop::Bool = false,
 )
+run_test(l::LambdaComponents; function_argument::Any = "", expected_response::Any = nothing;)
 send_local_request(request::Any)
-show_all_lambdas(local_image_attr::String = "tag", remote_image_attr::String = "tag", lambda_function_attr::String = "version")
+show_lambdas()
 stop_container(con::Container)
+with_remote_image!(l::LambdaComponents)
+with_lambda_function!(l::LambdaComponents)
 ```

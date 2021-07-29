@@ -5,9 +5,13 @@
   RESPONDER_TREE_HASH::String = ""
   RESPONDER_PKG_SOURCE::Union{Nothing, String} = nothing
   IS_JOT_GENERATED::String = "false" # set to "true" in get_labels(res)
-  user_defined_labels::Dict{String, String} = Dict{String, String}()
+  user_defined_labels::AbstractDict{String, String} = Dict{String, String}()
 end
 StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()  
+
+function filter_user_defined_only(l::Labels)::Dict
+  l.user_defined_labels
+end
 
 function Labels(d::AbstractDict{String, String})::Labels
   field_names = map(String, fieldnames(Labels))
@@ -37,8 +41,12 @@ function to_aws_shorthand(l::Labels)::String
   normal_tags = join(
     ["$k=$(getfield(l, k))" for k in fieldnames(Labels) if k != :user_defined_labels], 
     ",")
-  addnl_tags = join(["$k=$v" for (k,v) in l.user_defined_labels], ",")
-  normal_tags * "," * addnl_tags
+  if length(l.user_defined_labels) > 0
+    addnl_tags = join(["$k=$v" for (k,v) in l.user_defined_labels], ",")
+    normal_tags * "," * addnl_tags
+  else
+    normal_tags
+  end
 end
 
 function to_json(l::Labels)::String
@@ -59,7 +67,7 @@ function to_docker_buildfile_format(l::Labels)::String
   normal_labels * " " * user_defined_labels
 end
 
-function add_user_defined_labels(l::Labels, new_tags::Dict{String, String})::Labels
+function add_user_defined_labels(l::Labels, new_tags::AbstractDict{String, String})::Labels
   c_l = copy(l)
   c_l.user_defined_labels = merge(c_l.user_defined_labels, new_tags)
   c_l

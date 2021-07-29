@@ -43,10 +43,18 @@ function get_ecr_repo(local_image::LocalImage)::Union{Nothing, ECRRepo}
   isnothing(index) ? nothing : all_repos[index]
 end
 
-function get_all_ecr_repos()::Vector{ECRRepo}
+"""
+    get_all_ecr_repos(jot_generated_only::Bool = true)::Vector{ECRRepo}
+
+Returns a vector of `ECRRepo`s, representing all AWS-hosted ECR Repositories.
+
+`jot_generated_only` specifies whether to filter for jot-generated repos only.
+"""
+function get_all_ecr_repos(jot_generated_only::Bool = true)::Vector{ECRRepo}
   all_repos_json = readchomp(`aws ecr describe-repositories`)
   all = JSON3.read(all_repos_json, Dict{String, Vector{ECRRepo}})
-  all["repositories"]
+  all_repos = all["repositories"]
+  jot_generated_only ? filter(is_jot_generated, all_repos) : all_repos
 end
 
 """
@@ -65,7 +73,7 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   image.exists || error("Image does not exist")
   labels = get_labels(image)
   create_script = get_create_ecr_repo_script(
-                                             get_image_suffix(image),
+                                             get_lambda_name(image),
                                              get_aws_region(image),
                                              labels,
                                             )
@@ -73,6 +81,7 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   @debug repo_json
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]
 end
+
 
 """
     delete!(repo::ECRRepo)

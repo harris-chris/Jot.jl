@@ -12,16 +12,16 @@ using JotTest1
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
 
-function reset_jt1_response_suffix()::String
+function reset_response_suffix(test_path::String)::String
   response_suffix = randstring(12)
-  open(joinpath(jot_path, "test/JotTest1/response_suffix"), "w") do rsfile
+  open(joinpath(jot_path, test_path), "w") do rsfile
     write(rsfile, response_suffix)
   end
   response_suffix
 end
 
-function get_jt1_response_suffix()::String
-  open(joinpath(jot_path, "test/JotTest1/response_suffix"), "r") do rsfile
+function get_response_suffix(test_path::String)::String
+  open(joinpath(jot_path, test_path), "r") do rsfile
     readchomp(rsfile)
   end
 end
@@ -43,25 +43,126 @@ function test_actual_labels_against_expected(
 end
 
 function run_tests(; 
-    to::AbstractString="lambda_function", 
-    clean::Bool=true,
-    example_only::Bool=false,
-    partial::Bool=true,
+    clean_up::Bool=true,
+    example_simple::Bool=false,
+    example_components::Bool=false,
+    quartet::Bool=false,
+    quartet_partial::Bool=true,
+    quartet_to::AbstractString="lambda_function", 
   )
   ENV["JOT_TEST_RUNNING"] = "true"
-  if example_only
-    test_documentation_example(clean)
-    return
+  if all([example_simple, example_components, quartet] .== false)
+    example_simple = true; example_components = true; quartet = true
   end
-  clean = clean == "true" ? true : false
-  partial = partial == "true" ? true : false
-  rs_suffix = reset_jt1_response_suffix()
+  example_simple && run_example_simple_test(clean_up)
+  example_components && run_example_components_test(clean_up)
+  quartet && run_quartet_test(quartet_partial, quartet_to, clean_up)
+  ENV["JOT_TEST_RUNNING"] = "false"
+end
+
+function run_example_components_test(clean_up::Bool)
+  clean_up_example_test()
+  @testset "Example components" begin
+    # Create a simple script to use as a lambda function
+    open("increment_vector.jl", "w") do f
+      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+    end
+
+    # Turn it into a Responder; this specifies the function we will create a Lambda from
+    @info "Creating responder"
+    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
+
+    # Create a LambdaComponents instance from the responder
+    @info "Creating LambdaComponents"
+    lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+
+    lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
+     
+    # Clean up 
+    if clean_up
+      delete!(lambda_components)
+      rm("./increment_vector.jl")
+
+      @test isnothing(get_local_image("increment-vector"))
+      @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
+      @test isnothing(get_ecr_repo("increment-vector"))
+      @test isnothing(get_remote_image("increment-vector"))
+    end
+  end
+end
+  
+
+function run_example_simple_test(clean_up::Bool)
+  clean_up_example_test()
+  @testset "Example simple" begin
+    # Create a simple script to use as a lambda function
+    open("increment_vector.jl", "w") do f
+      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+    end
+
+    # Turn it into a Responder; this specifies the function we will create a Lambda from
+    @info "Creating responder"
+    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
+
+    # Create a local docker image from the responder
+    @info "Creating local image"
+    local_image = create_local_image(increment_responder; image_suffix="increment-vector")
+    @test get_local_image("increment-vector") == local_image
+    @test get_lambda_name(local_image) == "increment-vector"
+
+    # Push this local docker image to AWS ECR
+    @info "Creating remote image"
+    remote_image = push_to_ecr!(local_image)
+    @test get_remote_image("increment-vector") == remote_image
+    @test get_lambda_name(remote_image) == "increment-vector"
+     
+    # Create a lambda function from this remote_image... 
+    @info "Creating lambda function"
+    increment_vector_lambda = create_lambda_function(remote_image)
+    @test get_lambda_function("increment-vector") == increment_vector_lambda
+    @test get_lambda_name(increment_vector_lambda) == "increment-vector"
+
+    # ... and test it to see if it's working OK
+    @info "Testing lambda function"
+    @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+
+    # Clean up 
+    if clean_up
+      delete!(increment_vector_lambda)
+      delete!(remote_image)
+      delete!(local_image)
+      rm("./increment_vector.jl")
+      @test isnothing(get_aws_role(increment_vector_lambda.Role))
+      @test isnothing(get_ecr_repo("increment-vector"))
+    end
+    # Check that this has also cleaned up the ECR Repo and the AWS Role
+  end
+end
+
+function clean_up_example_test()
+  # Before the test, delete anything which might be left over
+  existing_lf = get_lambda_function("increment-vector")
+  !isnothing(existing_lf) && delete!(existing_lf)
+
+  existing_ri = get_remote_image("increment-vector")
+  !isnothing(existing_ri) && delete!(existing_ri)
+
+  existing_ecr = get_ecr_repo("increment-vector")
+  !isnothing(existing_ecr) && delete!(existing_ecr)
+
+  existing_li = get_local_image("increment-vector")
+  !isnothing(existing_li) && delete!(existing_li)
+end
+
+function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
+  reset_response_suffix("test/JotTest1/response_suffix")
+  reset_response_suffix("test/JotTest2/response_suffix")
 
   responder_inputs = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "test/JotTest1")), :response_func, Dict), Dict()),
-    ((joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
+    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict()),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
+    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
   ]
 
   responders = Vector{AbstractResponder}()
@@ -73,15 +174,15 @@ function run_tests(;
     end
   end
   if to == "responder"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
   test_data = [ # Actual, expected, bad input
     (Dict("double" => 4.5), 9.0, [1,2]),
-    (Dict("add suffix" => "test-"), "test-"*get_jt1_response_suffix(), [1,2]),
-    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
+    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
     ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
+    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
   ]
 
   local_image_inputs = [ # Responder, number, use_config, package_compile
@@ -99,13 +200,13 @@ function run_tests(;
 
   expected_labels = [
     ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[1]),
-    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[2]),
+    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), user_labels[2]),
+    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[3]),
     ExpectedLabels(
-      Jot.get_package_name_from_script_name("jot-test-2.jl"), 
+      Jot.get_package_name_from_script_name("jot-test-4.jl"), 
       "map_log_gamma", 
-      joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), 
-      user_labels[3]),
-    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[4]),
+      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), 
+      user_labels[4]),
   ]
 
   if !(length(responders) == length(test_data) == length(local_image_inputs))
@@ -130,7 +231,7 @@ function run_tests(;
   end
   
   if to == "local_image"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -143,7 +244,7 @@ function run_tests(;
     )
   end
   if to == "package_compiler"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -165,13 +266,13 @@ function run_tests(;
   end
 
   if to == "ecr_repo"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
   aws_role = test_aws_role()
   if to == "aws_role"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -188,44 +289,10 @@ function run_tests(;
   end
 
   if to == "lambda_function"
-    clean && clean_up()
+    clean_up && quartet_clean_up()
     return
   end
-  clean && clean_up()
-end
-
-function test_documentation_example(clean_up::Bool)
-  @testset "Documentation example" begin
-    # Create a simple script to use as a lambda function
-    open("increment_vector.jl", "w") do f
-      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
-    end
-
-    # Turn it into a Responder; this specifies the function we will create a Lambda from
-    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
-
-    # Create a local docker image from the responder
-    local_image = create_local_image("increment-vector", increment_responder)
-
-    # Push this local docker image to AWS ECR; create an AWS role that can execute it
-    (ecr_repo, remote_image) = push_to_ecr!(local_image)
-    aws_role = create_aws_role("increment-vector-role")
-     
-    # Create a lambda function from this remote_image... 
-    increment_vector_lambda = create_lambda_function(remote_image, aws_role)
-
-    # ... and test it to see if it's working OK
-    @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
-
-    # Clean up 
-    if clean_up
-      delete!(increment_vector_lambda)
-      delete!(ecr_repo)
-      delete!(aws_role)
-      delete!(local_image)
-      rm("./increment_vector.jl")
-    end
-  end
+  clean_up && clean_up()
 end
 
 function test_responder(
@@ -249,8 +316,7 @@ function test_local_image(
     expected_test_result::Any,
     expected_labels::ExpectedLabels,
   )::LocalImage
-  local_image = create_local_image("jt$(num)-local-"*test_suffix, 
-                                   res; 
+  local_image = create_local_image(res; 
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile,
                                    user_defined_labels = expected_labels.user_defined_labels,
@@ -299,7 +365,8 @@ function test_ecr_repo(
     local_image::LocalImage, 
     expected_labels::ExpectedLabels,
   )::Tuple{ECRRepo, RemoteImage}
-  (ecr_repo, remote_image) = push_to_ecr!(local_image)
+  remote_image = push_to_ecr!(local_image)
+  ecr_repo = remote_image.ecr_repo
   @testset "Test remote image" begin 
     @test Jot.matches(local_image, ecr_repo)
     @test Jot.is_jot_generated(remote_image)
@@ -331,7 +398,7 @@ function test_lambda_function(
     expected::Any,
     exception_request::Any,
   )::LambdaFunction
-  lambda_function = create_lambda_function(ecr_repo, aws_role)
+  lambda_function = create_lambda_function(ecr_repo; role = aws_role)
   @testset "Lambda Function test" begin
     @test Jot.is_jot_generated(lambda_function)
     @test Jot.matches(remote_image, lambda_function)
@@ -342,14 +409,14 @@ function test_lambda_function(
     @test response == expected
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
-      remote_image, aws_role; function_name="addl"*test_suffix
+      remote_image; role=aws_role, function_name="addl"*test_suffix
     )
     @test_throws LambdaException invoke_function(exception_request, lambda_function; check_state=true)
   end
   lambda_function
 end
 
-function clean_up()
+function quartet_clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
   @show "running clean up"

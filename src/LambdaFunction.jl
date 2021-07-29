@@ -49,9 +49,17 @@ end
 StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.CodeSha256 == b.CodeSha256)
 
-function get_all_lambda_functions()::Vector{LambdaFunction}
+"""
+    get_all_lambda_functions(jot_generated_only::Bool = true)::Vector{LambdaFunction}
+ 
+Returns a vector of `LambdaFunction`s, representing all AWS-hosted Lambda functions. 
+
+`jot_generated_only` specifies whether to filter for jot-generated lambda functions only.
+"""
+function get_all_lambda_functions(jot_generated_only::Bool = true)::Vector{LambdaFunction}
   all_json = readchomp(`aws lambda list-functions`)
-  JSON3.read(all_json, Dict{String, Vector{LambdaFunction}})["Functions"]
+  all_lfs = JSON3.read(all_json, Dict{String, Vector{LambdaFunction}})["Functions"]
+  jot_generated_only ? filter(is_jot_generated, all_lfs) : all_lfs
 end
 
 """
@@ -101,6 +109,8 @@ function delete!(func::LambdaFunction)
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
   func.exists = false 
+  associated_role = get_aws_role(create_role_name(func.FunctionName))
+  !isnothing(associated_role) && delete!(associated_role)
   nothing
 end
 

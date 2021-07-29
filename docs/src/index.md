@@ -1,38 +1,47 @@
 # Jot.jl
 
-**Streamlines the creation and management of AWS Lambda functions written in Julia**
+*Streamlines the creation and management of AWS Lambda functions written in Julia*
 
-Amazon Web Services does not provide native support for Julia, so functions must be put into docker containers which implement AWS's [Lambda API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html), and uploaded to AWS Elastic Container Registry (ECR). Jot aims to reduce this to a simple, customizable and transparent process, which results in a low-latency Lambda function:
+Amazon Web Services does not provide native support for Julia, so functions must be put into docker containers which implement AWS's [Lambda API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html), and uploaded to AWS Elastic Container Registry (ECR). Jot aims to abstract these complexities away, allowing both julia packages and scripts to be turned into low-latency Lambda functions.
 
 ## Introduction
-1\. Create a simple script to use as a lambda function and turn it into a `Responder`
+1\. From the JULIA REPL, create a simple script to use as a lambda function... 
 ```
-write(
-    "./add_one_script.jl", 
-    "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)"
-) 
-increment_responder = Responder("./add_one_script.jl", :increment_vector, Vector{Int})
+open("increment_vector.jl", "w") do f
+  write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+end
 ```
-
-2\. Create a local docker image that will implement the responder
+2\. ...and turn it into a `Responder`
 ```
-local_image = create_local_image("increment-vector", increment_responder)
+increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
 ```
 
-3\. Push this local docker image to AWS ECR; create an AWS role that can execute it
+3\. Create a local docker image that will implement the responder
 ```
-(ecr_repo, remote_image) = push_to_ecr!(local_image)
-aws_role = create_aws_role("increment-vector-role")
+local_image = create_local_image(increment_responder; image_suffix="increment-vector")
+```
+
+4\. Push this local docker image to AWS ECR
+```
+remote_image = push_to_ecr!(local_image)
 ```
  
-4\. Create a lambda function from this remote_image... 
+5\. Create a lambda function from this remote_image... 
 ```
-increment_vector_lambda = create_lambda_function(remote_image, aws_role)
+increment_vector_lambda = create_lambda_function(remote_image)
 ```
 
-5\. ... and test it to see if it's working OK
+6\. ... and test it to see if it's working OK
 ```
-run_test(increment_vector_lambda, function_argument=[2,3,4], expected_result=[3,4,5])
+@test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+```
+
+Alternatively, there is the `LambdaComponents` type, which collects together local docker images,
+remote docker images and lambda functions that share the same underlying function code:
+
+```
+lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
 ```
 
 ## Package Features

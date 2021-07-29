@@ -61,6 +61,13 @@ function delete!(con::Container)
   con.exists = false
 end
 
+"""
+    get_all_containers(args::Vector{String} = Vector{String}())::Vector{Container}
+
+Returns a list of containers currently available on the local machine.
+
+`args` are additional arguments passed to the `docker ps` call that this function wraps.
+"""
 function get_all_containers(args::Vector{String} = Vector{String}())::Vector{Container}
   docker_output = readchomp(`docker ps $args --format '{{json .}}'`)
   parse_docker_ls_output(Container, docker_output)

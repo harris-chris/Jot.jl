@@ -10,6 +10,7 @@ using Pkg
 using PrettyTables
 using IsURL
 using Random
+using Setfield
 using StructTypes
 using TOML
 import Base.delete! 
@@ -18,19 +19,23 @@ import Base.delete!
 export AWSConfig, LambdaException
 export get_responder, AbstractResponder, LocalPackageResponder
 export LocalImage, Container, RemoteImage, ECRRepo, AWSRole, LambdaFunction
+export get_aws_role
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_local_image, get_local_image
 export send_local_request
 export run_test
-export stop_container, is_container_running, get_all_containers
+export stop_container, is_container_running
 export create_ecr_repo, get_ecr_repo, push_to_ecr! 
 export get_remote_image
-export create_aws_role, get_all_aws_roles
+export create_aws_role
 export create_lambda_function, get_lambda_function, invoke_function
+export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
 export show_lambdas
-export get_labels
+export get_labels, get_lambda_name
+export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
+export get_all_containers, get_all_aws_roles
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -172,7 +177,7 @@ function get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
     package_compile::Bool;
-    user_defined_labels::Dict{String, String},
+    user_defined_labels::AbstractDict{String, String},
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
   if length(overlapped_keys) > 0 
@@ -198,8 +203,8 @@ end
 
 """
     create_local_image(
-        image_suffix::String,
         responder::AbstractResponder;
+        image_suffix::Union{Nothing, String} = nothing,
         aws_config::Union{Nothing, AWSConfig} = nothing, 
         image_tag::String = "latest",
         no_cache::Bool = false,
@@ -225,8 +230,8 @@ function. They can be retrieved using the `get_labels` function, alongside the J
 labels.
 """
 function create_local_image(
-    image_suffix::String,
     responder::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
     aws_config::Union{Nothing, AWSConfig} = nothing, 
     image_tag::String = "latest",
     no_cache::Bool = false,
@@ -235,6 +240,8 @@ function create_local_image(
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
+  # TODO check if the image suffix already exists
+  image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
@@ -273,9 +280,7 @@ end
 
 # -- get_labels --
 
-function get_labels(
-    res::LocalPackageResponder,
-  )::Labels
+function get_labels(res::LocalPackageResponder)::Labels
   Labels( RESPONDER_PACKAGE_NAME=res.package_name,
           RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
           RESPONDER_COMMIT=get_commit(res),
@@ -283,6 +288,15 @@ function get_labels(
           RESPONDER_PKG_SOURCE=get_responder_path(res),
           IS_JOT_GENERATED="true",
          )
+end
+
+"""
+    get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})::Dict
+
+Retrieves any user_defined labels for the given resource as a Dict of key=>value pairs.
+"""
+function get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})::Dict
+  get_labels(l) |> filter_user_defined_only
 end
 
 function get_labels(image::LocalImage)::Labels
@@ -357,7 +371,7 @@ function get_labels(lc::LambdaComponents)::Labels
   end
 end
 
-function is_jot_generated(c::LambdaComponent)::Bool
+function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
   try 
     labels = get_labels(c)
     Meta.parse(labels.IS_JOT_GENERATED)
@@ -448,17 +462,17 @@ function ecr_login_for_image(aws_config::AWSConfig, image_suffix::String)
 end
 
 function ecr_login_for_image(image::LocalImage)
-  ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
+  ecr_login_for_image(get_aws_config(image), get_lambda_name(image))
 end
 
 """
-    push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+    push_to_ecr!(image::LocalImage)::RemoteImage
 Pushes the given local docker image to an AWS ECR Repo, a prerequisite of creating an AWS Lambda
 Function. If an ECR Repo for the given local image does not exist, it will be created
-automatically. Returns both the ECR Repo, and a RemoteImage object that represents the docker 
-image that is hosted on the ECR Repo.
+automatically. Returns a RemoteImage object that represents the docker image that is hosted on the 
+ECR Repo. The ECR Repo itself is an attribute of the RemoteImage.
 """
-function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+function push_to_ecr!(image::LocalImage)::RemoteImage
   image.exists || error("Image does not exist")
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
@@ -472,14 +486,15 @@ function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
   image.Digest = all_images[img_idx].Digest
-  remote_image = get_remote_image(image)
-  (repo, remote_image)
+  out = get_remote_image(image)
+  @debug out
+  out 
 end
 
 """
     create_lambda_function(
-        remote_image::RemoteImage,
-        role::AWSRole;
+        remote_image::RemoteImage;
+        role::AWSRole = nothing,
         function_name::Union{Nothing, String} = nothing,
         timeout::Int64 = 60,
         memory_size::Int64 = 2000,
@@ -488,22 +503,30 @@ Creates a function that exists on the AWS Lambda service. The function will use 
 `RemoteImage`, and runs using the given AWS Role. 
 """
 function create_lambda_function(
-    remote_image::RemoteImage,
-    role::AWSRole;
+    remote_image::RemoteImage;
+    role::Union{AWSRole, Nothing} = nothing,
     function_name::Union{Nothing, String} = nothing,
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
+  role = isnothing(role) ? create_aws_role(create_role_name(function_name)) : role
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
+  @debug image_uri
   labels = get_labels(remote_image)
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  out = create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  @debug out
+  out
+end
+
+function create_role_name(function_name::String)::String
+  function_name * "-generated-lambda-role"
 end
 
 """
     create_lambda_function(
-        repo::ECRRepo,
-        role::AWSRole;
+        repo::ECRRepo;
+        role::AWSRole = nothing,
         function_name::Union{Nothing, String} = nothing,
         image_tag::String = "latest",
         timeout::Int64 = 60,
@@ -514,13 +537,14 @@ and runs using the given AWS Role. If given, the image_tag will decide which of 
 ECR Repo is used.
 """
 function create_lambda_function(
-    repo::ECRRepo,
-    role::AWSRole;
+    repo::ECRRepo;
+    role::AWSRole = nothing,
     function_name::Union{Nothing, String} = nothing,
     image_tag::String = "latest",
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
+  role = isnothing(role) ? create_aws_role(get_lambda_name(repo) * "-lambda-role") : role
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
   labels = get_labels(repo)
@@ -541,8 +565,6 @@ function create_lambda_function(
     delete!(existing_lf)
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
-
-  @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,
@@ -551,27 +573,23 @@ function create_lambda_function(
                                                     labels=labels,
                                                    )
 
-  @debug create_script
   out = Pipe(); err = Pipe()
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
-
   close(out.in); close(err.in)
   if proc.exitcode != 0
-    @debug read(out, String)
-    @debug read(err, String)
+    @info read(err, String)
+    @info read(out, String)
     error("proc exited with $(proc.exitcode)")
   end
 
   while true
     sleep(1)
-    @debug get_function_state(function_name)
     if get_function_state(function_name) == Active
       break
     end
   end
 
   func_json = read(out, String)
-  @debug func_json
   return JSON3.read(func_json, LambdaFunction)
 end
 
@@ -612,6 +630,33 @@ function get_environment_variables(image_inspect::AbstractDict{String, Any})::Di
       )
 end
 
+# -- get_lambda_name --
+
+function get_lambda_name(res::AbstractResponder)::String
+  lowercase(res.package_name)
+end
+
+function get_lambda_name(local_image::LocalImage)::Union{Nothing, String}
+  @debug local_image.Repository
+  is_jot_generated(local_image) ? split(local_image.Repository, '/')[2] : nothing
+end
+
+function get_lambda_name(remote_image::RemoteImage)::Union{Nothing, String}
+  is_jot_generated(remote_image) ?  get_lambda_name(remote_image.ecr_repo) : nothing
+end
+
+function get_lambda_name(repo::ECRRepo)::Union{Nothing, String}
+  is_jot_generated(repo) ? repo.repositoryName : nothing
+end
+
+function get_lambda_name(lf::LambdaFunction)::Union{Nothing, String}
+  is_jot_generated(lf) ? lf.FunctionName : nothing
+end
+
+function get_lambda_name(l::LambdaComponents)::String
+  get_from_any_component(get_lambda_name, l)
+end
+
 # -- get_response_function_name -- 
 
 function get_response_function_name(
@@ -624,26 +669,27 @@ function get_response_function_name(
   end
 end
 
-function get_response_function_name(image::LocalImage)::Union{Nothing, String}
-  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
-  env_vars = get_environment_variables(image_inspect)
-  get_response_function_name(env_vars)
+# function get_response_function_name(image::LocalImage)::Union{Nothing, String}
+  # image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  # image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
+  # env_vars = get_environment_variables(image_inspect)
+  # get_response_function_name(env_vars)
+# end
+
+# function get_response_function_name(images::Vector{LocalImage})::Vector{String}
+  # image_ids = join([img.ID for img in images], " ")
+  # image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
+  # env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
+  # [get_response_function_name(env_vars) for env_vars in env_var_arr]
+# end
+
+function get_response_function_name(c::LambdaComponent)::String
+  labels = get_labels(c)
+  "$(labels.RESPONDER_PACKAGE_NAME).$(labels.RESPONDER_FUNCTION_NAME)"
 end
 
-function get_response_function_name(images::Vector{LocalImage})::Vector{String}
-  image_ids = join([img.ID for img in images], " ")
-  image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
-  env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
-  [get_response_function_name(env_vars) for env_vars in env_var_arr]
-end
-
-function get_response_function_name(lambda::LambdaComponents)::Union{Nothing, String}
-  if !isnothing(lambda.local_image)
-    get_response_function_name(local_image)
-  else
-    nothing
-  end
+function get_response_function_name(lambda::LambdaComponents)::String
+  get_from_any_component(get_response_function_name, lambda)
 end
 
 end

@@ -117,6 +117,20 @@ function get_lambda_function_tags_script(lambda_function::LambdaFunction)::Strin
   """
 end
 
+function get_images_in_ecr_repo_script(ecr_repo::ECRRepo)::String
+  """
+  aws ecr list-images --repository-name=$(ecr_repo.repositoryName)
+  """
+end
+
+function get_delete_remote_image_script(remote_image::RemoteImage)::String
+  """
+  aws ecr batch-delete-image \\
+    --repository-name=$(remote_image.ecr_repo.repositoryName) \\
+    --image-ids imageDigest=$(remote_image.imageDigest)
+  """
+end
+
 function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
   image_full_name = get_image_full_name(aws_config, image_suffix)
   """

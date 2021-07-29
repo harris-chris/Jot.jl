@@ -1,13 +1,14 @@
 
 """
     struct LambdaComponents
+        function_name::String
         aws_config::AWSConfig
         local_image::Union{Nothing, LocalImage}
         remote_image::Union{Nothing, RemoteImage}
         lambda_function::Union{Nothing, LambdaFunction}
     end
 """
-@with_kw struct LambdaComponents
+@with_kw mutable struct LambdaComponents
   function_name::String
   aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
@@ -15,6 +16,157 @@
   lambda_function::Union{Nothing, LambdaFunction}
 end
 Base.show(l::LambdaComponents) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
+
+function get_from_any_component(
+    get_func::Function,
+    l::LambdaComponents,
+  )
+  for (f_name, f_type) in zip(fieldnames(LambdaComponents), fieldtypes(LambdaComponents))
+    if f_type <: LambdaComponent
+      try
+        out = get_func(getfield(l, f_name))
+        return out
+      catch e
+        continue
+      end
+    end
+  end
+end
+
+"""
+    create_lambda_components(
+        res::AbstractResponder;
+        image_suffix::Union{Nothing, String} = nothing,
+        aws_config::Union{Nothing, AWSConfig} = nothing, 
+        image_tag::String = "latest",
+        no_cache::Bool = false,
+        julia_base_version::String = "1.6.1",
+        julia_cpu_target::String = "x86-64",
+        package_compile::Bool = false,
+        user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+      )::LambdaComponents
+
+Creates a `LocalImage` from the given responder, creates a `LambdaComponents` object to store the
+local image, and then returns the `LambdaComponents` object. 
+
+Acts as an alternative to `create_local_image`, but returns a `LambdaComponents` rather than just
+the local image. This can be more convenient for keeping the components of a lambda function 
+organized - for example:
+`create_lambda_components(responder) |> with_remote_image! |> with_lambda_function!` will run through
+the entire process of creating a local image, pushing that image to ECR, and then creating a Lambda
+function.
+"""
+function create_lambda_components(
+    res::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
+    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    image_tag::String = "latest",
+    no_cache::Bool = false,
+    julia_base_version::String = "1.6.1",
+    julia_cpu_target::String = "x86-64",
+    package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+  )::LambdaComponents
+  local_image = create_local_image(res; 
+                                   image_suffix = image_suffix,
+                                   aws_config = aws_config,
+                                   image_tag = image_tag,
+                                   no_cache = no_cache,
+                                   julia_base_version = julia_base_version,
+                                   julia_cpu_target = julia_cpu_target,
+                                   package_compile = package_compile,
+                                   user_defined_labels = user_defined_labels)
+  LambdaComponents(get_response_function_name(local_image),
+                   get_aws_config(),
+                   local_image,
+                   nothing,
+                   nothing,
+  )
+end
+
+"""
+    with_remote_image!(l::LambdaComponents)::LambdaComponents
+
+Adds a 'RemoteImage` object to the passed `LambdaComponents` instance. Will error if the instance
+has neither an existing remote image or local image.
+"""
+function with_remote_image!(l::LambdaComponents)::LambdaComponents
+  if isnothing(l.local_image) && isnothing(l.remote_image)
+    error("Unable to add remote image to LambdaComponents as it does not have a local image")
+  end
+  if isnothing(l.remote_image)
+    l.remote_image = push_to_ecr!(l.local_image)
+    l
+  else
+    l
+  end
+end
+
+"""
+    with_lambda_function!(l::LambdaComponents)::LambdaComponents
+
+Adds a 'LambdaFunction` instance to the passed `LambdaComponents` instance. Will error if the instance
+has neither an existing remote image, local image or lambda function.
+"""
+function with_lambda_function!(l::LambdaComponents)::LambdaComponents
+  with_remote = if isnothing(l.remote_image) && isnothing(l.lambda_function)
+    try
+      with_remote_image!(l)
+    catch e
+      error("Unable to create lambda function from LambdaComponents; it has neither a local image nor a remote image")
+    end
+  else
+    l
+  end
+  if isnothing(with_remote.lambda_function)
+    l.lambda_function = create_lambda_function(with_remote.remote_image)
+    l
+  else
+    l
+  end
+end
+
+"""
+    delete!(l::LambdaComponents)
+
+Deletes the local docker image, remote image, and lambda function associated with the 
+`LambdaComponents` instance. 
+"""
+function delete!(l::LambdaComponents)
+  !isnothing(l.lambda_function) && delete!(l.lambda_function)
+  !isnothing(l.remote_image) && delete!(l.remote_image)
+  !isnothing(l.local_image) && delete!(l.local_image)
+end
+
+"""
+    run_test(
+        l::LambdaComponents;
+        function_argument::Any = "", 
+        expected_response::Any = nothing;
+      )::Tuple{Bool, Float64}
+
+Tests the passed `LambdaComponents` instance. 
+
+The test runs on the most downstream object. So if the instance has a `LambdaFunction`, this will 
+be tested. Otherwise, the attached `LocalImage` will be tested. If the `LambdaComponents` object
+has neither a local image or a lambda function, then it has nothing that can be tested and the 
+function will throw an error.
+
+Returns a tuple of {Test pass/fail, Test time taken in seconds}.
+"""
+function run_test(
+    l::LambdaComponents,
+    function_argument::Any = "", 
+    expected_response::Any = nothing,
+  )::Tuple{Bool, Union{Missing, Float64}}
+  if !isnothing(l.lambda_function)
+    run_test(l.lambda_function, function_argument, expected_response)
+  elseif !isnothing(l.local_image)
+    run_test(l.local_image, function_argument, expected_response)
+  else
+    error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
+  end
+end
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
   tree_hash = get_tree_hash(local_image)
@@ -28,6 +180,8 @@ end
 matches(ecr_repo::ECRRepo, local_image::LocalImage) = matches(local_image, ecr_repo)
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
+  @debug local_image.Digest
+  @debug remote_image.imageDigest
   local_image.Digest == remote_image.imageDigest
 end
 matches(remote_image::RemoteImage, local_image::LocalImage) = matches(local_image, remote_image)
@@ -121,7 +275,7 @@ function responder_source_h_f(
       responder_path = table_data[i, j]
       lc_tree_hash = get_tree_hash(lambdas[i])
       if ispath(responder_path)
-        get_tree_hash(responder_path) == lc_tree_hash
+        get_tree_hash(dirname(responder_path)) == lc_tree_hash
       else
         false
       end
@@ -150,7 +304,7 @@ function tree_hash_f(l::LambdaComponents)::String
 end
 const tree_hash_component = TableComponent("Tree Hash", tree_hash_f, nothing)
 
-local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
+local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_lambda_name(l.local_image)
 const local_image_name_component = TableComponent("Image Name", local_image_name_f, nothing)
 
 local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
@@ -207,6 +361,23 @@ function get_table_data(
   data = vcat(data_rows...)
 end
 
+"""
+    show_lambdas()::Nothing
+
+Displays a table of all objects generated using Jot.jl.
+
+Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
+on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
+image and lambda function on a given row of the table are guaranteed to share the same underlying 
+function code.
+
+The Responder column is colour-coded:
+- Grey indicates that this path no longer exists.
+- White indicates that this path still exists, but the code has changed since the objects shown
+in the row were created.
+- Blue indicates that the underlying code for this row (eg the code present in the local image,
+remote image etc) is the same as is currently present at this path.
+"""
 function show_lambdas()
   @info "Collecting lambda components; this may take a few seconds..."
   lambdas = get_all_lambdas()
@@ -294,67 +465,3 @@ function group_by_function_name(lambdas::Vector{LambdaComponents})::Dict{String,
   lambdas_by_function
 end
 
-"""
-    show_all_lambdas(
-      local_image_attr::String = "tag", 
-      remote_image_attr::String = "tag",  
-      lambda_function_attr::String = "version",
-    )::Nothing
-
-Displays a table of all objects generated using Jot.jl.
-
-Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
-on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
-image and lambda function on a given row of the table are guaranteed to share the same underlying 
-function code.
-
-The Responder column is colour-coded:
-- Grey indicates that this path no longer exists.
-- White indicates that this path still exists, but the code has changed since the objects shown
-in the row were created.
-- Blue indicates that the underlying code for this row (eg the code present in the local image,
-remote image etc) is the same as is currently present at this path.
-"""
-function show_all_lambdas(; 
-    local_image_attr::String = "tag", 
-    remote_image_attr::String = "tag",  
-    lambda_function_attr::String = "version",
-  )::Nothing
-  out = ""
-  out *= "\tLocal Image\tRemote Image\tLambda Function"
-  for l in get_all_lambdas()
-    out *= "\n$(get_response_function_name(l.local_image))"
-    # Header
-    li_attr = if local_image_attr == "tag"
-      l.local_image.Tag
-    elseif local_image_attr == "created at"
-      l.local_image.CreatedAt
-    elseif local_image_attr == "id"
-      l.local_image.ID[1:docker_hash_limit]
-    elseif local_image_attr == "digest"
-      l.local_image.Digest[1:docker_hash_limit]
-    end
-
-    ri_attr = if isnothing(l.remote_image)
-      ""
-    else
-      if remote_image_attr == "tag"
-        l.remote_image.imageTag
-      elseif remote_image_attr == "digest"
-        l.remote_image.imageDigest[1:docker_hash_limit]
-      end
-    end
-
-    lf_attr = if isnothing(l.lambda_function)
-      ""
-    else
-      if lambda_function_attr == "version"
-        l.lambda_function.Version
-      elseif lambda_function_attr == "digest"
-        l.lambda_function.CodeSha256
-      end
-    end
-    out *= "\t$li_attr\t$ri_attr\t$lf_attr"
-  end
-  println(out)
-end

@@ -43,26 +43,35 @@ it must be at least four characters in length.
 function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
-    (li.Repository == identity || begin
+    identity_matches = li.Repository == identity
+    name_matches = get_lambda_name(li) == identity
+    id_matches = begin
        check_len = minimum([length(li.ID), length(identity)])
-       li.ID[check_len] == identity[check_len] && check_len >= 4
+       (li.ID[begin:check_len] == identity[begin:check_len]) && (check_len >= 4)
     end
-    )
+    identity_matches || name_matches || id_matches
   end
   isnothing(index) ? nothing : all[index]
 end
 
 """
-    get_all_local_images(
-      args::Vector{String} = Vector{String}(),
-    )::Vector{LocalImage}
+    get_all_local_images(;
+        args::Vector{String} = Vector{String}(),
+        jot_generated_only::Bool = true,
+      )::Vector{LocalImage}
 
-Returns `LocalImage` objects for all locally-stored docker images. `args` are passed to the
-call to `docker image ls`, that is used to populate this vector.
+Returns a vector of `LocalImage`s, representing all locally-stored docker images. 
+
+`args` are passed to the call to `docker image ls`, that is used to populate this vector.
+`jot_generated_only` specifies whether to filter for jot-generated images only.
 """
-function get_all_local_images(args::Vector{String} = Vector{String}())::Vector{LocalImage}
-  docker_output = readchomp(`docker image ls $args --digests --format '{{json .}}'`)
-  parse_docker_ls_output(LocalImage, docker_output)
+function get_all_local_images(;
+    args::Vector{String} = Vector{String}(),
+    jot_generated_only::Bool = true,
+  )::Vector{LocalImage}
+  docker_output = readchomp(`docker image ls $args --digests --filter "dangling=false" --format '{{json .}}'`)
+  local_images = parse_docker_ls_output(LocalImage, docker_output)
+  jot_generated_only ? filter(is_jot_generated, local_images) : local_images
 end
 
 """
@@ -97,7 +106,4 @@ function get_aws_config(image::LocalImage)::AWSConfig
   AWSConfig(get_aws_id(image), get_aws_region(image))
 end
 
-function get_image_suffix(image::LocalImage)::String
-  split(image.Repository, '/')[2]
-end
 
