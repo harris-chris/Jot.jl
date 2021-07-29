@@ -477,7 +477,12 @@ function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   readchomp(`bash -c $push_script`)
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
+  @debug img_idx
+  @debug image.ID[1:docker_hash_limit]
+  @debug all_images[img_idx]
   image.Digest = all_images[img_idx].Digest
+  @debug image
+  @debug get_all_remote_images()
   remote_image = get_remote_image(image)
   (repo, remote_image)
 end

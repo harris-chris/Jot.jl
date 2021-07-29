@@ -59,9 +59,9 @@ function run_tests(;
 
   responder_inputs = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "test/JotTest1")), :response_func, Dict), Dict()),
-    ((joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
+    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict()),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
+    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
   ]
 
   responders = Vector{AbstractResponder}()
@@ -80,8 +80,8 @@ function run_tests(;
   test_data = [ # Actual, expected, bad input
     (Dict("double" => 4.5), 9.0, [1,2]),
     (Dict("add suffix" => "test-"), "test-"*get_jt1_response_suffix(), [1,2]),
-    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
     ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
+    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
   ]
 
   local_image_inputs = [ # Responder, number, use_config, package_compile
@@ -99,13 +99,13 @@ function run_tests(;
 
   expected_labels = [
     ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[1]),
-    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[2]),
+    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), user_labels[2]),
+    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[3]),
     ExpectedLabels(
-      Jot.get_package_name_from_script_name("jot-test-2.jl"), 
+      Jot.get_package_name_from_script_name("jot-test-4.jl"), 
       "map_log_gamma", 
-      joinpath(jot_path, "test/JotTest2/jot-test-2.jl"), 
-      user_labels[3]),
-    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[4]),
+      joinpath(jot_path, "test/JotTest2/jot-test-4.jl"), 
+      user_labels[4]),
   ]
 
   if !(length(responders) == length(test_data) == length(local_image_inputs))
