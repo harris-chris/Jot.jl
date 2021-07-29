@@ -205,7 +205,7 @@ function test_documentation_example(clean_up::Bool)
     increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
 
     # Create a local docker image from the responder
-    local_image = create_local_image("increment-vector", increment_responder)
+    local_image = create_local_image(increment_responder; image_suffix="increment-vector")
 
     # Push this local docker image to AWS ECR; create an AWS role that can execute it
     (ecr_repo, remote_image) = push_to_ecr!(local_image)
@@ -249,8 +249,7 @@ function test_local_image(
     expected_test_result::Any,
     expected_labels::ExpectedLabels,
   )::LocalImage
-  local_image = create_local_image("jt$(num)-local-"*test_suffix, 
-                                   res; 
+  local_image = create_local_image(res; 
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile,
                                    user_defined_labels = expected_labels.user_defined_labels,

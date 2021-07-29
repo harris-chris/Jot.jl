@@ -1,6 +1,7 @@
 
 """
     struct LambdaComponents
+        function_name::String
         aws_config::AWSConfig
         local_image::Union{Nothing, LocalImage}
         remote_image::Union{Nothing, RemoteImage}
@@ -15,6 +16,24 @@
   lambda_function::Union{Nothing, LambdaFunction}
 end
 Base.show(l::LambdaComponents) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
+
+function create_lambda_components(
+    res::AbstractResponder;
+    image_suffix::Union{Nothing, String},
+    aws_role::Union{Nothing, AWSRole},
+  )::LambdaComponents
+  local_image = create_local_image(res; image_suffix = image_suffix)
+  (repo, remote_image) = push_to_ecr!(local_image)
+  aws_role = isnothing(aws_role) ? create_aws_role(get_image_suffix(local_image)) : aws_role
+  lambda_function = create_lambda_function(remote_image, aws_role)
+  LambdaComponents(
+                   l.lambda_function.FunctionName,
+                   get_aws_config(),
+                   local_image,
+                   remote_image,
+                   lambda_function
+                  )
+end
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
   tree_hash = get_tree_hash(local_image)

@@ -118,6 +118,10 @@ function get_responder_from_local_script(
                        )
 end
 
+function get_image_suffix_from_responder(res::AbstractResponder)::String
+  res.package_name
+end
+
 function get_package_name_from_script_name(filename::String)::String
   pkg_name = filename[end-2:end] == ".jl" ? filename[begin:end-3] : filename
   replace_chars = ["-", ".", ",", ":", ";"]

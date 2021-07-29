@@ -225,8 +225,8 @@ function. They can be retrieved using the `get_labels` function, alongside the J
 labels.
 """
 function create_local_image(
-    image_suffix::String,
     responder::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
     aws_config::Union{Nothing, AWSConfig} = nothing, 
     image_tag::String = "latest",
     no_cache::Bool = false,
@@ -235,6 +235,12 @@ function create_local_image(
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
+  # TODO check if the image suffix already exists
+  image_suffix = isnothing(image_suffix) ? get_image_suffix_from_responder(responder) : image_suffix
+  # existing_images = get_all_local_images()
+  # if any([get_image_suffix(img) == image_suffix for img in existing_images])
+    # error("Unable to create local image; local image with image_suffix $image_suffix already exists")
+  # end
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
