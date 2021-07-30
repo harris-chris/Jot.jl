@@ -208,12 +208,11 @@ function test_documentation_example(clean_up::Bool)
     # Create a local docker image from the responder
     local_image = create_local_image(increment_responder; image_suffix="increment-vector")
 
-    # Push this local docker image to AWS ECR; create an AWS role that can execute it
-    (ecr_repo, remote_image) = push_to_ecr!(local_image)
-    aws_role = create_aws_role("increment-vector-role")
+    # Push this local docker image to AWS ECR
+    remote_image = push_to_ecr!(local_image)
      
     # Create a lambda function from this remote_image... 
-    increment_vector_lambda = create_lambda_function(remote_image, aws_role)
+    increment_vector_lambda = create_lambda_function(remote_image)
 
     # ... and test it to see if it's working OK
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
@@ -299,7 +298,8 @@ function test_ecr_repo(
     local_image::LocalImage, 
     expected_labels::ExpectedLabels,
   )::Tuple{ECRRepo, RemoteImage}
-  (ecr_repo, remote_image) = push_to_ecr!(local_image)
+  remote_image = push_to_ecr!(local_image)
+  ecr_repo = remote_image.ecr_repo
   @testset "Test remote image" begin 
     @test Jot.matches(local_image, ecr_repo)
     @test Jot.is_jot_generated(remote_image)
@@ -331,7 +331,7 @@ function test_lambda_function(
     expected::Any,
     exception_request::Any,
   )::LambdaFunction
-  lambda_function = create_lambda_function(ecr_repo, aws_role)
+  lambda_function = create_lambda_function(ecr_repo; aws_role = aws_role)
   @testset "Lambda Function test" begin
     @test Jot.is_jot_generated(lambda_function)
     @test Jot.matches(remote_image, lambda_function)
@@ -342,7 +342,7 @@ function test_lambda_function(
     @test response == expected
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
-      remote_image, aws_role; function_name="addl"*test_suffix
+      remote_image; aws_role=aws_role, function_name="addl"*test_suffix
     )
     @test_throws LambdaException invoke_function(exception_request, lambda_function; check_state=true)
   end

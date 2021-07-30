@@ -10,6 +10,7 @@ using Pkg
 using PrettyTables
 using IsURL
 using Random
+using Setfield
 using StructTypes
 using TOML
 import Base.delete! 
@@ -458,13 +459,13 @@ function ecr_login_for_image(image::LocalImage)
 end
 
 """
-    push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+    push_to_ecr!(image::LocalImage)::RemoteImage
 Pushes the given local docker image to an AWS ECR Repo, a prerequisite of creating an AWS Lambda
 Function. If an ECR Repo for the given local image does not exist, it will be created
-automatically. Returns both the ECR Repo, and a RemoteImage object that represents the docker 
-image that is hosted on the ECR Repo.
+automatically. Returns a RemoteImage object that represents the docker image that is hosted on the 
+ECR Repo. The ECR Repo itself is an attribute of the RemoteImage.
 """
-function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
+function push_to_ecr!(image::LocalImage)::RemoteImage
   image.exists || error("Image does not exist")
   ecr_login_for_image(image)
   existing_repo = get_ecr_repo(image)
@@ -477,14 +478,8 @@ function push_to_ecr!(image::LocalImage)::Tuple{ECRRepo, RemoteImage}
   readchomp(`bash -c $push_script`)
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
-  @debug img_idx
-  @debug image.ID[1:docker_hash_limit]
-  @debug all_images[img_idx]
   image.Digest = all_images[img_idx].Digest
-  @debug image
-  @debug get_all_remote_images()
-  remote_image = get_remote_image(image)
-  (repo, remote_image)
+  get_remote_image(image)
 end
 
 """

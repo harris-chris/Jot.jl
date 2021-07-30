@@ -39,7 +39,7 @@ function get_lambda_components(
     image_suffix::Union{Nothing, String},
     aws_role::Union{Nothing, AWSRole},
   )::LambdaComponents
-  (repo, remote_image) = push_to_ecr!(local_image)
+  remote_image = push_to_ecr!(local_image)
   aws_role = isnothing(aws_role) ? create_aws_role(get_image_suffix(local_image)) : aws_role
   lambda_function = create_lambda_function(remote_image, aws_role)
   LambdaComponents(
@@ -71,9 +71,20 @@ function create_lambda_components(
                                    julia_cpu_target = julia_cpu_target,
                                    package_compile = package_compile,
                                    user_defined_labels = user_defined_labels)
-  # LambdaComponents(
 end
 
+function with_remote_image(l::LambdaComponents)::LambdaComponents
+  if isnothing(l.remote_image)
+    remote_image = if isnothing(l.local_image)
+      error("LambdaComponents does not have local_image; cannot create new RemoteImage")
+    else
+      push_to_ecr!(l.local_image)
+    end
+    @setfield l.remote_image = remote_image
+  else
+    l
+  end
+end
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
   tree_hash = get_tree_hash(local_image)

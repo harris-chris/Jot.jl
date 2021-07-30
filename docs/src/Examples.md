@@ -1,13 +1,12 @@
 # Jot Usage Examples
 
 ### To make a simple script into a Lambda function...
-... where the script is located at `/path/to/script.jl`, and contains a function called `response_func`, that takes a single argument of type `Dict`; also create an `AWSRole` to run it:
+... where the script is located at `/path/to/script.jl`, and contains a function called `response_func`, that takes a single argument of type `Dict`:
 ```
 ex1_responder = get_responder("/path/to/script.jl", :response_func, Dict)
 ex1_local_image = create_local_image("ex1", ex1_responder)
-(_, ex1_remote_image) = push_to_ecr!(ex1_local_image)
-ex1_aws_role = create_aws_role("ex1_aws_role")
-ex1_lambda = create_lambda_function(ex1_remote_image, ex1_aws_role)
+ex1_remote_image = push_to_ecr!(ex1_local_image)
+ex1_lambda = create_lambda_function(ex1_remote_image)
 ```
 
 ### To make a script with dependencies into a Lambda function...
@@ -15,9 +14,8 @@ ex1_lambda = create_lambda_function(ex1_remote_image, ex1_aws_role)
 ```
 ex2_responder = get_responder("/path/to/script.jl", :response_func, Dict)
 ex2_local_image = create_local_image("ex2", ex2_responder; dependencies=["SpecialFunctions"])
-(_, ex2_remote_image) = push_to_ecr!(ex2_local_image)
-ex2_aws_role = create_aws_role("ex2_aws_role")
-ex1_lambda = create_lambda_function(ex2_remote_image, ex2_aws_role)
+ex2_remote_image = push_to_ecr!(ex2_local_image)
+ex1_lambda = create_lambda_function(ex2_remote_image)
 ```
 
 ### To make a package into a LocalImage, using PackageCompiler to reduce its cold start time...

@@ -27,15 +27,14 @@ increment_responder = get_responder("./increment_vector.jl", :increment_vector, 
 local_image = create_local_image("increment-vector", increment_responder)
 ```
 
-3\. Push this local docker image to AWS ECR; create an AWS role that can execute it
+3\. Push this local docker image to AWS ECR
 ```
-(ecr_repo, remote_image) = push_to_ecr!(local_image)
-aws_role = create_aws_role("increment-vector-role")
+remote_image = push_to_ecr!(local_image)
 ```
  
 4\. Create a lambda function from this remote_image... 
 ```
-increment_vector_lambda = create_lambda_function(remote_image, aws_role)
+increment_vector_lambda = create_lambda_function(remote_image)
 ```
 
 5\. ... and test it to see if it's working OK
