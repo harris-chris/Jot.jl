@@ -43,11 +43,12 @@ it must be at least four characters in length.
 function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
-    (li.Repository == identity || begin
+    identity_matches = li.Repository == identity
+    id_matches = begin
        check_len = minimum([length(li.ID), length(identity)])
-       li.ID[check_len] == identity[check_len] && check_len >= 4
+       (li.ID[begin:check_len] == identity[begin:check_len]) && (check_len >= 4)
     end
-    )
+    identity_matches || id_matches
   end
   isnothing(index) ? nothing : all[index]
 end

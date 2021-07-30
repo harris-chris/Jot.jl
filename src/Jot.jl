@@ -489,8 +489,8 @@ end
 
 """
     create_lambda_function(
-        remote_image::RemoteImage,
-        role::AWSRole;
+        remote_image::RemoteImage;
+        role::AWSRole = nothing,
         function_name::Union{Nothing, String} = nothing,
         timeout::Int64 = 60,
         memory_size::Int64 = 2000,
@@ -499,12 +499,13 @@ Creates a function that exists on the AWS Lambda service. The function will use 
 `RemoteImage`, and runs using the given AWS Role. 
 """
 function create_lambda_function(
-    remote_image::RemoteImage,
-    role::AWSRole;
+    remote_image::RemoteImage;
+    role::AWSRole = nothing,
     function_name::Union{Nothing, String} = nothing,
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
+  role = isnothing(role) ? create_aws_role(get_image_suffix(remote_image) * "-lambda-role") : role
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
   labels = get_labels(remote_image)
@@ -513,8 +514,8 @@ end
 
 """
     create_lambda_function(
-        repo::ECRRepo,
-        role::AWSRole;
+        repo::ECRRepo;
+        role::AWSRole = nothing,
         function_name::Union{Nothing, String} = nothing,
         image_tag::String = "latest",
         timeout::Int64 = 60,
@@ -525,13 +526,14 @@ and runs using the given AWS Role. If given, the image_tag will decide which of 
 ECR Repo is used.
 """
 function create_lambda_function(
-    repo::ECRRepo,
-    role::AWSRole;
+    repo::ECRRepo;
+    role::AWSRole = nothing,
     function_name::Union{Nothing, String} = nothing,
     image_tag::String = "latest",
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
+  role = isnothing(role) ? create_aws_role(get_image_suffix(repo) * "-lambda-role") : role
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
   labels = get_labels(repo)
@@ -552,8 +554,6 @@ function create_lambda_function(
     delete!(existing_lf)
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
-
-  @debug labels
   create_script = get_create_lambda_function_script(function_name,
                                                     image_uri,
                                                     role.Arn,
@@ -562,27 +562,21 @@ function create_lambda_function(
                                                     labels=labels,
                                                    )
 
-  @debug create_script
   out = Pipe(); err = Pipe()
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
-
   close(out.in); close(err.in)
   if proc.exitcode != 0
-    @debug read(out, String)
-    @debug read(err, String)
     error("proc exited with $(proc.exitcode)")
   end
 
   while true
     sleep(1)
-    @debug get_function_state(function_name)
     if get_function_state(function_name) == Active
       break
     end
   end
 
   func_json = read(out, String)
-  @debug func_json
   return JSON3.read(func_json, LambdaFunction)
 end
 
@@ -635,26 +629,27 @@ function get_response_function_name(
   end
 end
 
-function get_response_function_name(image::LocalImage)::Union{Nothing, String}
-  image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
-  env_vars = get_environment_variables(image_inspect)
-  get_response_function_name(env_vars)
+# function get_response_function_name(image::LocalImage)::Union{Nothing, String}
+  # image_inspect_json = readchomp(`docker inspect $(image.ID)`)
+  # image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
+  # env_vars = get_environment_variables(image_inspect)
+  # get_response_function_name(env_vars)
+# end
+
+# function get_response_function_name(images::Vector{LocalImage})::Vector{String}
+  # image_ids = join([img.ID for img in images], " ")
+  # image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
+  # env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
+  # [get_response_function_name(env_vars) for env_vars in env_var_arr]
+# end
+
+function get_response_function_name(c::LambdaComponent)::String
+  labels = get_labels(c)
+  "$(labels.RESPONDER_PACKAGE_NAME).$(labels.RESPONDER_FUNCTION_NAME)"
 end
 
-function get_response_function_name(images::Vector{LocalImage})::Vector{String}
-  image_ids = join([img.ID for img in images], " ")
-  image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
-  env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
-  [get_response_function_name(env_vars) for env_vars in env_var_arr]
-end
-
-function get_response_function_name(lambda::LambdaComponents)::Union{Nothing, String}
-  if !isnothing(lambda.local_image)
-    get_response_function_name(local_image)
-  else
-    nothing
-  end
+function get_response_function_name(lambda::LambdaComponents)::String
+  get_from_any_component(lambda, get_response_function_name)
 end
 
 end

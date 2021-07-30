@@ -17,12 +17,28 @@
 end
 Base.show(l::LambdaComponents) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
 
-function create_lambda_components(
+function get_from_any_component(
+    l::LambdaComponents,
+    get_func::Function,
+  )
+  for (f_name, f_type) in zip(fieldnames(LambdaComponents), fieldtypes(LambdaComponents))
+    if f_type <: LambdaComponent
+      try
+        out = get_func(getfield(l, f_name))
+        return out
+      catch e
+        continue
+      end
+    end
+  end
+end
+
+
+function get_lambda_components(
     res::AbstractResponder;
     image_suffix::Union{Nothing, String},
     aws_role::Union{Nothing, AWSRole},
   )::LambdaComponents
-  local_image = create_local_image(res; image_suffix = image_suffix)
   (repo, remote_image) = push_to_ecr!(local_image)
   aws_role = isnothing(aws_role) ? create_aws_role(get_image_suffix(local_image)) : aws_role
   lambda_function = create_lambda_function(remote_image, aws_role)
@@ -34,6 +50,30 @@ function create_lambda_components(
                    lambda_function
                   )
 end
+
+function create_lambda_components(
+    res::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
+    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    image_tag::String = "latest",
+    no_cache::Bool = false,
+    julia_base_version::String = "1.6.1",
+    julia_cpu_target::String = "x86-64",
+    package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+  )::LambdaComponents
+  local_image = create_local_image(res; 
+                                   image_suffix = image_suffix,
+                                   aws_config = aws_config,
+                                   image_tag = image_tag,
+                                   no_cache = no_cache,
+                                   julia_base_version = julia_base_version,
+                                   julia_cpu_target = julia_cpu_target,
+                                   package_compile = package_compile,
+                                   user_defined_labels = user_defined_labels)
+  # LambdaComponents(
+end
+
 
 function matches(res::AbstractResponder, local_image::LocalImage)::Bool
   tree_hash = get_tree_hash(local_image)
@@ -140,7 +180,7 @@ function responder_source_h_f(
       responder_path = table_data[i, j]
       lc_tree_hash = get_tree_hash(lambdas[i])
       if ispath(responder_path)
-        get_tree_hash(responder_path) == lc_tree_hash
+        get_tree_hash(dirname(responder_path)) == lc_tree_hash
       else
         false
       end
@@ -226,6 +266,23 @@ function get_table_data(
   data = vcat(data_rows...)
 end
 
+"""
+    show_lambdas()::Nothing
+
+Displays a table of all objects generated using Jot.jl.
+
+Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
+on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
+image and lambda function on a given row of the table are guaranteed to share the same underlying 
+function code.
+
+The Responder column is colour-coded:
+- Grey indicates that this path no longer exists.
+- White indicates that this path still exists, but the code has changed since the objects shown
+in the row were created.
+- Blue indicates that the underlying code for this row (eg the code present in the local image,
+remote image etc) is the same as is currently present at this path.
+"""
 function show_lambdas()
   @info "Collecting lambda components; this may take a few seconds..."
   lambdas = get_all_lambdas()
@@ -313,67 +370,3 @@ function group_by_function_name(lambdas::Vector{LambdaComponents})::Dict{String,
   lambdas_by_function
 end
 
-"""
-    show_all_lambdas(
-      local_image_attr::String = "tag", 
-      remote_image_attr::String = "tag",  
-      lambda_function_attr::String = "version",
-    )::Nothing
-
-Displays a table of all objects generated using Jot.jl.
-
-Each row of the table shows at least one of a Responder, a local docker image, a remote (hosted
-on AWS ECR) docker image, and an AWS-hosted Lambda function. The local docker image, remote docker
-image and lambda function on a given row of the table are guaranteed to share the same underlying 
-function code.
-
-The Responder column is colour-coded:
-- Grey indicates that this path no longer exists.
-- White indicates that this path still exists, but the code has changed since the objects shown
-in the row were created.
-- Blue indicates that the underlying code for this row (eg the code present in the local image,
-remote image etc) is the same as is currently present at this path.
-"""
-function show_all_lambdas(; 
-    local_image_attr::String = "tag", 
-    remote_image_attr::String = "tag",  
-    lambda_function_attr::String = "version",
-  )::Nothing
-  out = ""
-  out *= "\tLocal Image\tRemote Image\tLambda Function"
-  for l in get_all_lambdas()
-    out *= "\n$(get_response_function_name(l.local_image))"
-    # Header
-    li_attr = if local_image_attr == "tag"
-      l.local_image.Tag
-    elseif local_image_attr == "created at"
-      l.local_image.CreatedAt
-    elseif local_image_attr == "id"
-      l.local_image.ID[1:docker_hash_limit]
-    elseif local_image_attr == "digest"
-      l.local_image.Digest[1:docker_hash_limit]
-    end
-
-    ri_attr = if isnothing(l.remote_image)
-      ""
-    else
-      if remote_image_attr == "tag"
-        l.remote_image.imageTag
-      elseif remote_image_attr == "digest"
-        l.remote_image.imageDigest[1:docker_hash_limit]
-      end
-    end
-
-    lf_attr = if isnothing(l.lambda_function)
-      ""
-    else
-      if lambda_function_attr == "version"
-        l.lambda_function.Version
-      elseif lambda_function_attr == "digest"
-        l.lambda_function.CodeSha256
-      end
-    end
-    out *= "\t$li_attr\t$ri_attr\t$lf_attr"
-  end
-  println(out)
-end

@@ -74,6 +74,10 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]
 end
 
+function get_image_suffix(repo::ECRRepo)::String
+  repo.repositoryName
+end
+
 """
     delete!(repo::ECRRepo)
 

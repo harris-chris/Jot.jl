@@ -55,4 +55,6 @@ function get_remote_image(image_hash::String)::Union{Nothing, RemoteImage}
   isnothing(index) ? nothing : all_remote_images[index]
 end
 
-
+function get_image_suffix(remote_image::RemoteImage)::String
+  get_image_suffix(remote_image.ecr_repo)
+end

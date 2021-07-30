@@ -74,6 +74,6 @@ run_test(
   then_stop::Bool = false,
 )
 send_local_request(request::Any)
-show_all_lambdas(local_image_attr::String = "tag", remote_image_attr::String = "tag", lambda_function_attr::String = "version")
+show_lambdas()
 stop_container(con::Container)
 ```
