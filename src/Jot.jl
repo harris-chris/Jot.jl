@@ -173,7 +173,7 @@ function get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
     package_compile::Bool;
-    user_defined_labels::Dict{String, String},
+    user_defined_labels::AbstractDict{String, String},
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
   if length(overlapped_keys) > 0 
@@ -479,7 +479,9 @@ function push_to_ecr!(image::LocalImage)::RemoteImage
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)
   image.Digest = all_images[img_idx].Digest
-  get_remote_image(image)
+  out = get_remote_image(image)
+  @debug out
+  out 
 end
 
 """
@@ -495,7 +497,7 @@ Creates a function that exists on the AWS Lambda service. The function will use 
 """
 function create_lambda_function(
     remote_image::RemoteImage;
-    role::AWSRole = nothing,
+    role::Union{AWSRole, Nothing} = nothing,
     function_name::Union{Nothing, String} = nothing,
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
@@ -503,6 +505,7 @@ function create_lambda_function(
   role = isnothing(role) ? create_aws_role(get_image_suffix(remote_image) * "-lambda-role") : role
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
+  @debug image_uri
   labels = get_labels(remote_image)
   create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
 end

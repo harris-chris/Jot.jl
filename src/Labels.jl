@@ -5,7 +5,7 @@
   RESPONDER_TREE_HASH::String = ""
   RESPONDER_PKG_SOURCE::Union{Nothing, String} = nothing
   IS_JOT_GENERATED::String = "false" # set to "true" in get_labels(res)
-  user_defined_labels::Dict{String, String} = Dict{String, String}()
+  user_defined_labels::AbstractDict{String, String} = Dict{String, String}()
 end
 StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()  
 
@@ -59,7 +59,7 @@ function to_docker_buildfile_format(l::Labels)::String
   normal_labels * " " * user_defined_labels
 end
 
-function add_user_defined_labels(l::Labels, new_tags::Dict{String, String})::Labels
+function add_user_defined_labels(l::Labels, new_tags::AbstractDict{String, String})::Labels
   c_l = copy(l)
   c_l.user_defined_labels = merge(c_l.user_defined_labels, new_tags)
   c_l

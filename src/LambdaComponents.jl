@@ -80,7 +80,7 @@ function with_remote_image(l::LambdaComponents)::LambdaComponents
     else
       push_to_ecr!(l.local_image)
     end
-    @setfield l.remote_image = remote_image
+    @set l.remote_image = remote_image
   else
     l
   end
@@ -98,6 +98,8 @@ end
 matches(ecr_repo::ECRRepo, local_image::LocalImage) = matches(local_image, ecr_repo)
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
+  @debug local_image.Digest
+  @debug remote_image.imageDigest
   local_image.Digest == remote_image.imageDigest
 end
 matches(remote_image::RemoteImage, local_image::LocalImage) = matches(local_image, remote_image)

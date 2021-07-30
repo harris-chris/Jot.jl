@@ -41,7 +41,10 @@ exists, returns `nothing`.
 """
 function get_remote_image(local_image::LocalImage)::Union{Nothing, RemoteImage}
   all_remote_images = get_all_remote_images()
+  @debug local_image.Digest
+  @debug all_remote_images
   index = findfirst(remote_image -> matches(local_image, remote_image), all_remote_images)
+  @debug index
   isnothing(index) ? nothing : all_remote_images[index]
 end
 
