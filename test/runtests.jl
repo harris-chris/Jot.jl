@@ -12,16 +12,16 @@ using JotTest1
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
 
-function reset_jt1_response_suffix()::String
+function reset_response_suffix(test_path::String)::String
   response_suffix = randstring(12)
-  open(joinpath(jot_path, "test/JotTest1/response_suffix"), "w") do rsfile
+  open(joinpath(jot_path, test_path), "w") do rsfile
     write(rsfile, response_suffix)
   end
   response_suffix
 end
 
-function get_jt1_response_suffix()::String
-  open(joinpath(jot_path, "test/JotTest1/response_suffix"), "r") do rsfile
+function get_response_suffix(test_path::String)::String
+  open(joinpath(jot_path, test_path), "r") do rsfile
     readchomp(rsfile)
   end
 end
@@ -55,7 +55,8 @@ function run_tests(;
   end
   clean = clean == "true" ? true : false
   partial = partial == "true" ? true : false
-  rs_suffix = reset_jt1_response_suffix()
+  reset_response_suffix("test/JotTest1/response_suffix")
+  reset_response_suffix("test/JotTest2/response_suffix")
 
   responder_inputs = [
     ((JotTest1, :response_func, Dict), Dict()),
@@ -79,7 +80,7 @@ function run_tests(;
 
   test_data = [ # Actual, expected, bad input
     (Dict("double" => 4.5), 9.0, [1,2]),
-    (Dict("add suffix" => "test-"), "test-"*get_jt1_response_suffix(), [1,2]),
+    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
     ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
     ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
   ]
@@ -104,7 +105,7 @@ function run_tests(;
     ExpectedLabels(
       Jot.get_package_name_from_script_name("jot-test-4.jl"), 
       "map_log_gamma", 
-      joinpath(jot_path, "test/JotTest2/jot-test-4.jl"), 
+      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), 
       user_labels[4]),
   ]
 
