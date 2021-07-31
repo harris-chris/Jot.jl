@@ -37,8 +37,12 @@ function to_aws_shorthand(l::Labels)::String
   normal_tags = join(
     ["$k=$(getfield(l, k))" for k in fieldnames(Labels) if k != :user_defined_labels], 
     ",")
-  addnl_tags = join(["$k=$v" for (k,v) in l.user_defined_labels], ",")
-  normal_tags * "," * addnl_tags
+  if length(l.user_defined_labels) > 0
+    addnl_tags = join(["$k=$v" for (k,v) in l.user_defined_labels], ",")
+    normal_tags * "," * addnl_tags
+  else
+    normal_tags
+  end
 end
 
 function to_json(l::Labels)::String

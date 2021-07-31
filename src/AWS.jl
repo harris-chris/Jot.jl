@@ -76,7 +76,6 @@ function get_aws_role(role_name::String)::Union{Nothing, AWSRole}
   all = get_all_aws_roles()
   index = findfirst(role -> role.RoleName == role_name, all)
   isnothing(index) ? nothing : all[index]
-  nothing
 end
 
 """
@@ -85,12 +84,22 @@ end
 Create an AWS Role with Lambda execution permissions.
 """
 function create_aws_role(role_name::String)::AWSRole
-  create_script = get_create_lambda_role_script(role_name)
-  role_json = readchomp(`bash -c $create_script`)
-  @debug role_json
-  @info "Creating role $role_name ..."
-  sleep(7);
-  JSON3.read(role_json, Dict{String, AWSRole})["Role"]
+  existing_role = get_aws_role(role_name) 
+  @debug role_name
+  @debug existing_role
+  if !isnothing(existing_role)
+    if aws_role_has_lambda_execution_permissions(existing_role)
+      existing_role
+    else
+      error("Existing role with name $role_name exists, but does not have execution permissions")
+    end
+  else
+    create_script = get_create_lambda_role_script(role_name)
+    role_json = readchomp(`bash -c $create_script`)
+    @info "Creating role $role_name ..."
+    sleep(7);
+    JSON3.read(role_json, Dict{String, AWSRole})["Role"]
+  end
 end
 
 """

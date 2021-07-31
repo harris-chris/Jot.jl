@@ -220,7 +220,7 @@ function test_documentation_example(clean_up::Bool)
     # Clean up 
     if clean_up
       delete!(increment_vector_lambda)
-      delete!(ecr_repo)
+      delete!(remote_image.ecr_repo)
       delete!(aws_role)
       delete!(local_image)
       rm("./increment_vector.jl")

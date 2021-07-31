@@ -18,19 +18,30 @@ end
 StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
 Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
 
+
 function get_all_remote_images()::Vector{RemoteImage}
   repos = get_all_ecr_repos()
-  remote_images = Vector{RemoteImage}()
-  for repo in repos
-    images_json = readchomp(`aws ecr list-images --repository-name=$(repo.repositoryName)`)
-    images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
-    for image in images
-      push!(remote_images, RemoteImage(imageDigest=image.imageDigest,
-                                       imageTag=image.imageTag,
-                                       ecr_repo=repo))
-    end
+  [img for repo in repos for img in get_remote_images(repo)]
+end
+
+function get_remote_images(repo::ECRRepo)::Vector{RemoteImage}
+  get_images_script = get_images_in_ecr_repo_script(repo)
+  images_json = readchomp(`$get_images_script`)
+  images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
+  map(images) do img
+    @set img.ecr_repo = repo
   end
-  remote_images
+end
+
+function delete!(r::RemoteImage)
+  r.exists || error("Remote image does not exist")
+  delete_script = get_delete_remote_image_script(r)
+  output = readchomp(`bash -c $delete_script`)
+  r.exists = false
+  if length(get_remote_images(r.ecr_repo)) == 0
+    delete!(r.ecr_repo)
+  end
+  nothing
 end
 
 """

@@ -502,12 +502,16 @@ function create_lambda_function(
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
-  role = isnothing(role) ? create_aws_role(get_image_suffix(remote_image) * "-lambda-role") : role
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
+  role = isnothing(role) ? create_aws_role(create_role_name(function_name)) : role
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
   @debug image_uri
   labels = get_labels(remote_image)
   create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+end
+
+function create_role_name(function_name::String)::String
+  function_name * "-generated-lambda-role"
 end
 
 """
@@ -564,6 +568,8 @@ function create_lambda_function(
   proc = run(pipeline(ignorestatus(`bash -c $create_script`), stdout=out, stderr=err), wait=true)
   close(out.in); close(err.in)
   if proc.exitcode != 0
+    @info read(err, String)
+    @info read(out, String)
     error("proc exited with $(proc.exitcode)")
   end
 
