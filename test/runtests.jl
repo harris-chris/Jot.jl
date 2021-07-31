@@ -197,6 +197,20 @@ end
 
 function test_documentation_example(clean_up::Bool)
   @testset "Documentation example" begin
+    # DELETE EVERYTHING WHICH MIGHT BE LEFT OVER
+    existing_lf = get_lamda_function("increment-vector")
+    !isnothing(existing_lf) && delete!(existing_lf)
+
+    existing_ri = get_remote_image("increment-vector")
+    !isnothing(existing_ri) && delete!(existing_ri)
+
+    existing_ecr = get_remote_image("increment-vector")
+    !isnothing(existing_ecr) && delete!(existing_ecr)
+
+    existing_li = get_local_image("increment-vector")
+    !isnothing(existing_li) && delete!(existing_li)
+
+    # THE EXAMPLE ITSELF
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
       write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
@@ -220,11 +234,13 @@ function test_documentation_example(clean_up::Bool)
     # Clean up 
     if clean_up
       delete!(increment_vector_lambda)
-      delete!(remote_image.ecr_repo)
-      delete!(aws_role)
+      delete!(remote_image)
       delete!(local_image)
       rm("./increment_vector.jl")
     end
+    # Check that this has also cleaned up the ECR Repo and the AWS Role
+    @test isnothing(get_aws_role(increment_vector_lambda.Role))
+    @test isnothing(get_ecr_repo(remote_image))
   end
 end
 
