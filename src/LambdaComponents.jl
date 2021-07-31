@@ -71,6 +71,50 @@ function create_lambda_components(
                                    julia_cpu_target = julia_cpu_target,
                                    package_compile = package_compile,
                                    user_defined_labels = user_defined_labels)
+  LambdaComponents(get_response_function_name(local_image),
+                   get_aws_config(),
+                   local_image,
+                   nothing,
+                   nothing,
+  )
+end
+
+function to_remote_image(l::LambdaComponents)::LambdaComponents
+  if isnothing(l.local_image)
+    error("Unable to add remote image to LambdaComponents as it does not have a local image")
+  end
+  if isnothing(l.remote_image)
+    @set l.remote_image = push_to_ecr!(l.local_image)
+  else
+    l
+  end
+end
+
+function to_lambda_function(l::LambdaComponents)::LambdaComponents
+  with_remote = if isnothing(l.remote_image)
+    try
+      to_remote_image(l)
+    catch e
+      error("Unable to create lambda function from LambdaComponents; it has neither a local image nor a remote image")
+    end
+  else
+    l
+  end
+  if isnothing(with_remote.lambda_function)
+    @set l.lambda_function = create_lambda_function(with_remote.remote_image)
+  else
+    l
+  end
+end
+
+function run_test(l::LambdaComponents)::Tuple{Bool, Float64}
+  if !isnothing(l.lambda_function)
+    run_test(l.lambda_function)
+  elseif !isnothing(l.local_image)
+    run_test(l.local_image)
+  else
+    error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
+  end
 end
 
 function with_remote_image(l::LambdaComponents)::LambdaComponents

@@ -125,7 +125,9 @@ end
 
 function get_delete_remote_image_script(remote_image::RemoteImage)::String
   """
-  aws ecr batch-delete-image --image-ids imageDigest=$(remote_image.imageDigest)
+  aws ecr batch-delete-image \\
+    --repository-name=$(remote_image.ecr_repo.repositoryName) \\
+    --image-ids imageDigest=$(remote_image.imageDigest)
   """
 end
 

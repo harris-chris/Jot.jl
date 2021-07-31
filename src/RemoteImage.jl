@@ -21,12 +21,15 @@ Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
 
 function get_all_remote_images()::Vector{RemoteImage}
   repos = get_all_ecr_repos()
+  @debug repos
   [img for repo in repos for img in get_remote_images(repo)]
 end
 
 function get_remote_images(repo::ECRRepo)::Vector{RemoteImage}
+  @debug repo
   get_images_script = get_images_in_ecr_repo_script(repo)
-  images_json = readchomp(`$get_images_script`)
+  @debug get_images_script
+  images_json = readchomp(`bash -c $get_images_script`)
   images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
   map(images) do img
     @set img.ecr_repo = repo
@@ -64,7 +67,8 @@ function get_remote_image(image_hash::String)::Union{Nothing, RemoteImage}
   search_hash = split(image_hash, ":") |> last
   index = findfirst(all_remote_images) do ri
     ri_hash = split(ri.imageDigest, ":") |> last
-    ri_hash[begin:length(hash)] == search_hash
+    comparison_length = minimum([length(search_hash), length(ri_hash)])
+    ri_hash[begin:comparison_length] == search_hash[begin:comparison_length]
   end
   isnothing(index) ? nothing : all_remote_images[index]
 end
