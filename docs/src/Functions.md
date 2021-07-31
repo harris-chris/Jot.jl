@@ -37,6 +37,17 @@ get_dockerfile(
   )
 get_ecr_repo(image::LocalImage)
 get_ecr_repo(repo_name::String)
+create_lambda_components(
+    res::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
+    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    image_tag::String = "latest",
+    no_cache::Bool = false,
+    julia_base_version::String = "1.6.1",
+    julia_cpu_target::String = "x86-64",
+    package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+  )
 get_lambda_function(function_name::String)
 get_lambda_function(repo::ECRRepo)
 get_local_image(repository::String)
@@ -73,7 +84,10 @@ run_test(
   expected_response::Any = nothing;
   then_stop::Bool = false,
 )
+run_test(l::LambdaComponents; function_argument::Any = "", expected_response::Any = nothing;)
 send_local_request(request::Any)
 show_lambdas()
 stop_container(con::Container)
+with_remote_image(l::LambdaComponents)
+with_lambda_function(l::LambdaComponents)
 ```

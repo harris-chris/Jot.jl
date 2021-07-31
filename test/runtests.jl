@@ -217,18 +217,23 @@ function test_documentation_example(clean_up::Bool)
     end
 
     # Turn it into a Responder; this specifies the function we will create a Lambda from
+    @info "Creating responder"
     increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
 
     # Create a local docker image from the responder
+    @info "Creating local image"
     local_image = create_local_image(increment_responder; image_suffix="increment-vector")
 
     # Push this local docker image to AWS ECR
+    @info "Creating remote image"
     remote_image = push_to_ecr!(local_image)
      
     # Create a lambda function from this remote_image... 
+    @info "Creating lambda function"
     increment_vector_lambda = create_lambda_function(remote_image)
 
     # ... and test it to see if it's working OK
+    @info "Testing lambda function"
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
 
     # Clean up 

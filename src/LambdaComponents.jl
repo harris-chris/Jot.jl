@@ -33,24 +33,29 @@ function get_from_any_component(
   end
 end
 
+"""
+    function create_lambda_components(
+        res::AbstractResponder;
+        image_suffix::Union{Nothing, String} = nothing,
+        aws_config::Union{Nothing, AWSConfig} = nothing, 
+        image_tag::String = "latest",
+        no_cache::Bool = false,
+        julia_base_version::String = "1.6.1",
+        julia_cpu_target::String = "x86-64",
+        package_compile::Bool = false,
+        user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+      )::LambdaComponents
 
-function get_lambda_components(
-    res::AbstractResponder;
-    image_suffix::Union{Nothing, String},
-    aws_role::Union{Nothing, AWSRole},
-  )::LambdaComponents
-  remote_image = push_to_ecr!(local_image)
-  aws_role = isnothing(aws_role) ? create_aws_role(get_image_suffix(local_image)) : aws_role
-  lambda_function = create_lambda_function(remote_image, aws_role)
-  LambdaComponents(
-                   l.lambda_function.FunctionName,
-                   get_aws_config(),
-                   local_image,
-                   remote_image,
-                   lambda_function
-                  )
-end
+Creates a `LocalImage` from the given responder, creates a `LambdaComponents` object to store the
+local image, and then returns the `LambdaComponents` object. 
 
+Acts as an alternative to `create_local_image`, but returns a `LambdaComponents` rather than just
+the local image. This can be more convenient for keeping the components of a lambda function 
+organized - for example:
+`create_lambda_components(responder) |> with_remote_image |> with_lambda_function` will run through
+the entire process of creating a local image, pushing that image to ECR, and then creating a Lambda
+function.
+"""
 function create_lambda_components(
     res::AbstractResponder;
     image_suffix::Union{Nothing, String} = nothing,
@@ -79,8 +84,14 @@ function create_lambda_components(
   )
 end
 
-function to_remote_image(l::LambdaComponents)::LambdaComponents
-  if isnothing(l.local_image)
+"""
+    function with_remote_image(l::LambdaComponents)::LambdaComponents
+
+Adds a 'RemoteImage` object to the passed `LambdaComponents` instance. Will error if the instance
+has neither an existing remote image or local image.
+"""
+function with_remote_image(l::LambdaComponents)::LambdaComponents
+  if isnothing(l.local_image) && isnothing(l.remote_image)
     error("Unable to add remote image to LambdaComponents as it does not have a local image")
   end
   if isnothing(l.remote_image)
@@ -90,10 +101,16 @@ function to_remote_image(l::LambdaComponents)::LambdaComponents
   end
 end
 
-function to_lambda_function(l::LambdaComponents)::LambdaComponents
-  with_remote = if isnothing(l.remote_image)
+"""
+    function with_lambda_function(l::LambdaComponents)::LambdaComponents
+
+Adds a 'LambdaFunction` instance to the passed `LambdaComponents` instance. Will error if the instance
+has neither an existing remote image, local image or lambda function.
+"""
+function with_lambda_function(l::LambdaComponents)::LambdaComponents
+  with_remote = if isnothing(l.remote_image) && isnothing(l.lambda_function)
     try
-      to_remote_image(l)
+      with_remote_image(l)
     catch e
       error("Unable to create lambda function from LambdaComponents; it has neither a local image nor a remote image")
     end
@@ -107,11 +124,31 @@ function to_lambda_function(l::LambdaComponents)::LambdaComponents
   end
 end
 
-function run_test(l::LambdaComponents)::Tuple{Bool, Float64}
+"""
+    function run_test(
+        l::LambdaComponents;
+        function_argument::Any = "", 
+        expected_response::Any = nothing;
+      )::Tuple{Bool, Float64}
+
+Tests the passed `LambdaComponents` instance. 
+
+The test runs on the most downstream object. So if the instance has a `LambdaFunction`, this will 
+be tested. Otherwise, the attached `LocalImage` will be tested. If the `LambdaComponents` object
+has neither a local image or a lambda function, then it has nothing that can be tested and the 
+function will throw an error.
+
+Returns a tuple of {Test pass/fail, Test time taken in seconds}.
+"""
+function run_test(
+    l::LambdaComponents;
+    function_argument::Any = "", 
+    expected_response::Any = nothing;
+  )::Tuple{Bool, Float64}
   if !isnothing(l.lambda_function)
-    run_test(l.lambda_function)
+    run_test(l.lambda_function, function_argument, expected_response)
   elseif !isnothing(l.local_image)
-    run_test(l.local_image)
+    run_test(l.local_image, function_argument, expected_response)
   else
     error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
   end

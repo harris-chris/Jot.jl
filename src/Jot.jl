@@ -19,6 +19,7 @@ import Base.delete!
 export AWSConfig, LambdaException
 export get_responder, AbstractResponder, LocalPackageResponder
 export LocalImage, Container, RemoteImage, ECRRepo, AWSRole, LambdaFunction
+export get_aws_role
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_local_image, get_local_image
