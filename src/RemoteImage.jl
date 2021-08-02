@@ -18,11 +18,15 @@ end
 StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
 Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
 
+"""
+    function get_all_remote_images(jot_generated_only::Bool = true)::Vector{RemoteImage}
 
-function get_all_remote_images()::Vector{RemoteImage}
+Returns all remote images stored on AWS ECR. By default, filters for jot-generated images only.
+"""
+function get_all_remote_images(jot_generated_only::Bool = true)::Vector{RemoteImage}
   repos = get_all_ecr_repos()
-  @debug repos
-  [img for repo in repos for img in get_remote_images(repo)]
+  remote_images = [img for repo in repos for img in get_remote_images(repo)]
+  jot_generated_only ? filter(is_jot_generated, remote_images) : remote_images
 end
 
 function get_remote_images(repo::ECRRepo)::Vector{RemoteImage}

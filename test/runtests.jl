@@ -52,11 +52,11 @@ function run_tests(;
   )
   ENV["JOT_TEST_RUNNING"] = "true"
   if all([example_simple, example_components, quartet] .== false)
-    [example_simple, example_components, quartet] .= true
+    example_simple = true; example_components = true; quartet = true
   end
   example_simple && run_example_simple_test(clean)
   example_components && run_example_components_test(clean)
-  quartet && run_quartest_test(clean)
+  quartet && run_quartet_test(clean)
 end
 
 function run_example_components_test(clean_up::Bool)
@@ -92,7 +92,6 @@ function run_example_components_test(clean_up::Bool)
       delete!(lambda_components)
       rm("./increment_vector.jl")
     end
-
   end
 end
   

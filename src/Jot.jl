@@ -25,15 +25,17 @@ export get_dockerfile, build_definition
 export run_image_locally, create_local_image, get_local_image
 export send_local_request
 export run_test
-export stop_container, is_container_running, get_all_containers
+export stop_container, is_container_running
 export create_ecr_repo, get_ecr_repo, push_to_ecr! 
 export get_remote_image
-export create_aws_role, get_all_aws_roles
+export create_aws_role
 export create_lambda_function, get_lambda_function, invoke_function
 export create_lambda_components, with_remote_image, with_lambda_function
 export delete!
 export show_lambdas
 export get_labels, get_lambda_name
+export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
+export get_all_containers, get_all_aws_roles
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -278,9 +280,7 @@ end
 
 # -- get_labels --
 
-function get_labels(
-    res::LocalPackageResponder,
-  )::Labels
+function get_labels(res::LocalPackageResponder)::Labels
   Labels( RESPONDER_PACKAGE_NAME=res.package_name,
           RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
           RESPONDER_COMMIT=get_commit(res),
@@ -288,6 +288,15 @@ function get_labels(
           RESPONDER_PKG_SOURCE=get_responder_path(res),
           IS_JOT_GENERATED="true",
          )
+end
+
+"""
+    get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})::Dict
+
+Retrieves any user_defined labels for the given resource as a Dict of key=>value pairs.
+"""
+function get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})::Dict
+  get_labels(l) |> filter_user_defined_only
 end
 
 function get_labels(image::LocalImage)::Labels

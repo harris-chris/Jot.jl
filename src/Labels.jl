@@ -9,6 +9,10 @@
 end
 StructTypes.StructType(::Type{Labels}) = StructTypes.Mutable()  
 
+function filter_user_defined_only(l::Labels)::Dict
+  l.user_defined_labels
+end
+
 function Labels(d::AbstractDict{String, String})::Labels
   field_names = map(String, fieldnames(Labels))
   kwargs = Dict{Symbol, Any}()

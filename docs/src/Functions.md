@@ -48,6 +48,12 @@ create_lambda_components(
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )
+get_all_aws_roles()
+get_all_containers(args::Vector{String} = Vector{String}())
+get_all_ecr_repos(jot_generated_only::Bool = true)
+get_all_lambda_functions(jot_generated_only::Bool = true)
+get_all_local_images(; args::Vector{String} = Vector{String}(), jot_generated_only::Bool = true)
+get_all_remote_images(jot_generated_only::Bool = true)
 get_lambda_function(function_name::String)
 get_lambda_function(repo::ECRRepo)
 get_local_image(repository::String)
@@ -70,6 +76,7 @@ get_responder(
     response_function::Symbol,
     response_function_param_type::Type,
   )
+get_user_labels(l::Union{LambdaComponent, ECRRepo})
 invoke_function(
     request::Any,
     lambda_function::LambdaFunction;

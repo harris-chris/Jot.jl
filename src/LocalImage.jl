@@ -55,16 +55,23 @@ function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
 end
 
 """
-    get_all_local_images(
-      args::Vector{String} = Vector{String}(),
-    )::Vector{LocalImage}
+    get_all_local_images(;
+        args::Vector{String} = Vector{String}(),
+        jot_generated_only::Bool = true,
+      )::Vector{LocalImage}
 
-Returns `LocalImage` objects for all locally-stored docker images. `args` are passed to the
-call to `docker image ls`, that is used to populate this vector.
+Returns a vector of `LocalImage`s, representing all locally-stored docker images. 
+
+`args` are passed to the call to `docker image ls`, that is used to populate this vector.
+`jot_generated_only` specifies whether to filter for jot-generated images only.
 """
-function get_all_local_images(args::Vector{String} = Vector{String}())::Vector{LocalImage}
+function get_all_local_images(;
+    args::Vector{String} = Vector{String}(),
+    jot_generated_only::Bool = true,
+  )::Vector{LocalImage}
   docker_output = readchomp(`docker image ls $args --digests --format '{{json .}}'`)
-  parse_docker_ls_output(LocalImage, docker_output)
+  local_images = parse_docker_ls_output(LocalImage, docker_output)
+  jot_generated_only ? filter(is_jot_generated, local_images) : local_images
 end
 
 """
