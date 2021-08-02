@@ -63,17 +63,18 @@ function get_remote_image(local_image::LocalImage)::Union{Nothing, RemoteImage}
   isnothing(index) ? nothing : all_remote_images[index]
 end
 
-function get_remote_image(image_hash::String)::Union{Nothing, RemoteImage}
+function get_remote_image(identity::AbstractString)::Union{Nothing, RemoteImage}
   all_remote_images = get_all_remote_images()
-  search_hash = split(image_hash, ":") |> last
   index = findfirst(all_remote_images) do ri
-    ri_hash = split(ri.imageDigest, ":") |> last
-    comparison_length = minimum([length(search_hash), length(ri_hash)])
-    ri_hash[begin:comparison_length] == search_hash[begin:comparison_length]
+    name_matches = get_lambda_name(ri) == identity
+    hash_matches = begin
+      search_hash = split(identity, ":") |> last
+      ri_hash = split(ri.imageDigest, ":") |> last
+      comparison_length = minimum([length(search_hash), length(ri_hash)])
+      ri_hash[begin:comparison_length] == search_hash[begin:comparison_length]
+    end
+    name_matches || hash_matches
   end
   isnothing(index) ? nothing : all_remote_images[index]
 end
 
-function get_image_suffix(remote_image::RemoteImage)::String
-  get_image_suffix(remote_image.ecr_repo)
-end

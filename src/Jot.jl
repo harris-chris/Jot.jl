@@ -33,7 +33,7 @@ export create_lambda_function, get_lambda_function, invoke_function
 export create_lambda_components, with_remote_image, with_lambda_function
 export delete!
 export show_lambdas
-export get_labels
+export get_labels, get_lambda_name
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -239,11 +239,7 @@ function create_local_image(
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
   # TODO check if the image suffix already exists
-  image_suffix = isnothing(image_suffix) ? get_image_suffix_from_responder(responder) : image_suffix
-  # existing_images = get_all_local_images()
-  # if any([get_image_suffix(img) == image_suffix for img in existing_images])
-    # error("Unable to create local image; local image with image_suffix $image_suffix already exists")
-  # end
+  image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
@@ -457,7 +453,7 @@ function ecr_login_for_image(aws_config::AWSConfig, image_suffix::String)
 end
 
 function ecr_login_for_image(image::LocalImage)
-  ecr_login_for_image(get_aws_config(image), get_image_suffix(image))
+  ecr_login_for_image(get_aws_config(image), get_lambda_name(image))
 end
 
 """
@@ -509,7 +505,9 @@ function create_lambda_function(
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
   @debug image_uri
   labels = get_labels(remote_image)
-  create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  out = create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
+  @debug out
+  out
 end
 
 function create_role_name(function_name::String)::String
@@ -537,7 +535,7 @@ function create_lambda_function(
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
-  role = isnothing(role) ? create_aws_role(get_image_suffix(repo) * "-lambda-role") : role
+  role = isnothing(role) ? create_aws_role(get_lambda_name(repo) * "-lambda-role") : role
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
   labels = get_labels(repo)
@@ -623,6 +621,32 @@ function get_environment_variables(image_inspect::AbstractDict{String, Any})::Di
       )
 end
 
+# -- get_lambda_name --
+
+function get_lambda_name(res::AbstractResponder)::String
+  lowercase(res.package_name)
+end
+
+function get_lambda_name(local_image::LocalImage)::String
+  split(local_image.Repository, '/')[2]
+end
+
+function get_lambda_name(remote_image::RemoteImage)::String
+  get_lambda_name(remote_image.ecr_repo)
+end
+
+function get_lambda_name(repo::ECRRepo)::String
+  repo.repositoryName
+end
+
+function get_lambda_name(lf::LambdaFunction)::String
+  lf.FunctionName
+end
+
+function get_lambda_name(l::LambdaComponents)::String
+  get_from_any_component(get_lambda_name, l)
+end
+
 # -- get_response_function_name -- 
 
 function get_response_function_name(
@@ -655,7 +679,7 @@ function get_response_function_name(c::LambdaComponent)::String
 end
 
 function get_response_function_name(lambda::LambdaComponents)::String
-  get_from_any_component(lambda, get_response_function_name)
+  get_from_any_component(get_response_function_name, lambda)
 end
 
 end

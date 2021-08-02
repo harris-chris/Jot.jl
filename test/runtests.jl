@@ -112,14 +112,20 @@ function run_example_simple_test(clean_up::Bool)
     # Create a local docker image from the responder
     @info "Creating local image"
     local_image = create_local_image(increment_responder; image_suffix="increment-vector")
+    @test get_local_image("increment-vector") == local_image
+    @test get_lambda_name(local_image) == "increment-vector"
 
     # Push this local docker image to AWS ECR
     @info "Creating remote image"
     remote_image = push_to_ecr!(local_image)
+    @test get_remote_image("increment-vector") == remote_image
+    @test get_lambda_name(remote_image) == "increment-vector"
      
     # Create a lambda function from this remote_image... 
     @info "Creating lambda function"
     increment_vector_lambda = create_lambda_function(remote_image)
+    @test get_lambda_function("increment-vector") == increment_vector_lambda
+    @test get_lambda_name(increment_vector_lambda) == "increment-vector"
 
     # ... and test it to see if it's working OK
     @info "Testing lambda function"

@@ -44,7 +44,7 @@ function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
     identity_matches = li.Repository == identity
-    name_matches = get_image_suffix(li) == identity
+    name_matches = get_lambda_name(li) == identity
     id_matches = begin
        check_len = minimum([length(li.ID), length(identity)])
        (li.ID[begin:check_len] == identity[begin:check_len]) && (check_len >= 4)
@@ -99,7 +99,4 @@ function get_aws_config(image::LocalImage)::AWSConfig
   AWSConfig(get_aws_id(image), get_aws_region(image))
 end
 
-function get_image_suffix(image::LocalImage)::String
-  split(image.Repository, '/')[2]
-end
 

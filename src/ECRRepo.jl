@@ -65,7 +65,7 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   image.exists || error("Image does not exist")
   labels = get_labels(image)
   create_script = get_create_ecr_repo_script(
-                                             get_image_suffix(image),
+                                             get_lambda_name(image),
                                              get_aws_region(image),
                                              labels,
                                             )
@@ -74,9 +74,6 @@ function create_ecr_repo(image::LocalImage)::ECRRepo
   JSON3.read(repo_json, Dict{String, ECRRepo})["repository"]
 end
 
-function get_image_suffix(repo::ECRRepo)::String
-  repo.repositoryName
-end
 
 """
     delete!(repo::ECRRepo)

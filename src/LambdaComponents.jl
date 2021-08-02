@@ -18,8 +18,8 @@ end
 Base.show(l::LambdaComponents) = "$(l.local_image)\t$(l.remote_image)\t$(l.lambda_function)"
 
 function get_from_any_component(
-    l::LambdaComponents,
     get_func::Function,
+    l::LambdaComponents,
   )
   for (f_name, f_type) in zip(fieldnames(LambdaComponents), fieldtypes(LambdaComponents))
     if f_type <: LambdaComponent
@@ -296,7 +296,7 @@ function tree_hash_f(l::LambdaComponents)::String
 end
 const tree_hash_component = TableComponent("Tree Hash", tree_hash_f, nothing)
 
-local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_image_suffix(l.local_image)
+local_image_name_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : get_lambda_name(l.local_image)
 const local_image_name_component = TableComponent("Image Name", local_image_name_f, nothing)
 
 local_image_id_f(l::LambdaComponents)::String = isnothing(l.local_image) ? not_present : l.local_image.ID 
