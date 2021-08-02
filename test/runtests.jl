@@ -43,7 +43,7 @@ function test_actual_labels_against_expected(
 end
 
 function run_tests(; 
-    clean::Bool=true,
+    clean_up::Bool=true,
     example_simple::Bool=false,
     example_components::Bool=false,
     quartet::Bool=false,
@@ -54,9 +54,10 @@ function run_tests(;
   if all([example_simple, example_components, quartet] .== false)
     example_simple = true; example_components = true; quartet = true
   end
-  example_simple && run_example_simple_test(clean)
-  example_components && run_example_components_test(clean)
-  quartet && run_quartet_test(clean)
+  example_simple && run_example_simple_test(clean_up)
+  example_components && run_example_components_test(clean_up)
+  quartet && run_quartet_test(quartet_partial, quartet_to, clean_up)
+  ENV["JOT_TEST_RUNNING"] = "false"
 end
 
 function run_example_components_test(clean_up::Bool)
@@ -75,22 +76,17 @@ function run_example_components_test(clean_up::Bool)
     @info "Creating LambdaComponents"
     lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
 
-    # Push this local docker image to AWS ECR
-    @info "Creating remote image"
-    lambda_components = with_remote_image(lambda_components)
+    lambda_components |> with_remote_image |> with_lambda_function |> run_test
      
-    # Create a lambda function from the lambda_components... 
-    @info "Creating lambda function"
-    lambda_components = with_lambda_function(lambda_components)
-
-    # ... and test it to see if it's working OK
-    @info "Testing lambda function"
-    @test run_test(lambda_components, [2,3,4], [3,4,5]) |> first
-
     # Clean up 
     if clean_up
       delete!(lambda_components)
       rm("./increment_vector.jl")
+
+      @test isnothing(get_local_image("increment-vector"))
+      @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
+      @test isnothing(get_ecr_repo("increment-vector"))
+      @test isnothing(get_remote_image("increment-vector"))
     end
   end
 end
@@ -158,7 +154,7 @@ function clean_up_example_test()
   !isnothing(existing_li) && delete!(existing_li)
 end
 
-function run_quartet_test(partial::Bool, to::AbstractString)
+function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
@@ -178,7 +174,7 @@ function run_quartet_test(partial::Bool, to::AbstractString)
     end
   end
   if to == "responder"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -235,7 +231,7 @@ function run_quartet_test(partial::Bool, to::AbstractString)
   end
   
   if to == "local_image"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -248,7 +244,7 @@ function run_quartet_test(partial::Bool, to::AbstractString)
     )
   end
   if to == "package_compiler"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -270,13 +266,13 @@ function run_quartet_test(partial::Bool, to::AbstractString)
   end
 
   if to == "ecr_repo"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
   aws_role = test_aws_role()
   if to == "aws_role"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
 
@@ -293,10 +289,10 @@ function run_quartet_test(partial::Bool, to::AbstractString)
   end
 
   if to == "lambda_function"
-    clean && quartet_clean_up()
+    clean_up && quartet_clean_up()
     return
   end
-  clean && clean_up()
+  clean_up && clean_up()
 end
 
 function test_responder(

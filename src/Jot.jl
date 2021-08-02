@@ -371,7 +371,7 @@ function get_labels(lc::LambdaComponents)::Labels
   end
 end
 
-function is_jot_generated(c::LambdaComponent)::Bool
+function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
   try 
     labels = get_labels(c)
     Meta.parse(labels.IS_JOT_GENERATED)
@@ -636,20 +636,21 @@ function get_lambda_name(res::AbstractResponder)::String
   lowercase(res.package_name)
 end
 
-function get_lambda_name(local_image::LocalImage)::String
-  split(local_image.Repository, '/')[2]
+function get_lambda_name(local_image::LocalImage)::Union{Nothing, String}
+  @debug local_image.Repository
+  is_jot_generated(local_image) ? split(local_image.Repository, '/')[2] : nothing
 end
 
-function get_lambda_name(remote_image::RemoteImage)::String
-  get_lambda_name(remote_image.ecr_repo)
+function get_lambda_name(remote_image::RemoteImage)::Union{Nothing, String}
+  is_jot_generated(remote_image) ?  get_lambda_name(remote_image.ecr_repo) : nothing
 end
 
-function get_lambda_name(repo::ECRRepo)::String
-  repo.repositoryName
+function get_lambda_name(repo::ECRRepo)::Union{Nothing, String}
+  is_jot_generated(repo) ? repo.repositoryName : nothing
 end
 
-function get_lambda_name(lf::LambdaFunction)::String
-  lf.FunctionName
+function get_lambda_name(lf::LambdaFunction)::Union{Nothing, String}
+  is_jot_generated(lf) ? lf.FunctionName : nothing
 end
 
 function get_lambda_name(l::LambdaComponents)::String

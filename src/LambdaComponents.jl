@@ -34,7 +34,7 @@ function get_from_any_component(
 end
 
 """
-    function create_lambda_components(
+    create_lambda_components(
         res::AbstractResponder;
         image_suffix::Union{Nothing, String} = nothing,
         aws_config::Union{Nothing, AWSConfig} = nothing, 
@@ -85,7 +85,7 @@ function create_lambda_components(
 end
 
 """
-    function with_remote_image(l::LambdaComponents)::LambdaComponents
+    with_remote_image(l::LambdaComponents)::LambdaComponents
 
 Adds a 'RemoteImage` object to the passed `LambdaComponents` instance. Will error if the instance
 has neither an existing remote image or local image.
@@ -102,7 +102,7 @@ function with_remote_image(l::LambdaComponents)::LambdaComponents
 end
 
 """
-    function with_lambda_function(l::LambdaComponents)::LambdaComponents
+    with_lambda_function(l::LambdaComponents)::LambdaComponents
 
 Adds a 'LambdaFunction` instance to the passed `LambdaComponents` instance. Will error if the instance
 has neither an existing remote image, local image or lambda function.
@@ -124,6 +124,12 @@ function with_lambda_function(l::LambdaComponents)::LambdaComponents
   end
 end
 
+"""
+    delete!(l::LambdaComponents)
+
+Deletes the local docker image, remote image, and lambda function associated with the 
+`LambdaComponents` instance. 
+"""
 function delete!(l::LambdaComponents)
   !isnothing(l.lambda_function) && delete!(l.lambda_function)
   !isnothing(l.remote_image) && delete!(l.remote_image)
@@ -131,7 +137,7 @@ function delete!(l::LambdaComponents)
 end
 
 """
-    function run_test(
+    run_test(
         l::LambdaComponents;
         function_argument::Any = "", 
         expected_response::Any = nothing;
@@ -150,7 +156,7 @@ function run_test(
     l::LambdaComponents,
     function_argument::Any = "", 
     expected_response::Any = nothing,
-  )::Tuple{Bool, Float64}
+  )::Tuple{Bool, Union{Missing, Float64}}
   if !isnothing(l.lambda_function)
     run_test(l.lambda_function, function_argument, expected_response)
   elseif !isnothing(l.local_image)

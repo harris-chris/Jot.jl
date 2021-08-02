@@ -36,6 +36,14 @@ increment_vector_lambda = create_lambda_function(remote_image)
 @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
 ```
 
+Alternatively, there is the `LambdaComponents` type, which collects together local docker images,
+remote docker images and lambda functions that share the same underlying function code:
+
+```
+lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+lambda_components |> with_remote_image |> with_lambda_function |> run_test
+```
+
 ## Package Features
 - Easily create AWS Lambda functions from Julia packages or scripts
 - Test and check for at multiple stages
