@@ -44,11 +44,12 @@ function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()
   index = findfirst(all) do li
     identity_matches = li.Repository == identity
+    name_matches = get_image_suffix(li) == identity
     id_matches = begin
        check_len = minimum([length(li.ID), length(identity)])
        (li.ID[begin:check_len] == identity[begin:check_len]) && (check_len >= 4)
     end
-    identity_matches || id_matches
+    identity_matches || name_matches || id_matches
   end
   isnothing(index) ? nothing : all[index]
 end

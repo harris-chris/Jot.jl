@@ -8,7 +8,7 @@
         lambda_function::Union{Nothing, LambdaFunction}
     end
 """
-@with_kw struct LambdaComponents
+@with_kw mutable struct LambdaComponents
   function_name::String
   aws_config::AWSConfig
   local_image::Union{Nothing, LocalImage}
@@ -124,6 +124,12 @@ function with_lambda_function(l::LambdaComponents)::LambdaComponents
   end
 end
 
+function delete!(l::LambdaComponents)
+  !isnothing(l.lambda_function) && delete!(l.lambda_function)
+  !isnothing(l.remote_image) && delete!(l.remote_image)
+  !isnothing(l.local_image) && delete!(l.local_image)
+end
+
 """
     function run_test(
         l::LambdaComponents;
@@ -141,9 +147,9 @@ function will throw an error.
 Returns a tuple of {Test pass/fail, Test time taken in seconds}.
 """
 function run_test(
-    l::LambdaComponents;
+    l::LambdaComponents,
     function_argument::Any = "", 
-    expected_response::Any = nothing;
+    expected_response::Any = nothing,
   )::Tuple{Bool, Float64}
   if !isnothing(l.lambda_function)
     run_test(l.lambda_function, function_argument, expected_response)
@@ -151,19 +157,6 @@ function run_test(
     run_test(l.local_image, function_argument, expected_response)
   else
     error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
-  end
-end
-
-function with_remote_image(l::LambdaComponents)::LambdaComponents
-  if isnothing(l.remote_image)
-    remote_image = if isnothing(l.local_image)
-      error("LambdaComponents does not have local_image; cannot create new RemoteImage")
-    else
-      push_to_ecr!(l.local_image)
-    end
-    @set l.remote_image = remote_image
-  else
-    l
   end
 end
 

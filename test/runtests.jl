@@ -43,18 +43,117 @@ function test_actual_labels_against_expected(
 end
 
 function run_tests(; 
-    to::AbstractString="lambda_function", 
     clean::Bool=true,
-    example_only::Bool=false,
-    partial::Bool=true,
+    example_simple::Bool=false,
+    example_components::Bool=false,
+    quartet::Bool=false,
+    quartet_partial::Bool=true,
+    quartet_to::AbstractString="lambda_function", 
   )
   ENV["JOT_TEST_RUNNING"] = "true"
-  if example_only
-    test_documentation_example(clean)
-    return
+  if all([example_simple, example_components, quartet] .== false)
+    [example_simple, example_components, quartet] .= true
   end
-  clean = clean == "true" ? true : false
-  partial = partial == "true" ? true : false
+  example_simple && run_example_simple_test(clean)
+  example_components && run_example_components_test(clean)
+  quartet && run_quartest_test(clean)
+end
+
+function run_example_components_test(clean_up::Bool)
+  clean_up_example_test()
+  @testset "Example components" begin
+    # Create a simple script to use as a lambda function
+    open("increment_vector.jl", "w") do f
+      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+    end
+
+    # Turn it into a Responder; this specifies the function we will create a Lambda from
+    @info "Creating responder"
+    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
+
+    # Create a LambdaComponents instance from the responder
+    @info "Creating LambdaComponents"
+    lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+
+    # Push this local docker image to AWS ECR
+    @info "Creating remote image"
+    lambda_components = with_remote_image(lambda_components)
+     
+    # Create a lambda function from the lambda_components... 
+    @info "Creating lambda function"
+    lambda_components = with_lambda_function(lambda_components)
+
+    # ... and test it to see if it's working OK
+    @info "Testing lambda function"
+    @test run_test(lambda_components, [2,3,4], [3,4,5]) |> first
+
+    # Clean up 
+    if clean_up
+      delete!(lambda_components)
+      rm("./increment_vector.jl")
+    end
+
+  end
+end
+  
+
+function run_example_simple_test(clean_up::Bool)
+  clean_up_example_test()
+  @testset "Example simple" begin
+    # Create a simple script to use as a lambda function
+    open("increment_vector.jl", "w") do f
+      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+    end
+
+    # Turn it into a Responder; this specifies the function we will create a Lambda from
+    @info "Creating responder"
+    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
+
+    # Create a local docker image from the responder
+    @info "Creating local image"
+    local_image = create_local_image(increment_responder; image_suffix="increment-vector")
+
+    # Push this local docker image to AWS ECR
+    @info "Creating remote image"
+    remote_image = push_to_ecr!(local_image)
+     
+    # Create a lambda function from this remote_image... 
+    @info "Creating lambda function"
+    increment_vector_lambda = create_lambda_function(remote_image)
+
+    # ... and test it to see if it's working OK
+    @info "Testing lambda function"
+    @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+
+    # Clean up 
+    if clean_up
+      delete!(increment_vector_lambda)
+      delete!(remote_image)
+      delete!(local_image)
+      rm("./increment_vector.jl")
+      @test isnothing(get_aws_role(increment_vector_lambda.Role))
+      @test isnothing(get_ecr_repo("increment-vector"))
+    end
+    # Check that this has also cleaned up the ECR Repo and the AWS Role
+  end
+end
+
+function clean_up_example_test()
+  # Before the test, delete anything which might be left over
+  existing_lf = get_lambda_function("increment-vector")
+  !isnothing(existing_lf) && delete!(existing_lf)
+
+  existing_ri = get_remote_image("increment-vector")
+  !isnothing(existing_ri) && delete!(existing_ri)
+
+  existing_ecr = get_ecr_repo("increment-vector")
+  !isnothing(existing_ecr) && delete!(existing_ecr)
+
+  existing_li = get_local_image("increment-vector")
+  !isnothing(existing_li) && delete!(existing_li)
+end
+
+function run_quartet_test(partial::Bool, to::AbstractString)
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
@@ -74,7 +173,7 @@ function run_tests(;
     end
   end
   if to == "responder"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
 
@@ -131,7 +230,7 @@ function run_tests(;
   end
   
   if to == "local_image"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
 
@@ -144,7 +243,7 @@ function run_tests(;
     )
   end
   if to == "package_compiler"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
 
@@ -166,13 +265,13 @@ function run_tests(;
   end
 
   if to == "ecr_repo"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
 
   aws_role = test_aws_role()
   if to == "aws_role"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
 
@@ -189,64 +288,10 @@ function run_tests(;
   end
 
   if to == "lambda_function"
-    clean && clean_up()
+    clean && quartet_clean_up()
     return
   end
   clean && clean_up()
-end
-
-function test_documentation_example(clean_up::Bool)
-  @testset "Documentation example" begin
-    # DELETE EVERYTHING WHICH MIGHT BE LEFT OVER
-    existing_lf = get_lambda_function("increment-vector")
-    !isnothing(existing_lf) && delete!(existing_lf)
-
-    existing_ri = get_remote_image("increment-vector")
-    !isnothing(existing_ri) && delete!(existing_ri)
-
-    existing_ecr = get_ecr_repo("increment-vector")
-    !isnothing(existing_ecr) && delete!(existing_ecr)
-
-    existing_li = get_local_image("increment-vector")
-    !isnothing(existing_li) && delete!(existing_li)
-
-    # THE EXAMPLE ITSELF
-    # Create a simple script to use as a lambda function
-    open("increment_vector.jl", "w") do f
-      write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
-    end
-
-    # Turn it into a Responder; this specifies the function we will create a Lambda from
-    @info "Creating responder"
-    increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
-
-    # Create a local docker image from the responder
-    @info "Creating local image"
-    local_image = create_local_image(increment_responder; image_suffix="increment-vector")
-
-    # Push this local docker image to AWS ECR
-    @info "Creating remote image"
-    remote_image = push_to_ecr!(local_image)
-     
-    # Create a lambda function from this remote_image... 
-    @info "Creating lambda function"
-    increment_vector_lambda = create_lambda_function(remote_image)
-
-    # ... and test it to see if it's working OK
-    @info "Testing lambda function"
-    @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
-
-    # Clean up 
-    if clean_up
-      delete!(increment_vector_lambda)
-      delete!(remote_image)
-      delete!(local_image)
-      rm("./increment_vector.jl")
-    end
-    # Check that this has also cleaned up the ECR Repo and the AWS Role
-    @test isnothing(get_aws_role(increment_vector_lambda.Role))
-    @test isnothing(get_ecr_repo("increment-vector"))
-  end
 end
 
 function test_responder(
@@ -352,7 +397,7 @@ function test_lambda_function(
     expected::Any,
     exception_request::Any,
   )::LambdaFunction
-  lambda_function = create_lambda_function(ecr_repo; aws_role = aws_role)
+  lambda_function = create_lambda_function(ecr_repo; role = aws_role)
   @testset "Lambda Function test" begin
     @test Jot.is_jot_generated(lambda_function)
     @test Jot.matches(remote_image, lambda_function)
@@ -363,14 +408,14 @@ function test_lambda_function(
     @test response == expected
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
-      remote_image; aws_role=aws_role, function_name="addl"*test_suffix
+      remote_image; role=aws_role, function_name="addl"*test_suffix
     )
     @test_throws LambdaException invoke_function(exception_request, lambda_function; check_state=true)
   end
   lambda_function
 end
 
-function clean_up()
+function quartet_clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
   @show "running clean up"

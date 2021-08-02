@@ -41,6 +41,7 @@ function delete!(r::RemoteImage)
   delete_script = get_delete_remote_image_script(r)
   output = readchomp(`bash -c $delete_script`)
   r.exists = false
+  @debug get_remote_images(r.ecr_repo)
   if length(get_remote_images(r.ecr_repo)) == 0
     delete!(r.ecr_repo)
   end
