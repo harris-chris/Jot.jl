@@ -1,5 +1,6 @@
 Manifest.toml
 test/JotTest1/response_suffix
+test/JotTest2/response_suffix
 docs/build/
 feature_branch_notes.md
 
