@@ -36,6 +36,7 @@ export show_lambdas
 export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
 export get_all_containers, get_all_aws_roles
+export LambdaComponents
 
 # CONSTANTS
 const docker_hash_limit = 12
