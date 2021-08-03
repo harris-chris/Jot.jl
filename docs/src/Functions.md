@@ -95,6 +95,6 @@ run_test(l::LambdaComponents; function_argument::Any = "", expected_response::An
 send_local_request(request::Any)
 show_lambdas()
 stop_container(con::Container)
-with_remote_image(l::LambdaComponents)
-with_lambda_function(l::LambdaComponents)
+with_remote_image!(l::LambdaComponents)
+with_lambda_function!(l::LambdaComponents)
 ```

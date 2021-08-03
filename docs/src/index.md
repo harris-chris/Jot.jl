@@ -41,7 +41,7 @@ remote docker images and lambda functions that share the same underlying functio
 
 ```
 lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
-lambda_components |> with_remote_image |> with_lambda_function |> run_test
+lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
 ```
 
 ## Package Features

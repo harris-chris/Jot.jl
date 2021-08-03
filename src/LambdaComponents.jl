@@ -52,7 +52,7 @@ local image, and then returns the `LambdaComponents` object.
 Acts as an alternative to `create_local_image`, but returns a `LambdaComponents` rather than just
 the local image. This can be more convenient for keeping the components of a lambda function 
 organized - for example:
-`create_lambda_components(responder) |> with_remote_image |> with_lambda_function` will run through
+`create_lambda_components(responder) |> with_remote_image! |> with_lambda_function!` will run through
 the entire process of creating a local image, pushing that image to ECR, and then creating a Lambda
 function.
 """
@@ -85,32 +85,33 @@ function create_lambda_components(
 end
 
 """
-    with_remote_image(l::LambdaComponents)::LambdaComponents
+    with_remote_image!(l::LambdaComponents)::LambdaComponents
 
 Adds a 'RemoteImage` object to the passed `LambdaComponents` instance. Will error if the instance
 has neither an existing remote image or local image.
 """
-function with_remote_image(l::LambdaComponents)::LambdaComponents
+function with_remote_image!(l::LambdaComponents)::LambdaComponents
   if isnothing(l.local_image) && isnothing(l.remote_image)
     error("Unable to add remote image to LambdaComponents as it does not have a local image")
   end
   if isnothing(l.remote_image)
-    @set l.remote_image = push_to_ecr!(l.local_image)
+    l.remote_image = push_to_ecr!(l.local_image)
+    l
   else
     l
   end
 end
 
 """
-    with_lambda_function(l::LambdaComponents)::LambdaComponents
+    with_lambda_function!(l::LambdaComponents)::LambdaComponents
 
 Adds a 'LambdaFunction` instance to the passed `LambdaComponents` instance. Will error if the instance
 has neither an existing remote image, local image or lambda function.
 """
-function with_lambda_function(l::LambdaComponents)::LambdaComponents
+function with_lambda_function!(l::LambdaComponents)::LambdaComponents
   with_remote = if isnothing(l.remote_image) && isnothing(l.lambda_function)
     try
-      with_remote_image(l)
+      with_remote_image!(l)
     catch e
       error("Unable to create lambda function from LambdaComponents; it has neither a local image nor a remote image")
     end
@@ -118,7 +119,8 @@ function with_lambda_function(l::LambdaComponents)::LambdaComponents
     l
   end
   if isnothing(with_remote.lambda_function)
-    @set l.lambda_function = create_lambda_function(with_remote.remote_image)
+    l.lambda_function = create_lambda_function(with_remote.remote_image)
+    l
   else
     l
   end

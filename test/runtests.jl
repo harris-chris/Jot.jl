@@ -76,7 +76,7 @@ function run_example_components_test(clean_up::Bool)
     @info "Creating LambdaComponents"
     lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
 
-    lambda_components |> with_remote_image |> with_lambda_function |> run_test
+    lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
      
     # Clean up 
     if clean_up
