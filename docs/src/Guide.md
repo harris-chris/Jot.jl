@@ -3,7 +3,7 @@
 ## Installation
 From the Julia REPL, type `]` to enter the Pkg REPL mode, then
 ```
-Pkg.add("https://github.com/harris-chris/Jot.jl#main")
+Pkg.add(url="https://github.com/harris-chris/Jot.jl#main")
 ```
 
 ## Background

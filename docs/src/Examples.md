@@ -12,8 +12,8 @@ ex1_lambda = create_lambda_function(ex1_remote_image)
 ### To make a script with dependencies into a Lambda function...
 ... where the script is located at `/path/to/script.jl`, and contains a function called `response_func`, that takes a single argument of type `Dict`. The script uses the `SpecialFunctions.jl` package:
 ```
-ex2_responder = get_responder("/path/to/script.jl", :response_func, Dict)
-ex2_local_image = create_local_image("ex2", ex2_responder; dependencies=["SpecialFunctions"])
+ex2_responder = get_responder("/path/to/script.jl", :response_func, Dict; dependencies=["SpecialFunctions"])
+ex2_local_image = create_local_image("ex2", ex2_responder)
 ex2_remote_image = push_to_ecr!(ex2_local_image)
 ex1_lambda = create_lambda_function(ex2_remote_image)
 ```

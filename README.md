@@ -7,7 +7,7 @@
 Via the `Pkg` API:
 
 ```julia
-julia> import Pkg; Pkg.add("https://github.com/harris-chris/Jot.jl#main")
+julia> import Pkg; Pkg.add(url="https://github.com/harris-chris/Jot.jl#main")
 
 ```
 [![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url]
