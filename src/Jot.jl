@@ -262,9 +262,16 @@ function create_local_image(
                                        no_cache)
   run(Cmd(build_cmd, dir=responder.build_dir))
   # Locate it and return it
-  image_id = open(joinpath(responder.build_dir, "id"), "r") do f String(read(f)) end |> x -> split(x, ':')[2]
+  id_fname = joinpath(responder.build_dir, "id")
+  @debug id_fname
+  image_id = open(id_fname, "r") do f
+    full_str = String(read(f)) 
+    @debug full_str
+    split(full_str, ':')[2]
+  end
+  @debug image_id
   this_image = get_local_image(image_id)
-  isnothing(this_image) ? error("Unable to locate created local image") : this_image
+  isnothing(this_image) ? error("Unable to locate created local image with image ID $image_id") : this_image
 end
 
 function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T} where {T}
