@@ -53,11 +53,11 @@ include("AWS.jl")
 include("LambdaComponents.jl")
 include("Labels.jl")
 
-function get_commit(path::String)::Union{Missing, String}
+function get_commit(path::String)::String
   try
-    readchomp(`bash -c "PWD=pwd; cd $path; git rev-parse HEAD; cd \$PWD"`)
+    readchomp(`set -euo pipefail bash -c "PWD=pwd; cd $path; git rev-parse HEAD; cd \$PWD"`)
   catch e
-    missing
+    "None"
   end
 end
 
@@ -353,7 +353,7 @@ function get_labels(image::RemoteImage)::Labels
 end
 
 function get_labels(image_inspect::AbstractDict{String, Any})::Labels
-  ii = image_inspect["ContainerConfig"]["Labels"]
+  ii = image_inspect["Config"]["Labels"]
   isnothing(ii) && error("Unable to get labels")
   ii_sym = Dict(k => v for (k, v) in ii)
   Labels(ii_sym)
