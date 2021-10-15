@@ -12,7 +12,7 @@ end
 function dockerfile_add_utilities()::String
   """
   RUN apt-get update && apt-get install -y \\
-    gcc
+    build-essential
   """
 end
 
