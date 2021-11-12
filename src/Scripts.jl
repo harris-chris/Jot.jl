@@ -82,7 +82,7 @@ function get_init_script(
   Pkg.precompile()
   """
   pc_script = """
-  Pkg.add("PackageCompiler")
+  Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="1.7.7"))
   using PackageCompiler
   @async Jot.start_lambda_server("127.0.0.1", 9001) 
   create_sysimage(
