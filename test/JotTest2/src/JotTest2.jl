@@ -1,6 +1,7 @@
 module JotTest2
 
 using Format
+using MinCostFlows
 
 function response_func(d::Dict)
   if haskey(d, "add suffix") 
