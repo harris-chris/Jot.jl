@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 Format = "1fa38f19-a742-5d3f-a2b9-30dd87b9d5f8"
+MinCostFlows = "62286e6e-1779-56f1-888a-1c0056788ce0"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

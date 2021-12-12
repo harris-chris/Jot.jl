@@ -60,22 +60,24 @@ get_local_image(repository::String)
 get_remote_image(lambda_function::LambdaFunction)
 get_remote_image(local_image::LocalImage)
 get_remote_image(identity::AbstractString)
-get_responder( 
+get_responder(
     path_url::String, 
     response_function::Symbol,
-    response_function_param_type::Type;
+    response_function_param_type::Type{IT};
     dependencies = Vector{String}(),
+    registry_urls = Vector{String}(),
   )
 get_responder(
     package_spec::Pkg.Types.PackageSpec, 
     response_function::Symbol,
-    response_function_param_type::Type;
-    dependencies = Vector{String}(),
+    response_function_param_type::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )
 get_responder(
     mod::Module, 
     response_function::Symbol,
-    response_function_param_type::Type,
+    response_function_param_type::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )
 get_user_labels(l::Union{LambdaComponent, ECRRepo})
 invoke_function(

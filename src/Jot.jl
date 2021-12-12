@@ -169,6 +169,7 @@ end
         responder::AbstractResponder,
         julia_base_version::String,
         package_compile::Bool,
+        user_defined_labels::AbstractDict{String, String},
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -190,6 +191,7 @@ function get_dockerfile(
     dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
     dockerfile_add_runtime_directories(),
+    dockerfile_add_additional_registries(responder.registry_urls),
     dockerfile_copy_build_dir(),
     dockerfile_add_responder(responder),
     dockerfile_add_labels(combined_labels),
@@ -250,6 +252,7 @@ function create_local_image(
                               package_compile;
                               user_defined_labels,
                              )
+  @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
   end

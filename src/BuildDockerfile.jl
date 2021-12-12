@@ -9,6 +9,21 @@ function dockerfile_add_julia_image(julia_base_version::String)::String
   """
 end
 
+function dockerfile_add_additional_registries(additional_registries::Vector{String})::String
+  using_pkg_script = "using Pkg; "
+  add_registries_script = begin 
+    str = ""
+    for reg in additional_registries
+      str *= "Pkg.Registry.add(RegistrySpec(url = \\\"$(reg)\\\")); "
+    end
+    str *= "Pkg.Registry.add(\\\"General\\\")"
+    str == "" ? str : str * "; "
+  end
+  """
+  RUN julia -e \"$using_pkg_script$add_registries_script\"
+  """
+end
+
 function dockerfile_add_utilities()::String
   """
   RUN apt-get update && apt-get install -y \\
@@ -34,9 +49,11 @@ function dockerfile_copy_build_dir()::String
 end
 
 function dockerfile_add_responder(res::LocalPackageResponder)::String
-  add_module_script = "using Pkg; Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); Pkg.instantiate()"
+  using_pkg_script = "using Pkg; "
+  add_module_script = "Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); "
+  instantiate_script = "Pkg.instantiate(); "
   """
-  RUN julia -e \"$add_module_script\"
+  RUN julia -e \"$using_pkg_script$add_module_script$instantiate_script\"
   """
 end
 

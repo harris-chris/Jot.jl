@@ -47,7 +47,7 @@ function run_tests(;
     example_simple::Bool=false,
     example_components::Bool=false,
     quartet::Bool=false,
-    quartet_partial::Bool=true,
+    quartet_tests::Vector{Bool}=[i == rand(1:4) ? true : false for i in 1:4],
     quartet_to::AbstractString="lambda_function", 
   )
   ENV["JOT_TEST_RUNNING"] = "true"
@@ -56,7 +56,7 @@ function run_tests(;
   end
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  quartet && run_quartet_test(quartet_partial, quartet_to, clean_up)
+  quartet && run_quartet_test(quartet_tests, quartet_to, clean_up)
   ENV["JOT_TEST_RUNNING"] = "false"
 end
 
@@ -154,23 +154,45 @@ function clean_up_example_test()
   !isnothing(existing_li) && delete!(existing_li)
 end
 
-function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
+function run_quartet_test(
+    test_list::Vector{Bool},
+    to::AbstractString, 
+    clean_up::Bool
+  )
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
-  responder_inputs = [
+  ResponderType = Tuple{Tuple{Any, Symbol, Type}, Dict}
+  responder_inputs::Vector{Union{Nothing, ResponderType}} = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict()),
+    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict(
+     :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
-    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
+    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), 
+     Dict(:dependencies => ["SpecialFunctions", "PRAS"],
+          :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
   ]
+  responder_inputs[.!test_list] .= nothing
 
-  responders = Vector{AbstractResponder}()
+  TestDataType = Tuple{Any, Any, Any}
+  test_data::Vector{Union{Nothing, TestDataType}} = [ # Actual, expected, bad input
+    (Dict("double" => 4.5), 9.0, [1,2]),
+    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
+    ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
+    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
+  ]
+  test_data[.!test_list] .= nothing
+
+  responders = Vector{Union{Nothing, AbstractResponder}}()
   @testset "Test Responder" begin 
     foreach(responder_inputs) do input
-      args = first(input)
-      kwargs = last(input)
-      push!(responders, test_responder(args...; kwargs)) 
+      if isnothing(input)
+        push!(responders, nothing)
+      else
+        args = first(input)
+        kwargs = last(input)
+        push!(responders, test_responder(args...; kwargs)) 
+      end
     end
   end
   if to == "responder"
@@ -178,55 +200,70 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
     return
   end
 
-  test_data = [ # Actual, expected, bad input
-    (Dict("double" => 4.5), 9.0, [1,2]),
-    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
-    ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
-    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
+  LocalImageInput = Tuple{Int64, Bool, Bool}
+  local_image_config::Vector{Union{Nothing, LocalImageInput}} = [ # number, use_config, package_compile
+    (1, false, true),
+    (2, true, false),
+    (3, false, false),
+    (4, false, false),
+  ]
+  local_image_config[.!test_list] .= nothing
+
+  local_image_inputs = [ isnothing(responder) ? nothing : 
+    (responder, config[1], config[2], config[3]) for (responder, config) in zip(responders, local_image_config)
   ]
 
-  local_image_inputs = [ # Responder, number, use_config, package_compile
-    (responders[1], 1, false, true),
-    (responders[2], 2, true, false),
-    (responders[3], 3, false, false),
-    (responders[4], 4, false, false),
-  ]
-  user_labels = [
+  UserLabel = Dict{String, String}
+  user_labels::Vector{Union{Nothing, UserLabel}} = [
                  Dict("TEST"=>"1"), 
                  Dict("TEST"=>"2"),
                  Dict("TEST"=>"3"),
                  Dict("TEST"=>"4"),
                 ]
+  user_labels[.!test_list] .= nothing
 
-  expected_labels = [
-    ExpectedLabels("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), user_labels[1]),
-    ExpectedLabels("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), user_labels[2]),
-    ExpectedLabels("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3", user_labels[3]),
-    ExpectedLabels(
-      Jot.get_package_name_from_script_name("jot-test-4.jl"), 
-      "map_log_gamma", 
-      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), 
-      user_labels[4]),
+  name_rfname_paths = [
+                      ("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1")),
+                      ("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2")),
+                      ("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3"),
+                      (Jot.get_package_name_from_script_name("jot-test-4.jl"), "map_log_gamma", joinpath(jot_path, "test/JotTest4/jot-test-4.jl")) 
+                     ]
+
+  expected_labels::Vector{Union{Nothing, ExpectedLabels}} = [
+    isnothing(user_label) ? nothing : ExpectedLabels(name_rfname_path..., user_label) for (user_label, name_rfname_path) in zip(user_labels, name_rfname_paths)
   ]
 
-  if !(length(responders) == length(test_data) == length(local_image_inputs))
+  if !(length(test_data) == length(responders) == length(local_image_inputs) == length(expected_labels))
+    @debug length(test_data)
+    @debug length(responders)
+    @debug length(local_image_inputs)
+    @debug length(expected_labels)
     error("Input lengths do not match")
   end
 
+  for i in 1:length(test_list)
+    check = [isnothing(test_data[i]), isnothing(responders[i]), isnothing(local_image_inputs[i]), isnothing(expected_labels[i]), !test_list[i]]
+    !(all(check) || all(.!check)) && error("Input vectors are not correctly aligned")
+  end
+
   for res in responders
-    @show res.package_name
+    isnothing(res) || @show res.package_name
   end
 
   for li in local_image_inputs
-    @show li[1].package_name
+    isnothing(li) || @show li[1].package_name
   end
 
-  local_images = Vector{LocalImage}()
+  local_images = Vector{Union{Nothing, LocalImage}}()
   @testset "Local Images" begin
     foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
-      (test_input, expected_result) = (test_datum[1], test_datum[2])
-      this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
-      push!(local_images, this_li)
+      if isnothing(li_inputs)
+        push!(local_images, nothing)
+      else
+        (test_input, expected_result) = (test_datum[1], test_datum[2])
+        this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
+        push!(local_images, this_li)
+      end
     end
   end
   
@@ -236,20 +273,19 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
   end
 
   @testset "Package compiler" begin
-    test_package_compile(;
-      compiled_image=local_images[1], 
-      uncompiled_image=local_images[2], 
-      compiled_test_data=test_data[1][1:2], 
-      uncompiled_test_data=test_data[2][1:2],
-    )
+    if(all(test_list)) # Only run test if we are testing all the quartet
+      test_package_compile(;
+        compiled_image=local_images[1], 
+        uncompiled_image=local_images[2], 
+        compiled_test_data=test_data[1][1:2], 
+        uncompiled_test_data=test_data[2][1:2],
+      )
+    end
   end
   if to == "package_compiler"
     clean_up && quartet_clean_up()
     return
   end
-
-  # If partial, randomly select one of our lambdas
-  test_list = partial ? [i == rand(1:4) ? true : false for i in 1:4] : fill(true, length(responders))
 
   repos = Vector{Union{Nothing, ECRRepo}}()
   remote_images = Vector{Union{Nothing, RemoteImage}}()
@@ -441,9 +477,20 @@ function quartet_clean_up()
   end
 end
 
+function parse_arg(val::AbstractString)
+  is_bool = val in ["true", "false"]
+  is_list = val[1] == '[' && val[end] == ']'
+  to_parse = is_bool || is_list
+  to_parse ? eval(Meta.parse(val)) : val
+end
+
 @testset "All Tests" begin
   test_args = Dict(key => val for (key, val) in map(x -> split(x, '='), ARGS))
-  test_args = Dict(Symbol(key) => (val in ["true", "false"] ? Meta.parse(val) : val) for (key, val) in test_args)
+  test_args = Dict(Symbol(key) => parse_arg(val) for (key, val) in test_args)
+  @info test_args
+  if haskey(test_args, :quartet_tests)
+    test_args[:quartet_tests] = [i in test_args[:quartet_tests] for i in 1:4]
+  end
   run_tests(;test_args...)
 end
 

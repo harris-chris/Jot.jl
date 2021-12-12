@@ -15,6 +15,7 @@ abstract type AbstractResponder{IT} end
         response_function_param_type::Type{IT}
         build_dir::String
         package_name::String
+        registry_urls::Vector{String}
     end
 
 A responder that is located locally (in the temporary `build_dir`) and is a Julia package. This is
@@ -28,37 +29,41 @@ mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
   response_function_param_type::Type{IT}
   build_dir::String
   package_name::String
+  registry_urls::Vector{String}
 end
 
 function get_responder_from_local_package(
     path::String,
     response_function::Symbol,
-    ::Type{IT},
+    ::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   isdir(path) || error("Unable to find local directory $(path)")
   "Project.toml" in readdir(path) || error("Unable to find Project.toml in $path")
   path = path[end] == '/' ? path[1:end-1] : path |> abspath
   pkg_spec = PackageSpec(path=path)
-  get_responder_from_package_spec(pkg_spec, response_function, IT)
+  get_responder_from_package_spec(pkg_spec, response_function, IT; registry_urls=registry_urls)
 end
 
 function get_responder_from_package_spec(
       pkg::Pkg.Types.PackageSpec,
       response_function::Symbol,
-      ::Type{IT},
+      ::Type{IT};
+      registry_urls::Vector{String} = Vector{String}(),
     )::LocalPackageResponder{IT} where {IT}
     build_dir = create_build_directory()
     path = pkg.repo.source
     package_name = get_responder_package_name(path)
     move_local_to_build_directory(build_dir, path, package_name)
     println("Pinned $package_name.$response_function with tree hash $(get_tree_hash(build_dir)) to $build_dir")
-    LocalPackageResponder(pkg, path, response_function, IT, build_dir, package_name)
+    LocalPackageResponder(pkg, path, response_function, IT, build_dir, package_name, registry_urls)
   end
 
 function get_responder_from_package_url(
     url::String,
     response_function::Symbol,
     ::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   build_dir = create_build_directory()
   dev_dir = get(ENV, "JULIA_PKG_DEVDIR", nothing)
@@ -76,20 +81,19 @@ function get_responder_from_package_url(
                         IT,
                         build_dir,
                         pkg_name,
+                        registry_urls
                        )
 end
-
-
 
 function get_responder_from_local_script(
     local_path::String,
     response_function::Symbol,
     ::Type{IT};
     dependencies = Vector{String}(),
+    registry_urls = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   !isfile(local_path) && error("$local_path does not point to a file")
   build_dir = create_build_directory()
-  # pkg_name = "script_" * randstring("abcdefghijklmnopqrstuvwxyz1234567890", 8)
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
   cd(build_dir) do
@@ -115,6 +119,7 @@ function get_responder_from_local_script(
                         IT,
                         build_dir,
                         pkg_name,
+                        registry_urls,
                        )
 end
 
@@ -139,6 +144,7 @@ end
         response_function::Symbol,
         response_function_param_type::Type{IT};
         dependencies = Vector{String}(),
+        registry_urls = Vector{String}(),
       )::AbstractResponder{IT} where {IT}
 Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
 Lambda calls. 
@@ -162,9 +168,10 @@ function get_responder(
     response_function::Symbol,
     response_function_param_type::Type{IT};
     dependencies = Vector{String}(),
+    registry_urls = Vector{String}(),
   )::AbstractResponder{IT} where {IT}
   if isurl(path_url)
-    get_responder_from_package_url(path_url, response_function, IT)
+    get_responder_from_package_url(path_url, response_function, IT; registry_urls)
   elseif isrelativeurl(path_url)
     if isdir(path_url) 
       if "Project.toml" in readdir(path_url)
@@ -172,14 +179,14 @@ function get_responder(
           Dependencies have been passed, but path_url leads to a package; please specify dependencies in the Package's Project.toml
           """
         )
-        get_responder_from_local_package(path_url, response_function, IT)
+        get_responder_from_local_package(path_url, response_function, IT; registry_urls)
       else
         error("""
         Path points to a directory, but no Project.toml exists; please provide a path to either a package directory, or a script file
         """)
       end
     elseif(isfile(path_url))
-      get_responder_from_local_script(joinpath(pwd(), path_url), response_function, IT; dependencies)
+      get_responder_from_local_script(joinpath(pwd(), path_url), response_function, IT; dependencies, registry_urls)
     else
       error("Unable to find path $path_url")
     end
@@ -193,7 +200,7 @@ end
         package_spec::Pkg.Types.PackageSpec, 
         response_function::Symbol,
         response_function_param_type::Type{IT};
-        dependencies = Vector{String}(),
+        registry_urls::Vector{String} = Vector{String}(),
       )::AbstractResponder{IT} where {IT}
 
 Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
@@ -209,9 +216,10 @@ function get_responder(
     package_spec::Pkg.Types.PackageSpec, 
     response_function::Symbol,
     response_function_param_type::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )::AbstractResponder{IT} where {IT}
   if !isnothing(package_spec.repo.source)
-    get_responder(package_spec.repo.source, response_function, IT)
+    get_responder(package_spec.repo.source, response_function, IT; registry_urls=registry_urls)
   else
     error("Not implemented")
   end
@@ -222,6 +230,7 @@ end
         mod::Module, 
         response_function::Symbol,
         response_function_param_type::Type{IT},
+        registry_urls::Vector{String} = Vector{String}(),
       )::AbstractResponder{IT} where {IT}
 
 Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
@@ -237,10 +246,11 @@ expecting as its only argument.
 function get_responder(
     mod::Module, 
     response_function::Symbol,
-    response_function_param_type::Type{IT},
+    response_function_param_type::Type{IT};
+    registry_urls::Vector{String} = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   pkg_path = get_package_path(mod)
-  get_responder_from_local_package(pkg_path, response_function, IT)
+  get_responder_from_local_package(pkg_path, response_function, IT; registry_urls)
 end
 
 function get_responder_package_name(path::String)::String
