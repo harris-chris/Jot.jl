@@ -2,29 +2,30 @@
 
 ```@docs
 create_lambda_function(
-    remote_image::RemoteImage,
-    role::AWSRole;
+    remote_image::RemoteImage;
+    role::Union{AWSRole, Nothing} = nothing,
     function_name::Union{Nothing, String} = nothing,
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )
 create_lambda_function(
-    repo::ECRRepo,
-    role::AWSRole;
+    repo::ECRRepo;
+    role::AWSRole = nothing,
     function_name::Union{Nothing, String} = nothing,
     image_tag::String = "latest",
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )
 create_local_image(
-    image_suffix::String,
     responder::AbstractResponder;
+    image_suffix::Union{Nothing, String} = nothing,
     aws_config::Union{Nothing, AWSConfig} = nothing, 
     image_tag::String = "latest",
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
+    user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
   )
 delete!(con::Container)
 delete!(repo::ECRRepo)
@@ -63,23 +64,23 @@ get_remote_image(identity::AbstractString)
 get_responder(
     path_url::String, 
     response_function::Symbol,
-    response_function_param_type::Type{IT};
+    response_function_param_type::Type;
     dependencies = Vector{String}(),
     registry_urls = Vector{String}(),
   )
 get_responder(
     package_spec::Pkg.Types.PackageSpec, 
     response_function::Symbol,
-    response_function_param_type::Type{IT};
+    response_function_param_type::Type;
     registry_urls::Vector{String} = Vector{String}(),
   )
 get_responder(
     mod::Module, 
     response_function::Symbol,
-    response_function_param_type::Type{IT};
+    response_function_param_type::Type;
     registry_urls::Vector{String} = Vector{String}(),
   )
-get_user_labels(l::Union{LambdaComponent, ECRRepo})
+get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})
 invoke_function(
     request::Any,
     lambda_function::LambdaFunction;

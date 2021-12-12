@@ -19,7 +19,7 @@ import Base.delete!
 export AWSConfig, LambdaException
 export get_responder, AbstractResponder, LocalPackageResponder
 export LocalImage, Container, RemoteImage, ECRRepo, AWSRole, LambdaFunction
-export get_aws_role
+export get_aws_role, get_user_labels
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_local_image, get_local_image
@@ -505,7 +505,7 @@ end
 """
     create_lambda_function(
         remote_image::RemoteImage;
-        role::AWSRole = nothing,
+        role::Union{AWSRole, Nothing} = nothing,
         function_name::Union{Nothing, String} = nothing,
         timeout::Int64 = 60,
         memory_size::Int64 = 2000,
