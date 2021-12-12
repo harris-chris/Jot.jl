@@ -47,7 +47,7 @@ function run_tests(;
     example_simple::Bool=false,
     example_components::Bool=false,
     quartet::Bool=false,
-    quartet_partial::Bool=true,
+    quartet_tests::Vector{Bool}=[i == rand(1:4) ? true : false for i in 1:4],
     quartet_to::AbstractString="lambda_function", 
   )
   ENV["JOT_TEST_RUNNING"] = "true"
@@ -56,7 +56,8 @@ function run_tests(;
   end
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  quartet && run_quartet_test(quartet_partial, quartet_to, clean_up)
+  @show quartet_tests
+  quartet && run_quartet_test(quartet_tests, quartet_to, clean_up)
   ENV["JOT_TEST_RUNNING"] = "false"
 end
 
@@ -154,7 +155,11 @@ function clean_up_example_test()
   !isnothing(existing_li) && delete!(existing_li)
 end
 
-function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
+function run_quartet_test(
+    test_list::Vector{Bool},
+    to::AbstractString, 
+    clean_up::Bool
+  )
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
@@ -162,7 +167,7 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
     ((JotTest1, :response_func, Dict), Dict()),
     ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict()),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
-    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions"])),
+    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), Dict(:dependencies => ["SpecialFunctions", "PRAS"])),
   ]
 
   responders = Vector{AbstractResponder}()
@@ -209,7 +214,17 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
       user_labels[4]),
   ]
 
-  if !(length(responders) == length(test_data) == length(local_image_inputs))
+  registry_urls = [
+    Vector{String}(),
+    Vector{String}(),
+    Vector{String}(),
+    Vector{String}(["https://github.com/NREL/JuliaRegistry.git"]),
+  ]
+
+
+
+  if !(length(responders) == length(test_data) == length(local_image_inputs) =
+       = length(expected_labels) == length(registry_urls))
     error("Input lengths do not match")
   end
 
@@ -223,9 +238,9 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
 
   local_images = Vector{LocalImage}()
   @testset "Local Images" begin
-    foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
+    foreach(zip(local_image_inputs, expected_labels, registry_urls, test_data)) do (li_inputs, labels, registries, test_datum)
       (test_input, expected_result) = (test_datum[1], test_datum[2])
-      this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
+      this_li = test_local_image(li_inputs..., test_input, expected_result, labels, registries)
       push!(local_images, this_li)
     end
   end
@@ -247,9 +262,6 @@ function run_quartet_test(partial::Bool, to::AbstractString, clean_up::Bool)
     clean_up && quartet_clean_up()
     return
   end
-
-  # If partial, randomly select one of our lambdas
-  test_list = partial ? [i == rand(1:4) ? true : false for i in 1:4] : fill(true, length(responders))
 
   repos = Vector{Union{Nothing, ECRRepo}}()
   remote_images = Vector{Union{Nothing, RemoteImage}}()
@@ -315,11 +327,13 @@ function test_local_image(
     test_request::Any,
     expected_test_result::Any,
     expected_labels::ExpectedLabels,
+    registry_urls::Vector{String},
   )::LocalImage
   local_image = create_local_image(res; 
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile,
                                    user_defined_labels = expected_labels.user_defined_labels,
+                                   registry_urls = registry_urls,
                                   )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
@@ -441,9 +455,20 @@ function quartet_clean_up()
   end
 end
 
+function parse_arg(val::AbstractString)
+  is_bool = val in ["true", "false"]
+  is_list = val[1] == '[' && val[end] == ']'
+  to_parse = is_bool || is_list
+  to_parse ? eval(Meta.parse(val)) : val
+end
+
 @testset "All Tests" begin
   test_args = Dict(key => val for (key, val) in map(x -> split(x, '='), ARGS))
-  test_args = Dict(Symbol(key) => (val in ["true", "false"] ? Meta.parse(val) : val) for (key, val) in test_args)
+  test_args = Dict(Symbol(key) => parse_arg(val) for (key, val) in test_args)
+  @info test_args
+  if haskey(test_args, :quartet_tests)
+    test_args[:quartet_tests] = [i in test_args[:quartet_tests] for i in 1:4]
+  end
   run_tests(;test_args...)
 end
 
