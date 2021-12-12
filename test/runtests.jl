@@ -56,7 +56,6 @@ function run_tests(;
   end
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  @show quartet_tests
   quartet && run_quartet_test(quartet_tests, quartet_to, clean_up)
   ENV["JOT_TEST_RUNNING"] = "false"
 end
@@ -163,19 +162,11 @@ function run_quartet_test(
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
-  # TODO remove this
-  registry_urls::Vector{Union{Nothing, Vector{String}}} = [
-    Vector{String}(),
-    Vector{String}(["https://github.com/NREL/JuliaRegistry.git"]),
-    Vector{String}(),
-    Vector{String}(["https://github.com/NREL/JuliaRegistry.git"]),
-  ]
-  registry_urls[.!test_list] .= nothing
-
   ResponderType = Tuple{Tuple{Any, Symbol, Type}, Dict}
   responder_inputs::Vector{Union{Nothing, ResponderType}} = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict()),
+    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict(
+     :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
     ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), 
      Dict(:dependencies => ["SpecialFunctions", "PRAS"],
@@ -242,12 +233,16 @@ function run_quartet_test(
     isnothing(user_label) ? nothing : ExpectedLabels(name_rfname_path..., user_label) for (user_label, name_rfname_path) in zip(user_labels, name_rfname_paths)
   ]
 
-  if !(length(test_data) == length(responders) == length(local_image_inputs) == length(expected_labels) == length(registry_urls))
+  if !(length(test_data) == length(responders) == length(local_image_inputs) == length(expected_labels))
+    @debug length(test_data)
+    @debug length(responders)
+    @debug length(local_image_inputs)
+    @debug length(expected_labels)
     error("Input lengths do not match")
   end
 
   for i in 1:length(test_list)
-    check = [isnothing(test_data[i]), isnothing(responders[i]), isnothing(local_image_inputs[i]), isnothing(expected_labels[i]), isnothing(registry_urls[i]), !test_list[i]]
+    check = [isnothing(test_data[i]), isnothing(responders[i]), isnothing(local_image_inputs[i]), isnothing(expected_labels[i]), !test_list[i]]
     !(all(check) || all(.!check)) && error("Input vectors are not correctly aligned")
   end
 
@@ -261,13 +256,12 @@ function run_quartet_test(
 
   local_images = Vector{Union{Nothing, LocalImage}}()
   @testset "Local Images" begin
-    foreach(zip(local_image_inputs, expected_labels, registry_urls, test_data)) do (li_inputs, labels, registries, test_datum)
+    foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
       if isnothing(li_inputs)
         push!(local_images, nothing)
       else
         (test_input, expected_result) = (test_datum[1], test_datum[2])
-        @show registries
-        this_li = test_local_image(li_inputs..., test_input, expected_result, labels, registries)
+        this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
         push!(local_images, this_li)
       end
     end
@@ -357,13 +351,11 @@ function test_local_image(
     test_request::Any,
     expected_test_result::Any,
     expected_labels::ExpectedLabels,
-    registry_urls::Vector{String},
   )::LocalImage
   local_image = create_local_image(res; 
                                    aws_config = use_config ? aws_config : nothing, 
                                    package_compile = package_compile,
                                    user_defined_labels = expected_labels.user_defined_labels,
-                                   registry_urls = registry_urls,
                                   )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
