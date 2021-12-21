@@ -19,14 +19,15 @@ create_lambda_function(
 create_local_image(
     responder::AbstractResponder;
     image_suffix::Union{Nothing, String} = nothing,
-    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
-  )
+    dockerfile_update::Function = x -> x,
+  )::LocalImage
 delete!(con::Container)
 delete!(repo::ECRRepo)
 delete!(func::LambdaFunction)
@@ -34,14 +35,16 @@ delete!(image::LocalImage; force::Bool=false)
 get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
-    package_compile::Bool,
+    package_compile::Bool;
+    user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
+    dockerfile_update::Function = x -> x,
   )
 get_ecr_repo(image::LocalImage)
 get_ecr_repo(repo_name::String)
 create_lambda_components(
     res::AbstractResponder;
     image_suffix::Union{Nothing, String} = nothing,
-    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
@@ -62,20 +65,20 @@ get_remote_image(lambda_function::LambdaFunction)
 get_remote_image(local_image::LocalImage)
 get_remote_image(identity::AbstractString)
 get_responder(
-    path_url::String, 
+    path_url::String,
     response_function::Symbol,
     response_function_param_type::Type;
     dependencies = Vector{String}(),
     registry_urls = Vector{String}(),
   )
 get_responder(
-    package_spec::Pkg.Types.PackageSpec, 
+    package_spec::Pkg.Types.PackageSpec,
     response_function::Symbol,
     response_function_param_type::Type;
     registry_urls::Vector{String} = Vector{String}(),
   )
 get_responder(
-    mod::Module, 
+    mod::Module,
     response_function::Symbol,
     response_function_param_type::Type;
     registry_urls::Vector{String} = Vector{String}(),
@@ -91,7 +94,7 @@ push_to_ecr!(image::LocalImage)
 run_image_locally(local_image::LocalImage; detached::Bool=true)
 run_test(
   image::LocalImage,
-  function_argument::Any = "", 
+  function_argument::Any = "",
   expected_response::Any = nothing;
   then_stop::Bool = false,
 )

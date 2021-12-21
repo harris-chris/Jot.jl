@@ -13,7 +13,7 @@ using Random
 using Setfield
 using StructTypes
 using TOML
-import Base.delete! 
+import Base.delete!
 
 # EXPORTS
 export AWSConfig, LambdaException
@@ -26,7 +26,7 @@ export run_image_locally, create_local_image, get_local_image
 export send_local_request
 export run_test
 export stop_container, is_container_running
-export create_ecr_repo, get_ecr_repo, push_to_ecr! 
+export create_ecr_repo, get_ecr_repo, push_to_ecr!
 export get_remote_image
 export create_aws_role
 export create_lambda_function, get_lambda_function, invoke_function
@@ -94,17 +94,17 @@ function get_tree_hash(l::LambdaFunction)::String
 end
 
 function get_tree_hash(lc::LambdaComponents)::String
-  if !isnothing(lc.local_image) 
+  if !isnothing(lc.local_image)
     get_tree_hash(lc.local_image)
-  elseif !isnothing(lc.remote_image) 
+  elseif !isnothing(lc.remote_image)
     get_tree_hash(lc.remote_image)
-  else 
+  else
     get_tree_hash(lc.lambda_function)
   end
 end
 
 function get_image_full_name(
-    aws_config::AWSConfig, 
+    aws_config::AWSConfig,
     image_suffix::String,
   )::String
   registry = "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com"
@@ -112,8 +112,8 @@ function get_image_full_name(
 end
 
 function get_image_full_name_plus_tag(
-    aws_config::AWSConfig, 
-    image_suffix::String, 
+    aws_config::AWSConfig,
+    image_suffix::String,
     image_tag::String,
   )::String
   "$(get_image_full_name(aws_config, image_suffix)):$image_tag"
@@ -160,7 +160,7 @@ function add_scripts_to_build_dir(
   bootstrap_script |> x -> add_to_build(x, "bootstrap")
   get_init_script(package_compile, julia_cpu_target) |> x -> add_to_build(x, "init.jl")
   if package_compile
-    get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl") 
+    get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl")
   end
 end
 
@@ -168,8 +168,9 @@ end
     get_dockerfile(
         responder::AbstractResponder,
         julia_base_version::String,
-        package_compile::Bool,
-        user_defined_labels::AbstractDict{String, String},
+        package_compile::Bool;
+        user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
+        dockerfile_update::Function = x -> x,
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -179,14 +180,15 @@ function get_dockerfile(
     responder::AbstractResponder,
     julia_base_version::String,
     package_compile::Bool;
-    user_defined_labels::AbstractDict{String, String},
+    user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
+    dockerfile_update::Function = x -> x,
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
-  if length(overlapped_keys) > 0 
+  if length(overlapped_keys) > 0
     error("User-defined labels $(join(overlapped_keys, ", ")) overlap with Jot-defined labels")
   end
   combined_labels = add_user_defined_labels(get_labels(responder), user_defined_labels)
-  foldl(
+  generated_dockerfile = foldl(
     *, [
     dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
@@ -197,60 +199,70 @@ function get_dockerfile(
     dockerfile_add_labels(combined_labels),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
-    dockerfile_add_bootstrap(responder.package_name, 
-                             String(responder.response_function), 
+    dockerfile_add_bootstrap(responder.package_name,
+                             String(responder.response_function),
                              responder.response_function_param_type),
     dockerfile_add_precompile(package_compile),
   ]; init = "")
+  dockerfile_update(generated_dockerfile)
 end
 
 """
     create_local_image(
         responder::AbstractResponder;
         image_suffix::Union{Nothing, String} = nothing,
-        aws_config::Union{Nothing, AWSConfig} = nothing, 
+        aws_config::Union{Nothing, AWSConfig} = nothing,
         image_tag::String = "latest",
         no_cache::Bool = false,
         julia_base_version::String = "1.6.1",
         julia_cpu_target::String = "x86-64",
         package_compile::Bool = false,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+        dockerfile_update::Function = x -> x,
       )::LocalImage
 
 Creates a locally-stored docker image containing the specified responder. This can be tested
 tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
-`package_compile` indicates whether `PackageCompiler.jl` should be used to compile the image - 
+`package_compile` indicates whether `PackageCompiler.jl` should be used to compile the image -
 this is not necessarily for testing/exploration but is highly recommended for production use.
 
 Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
 if nothing locally has changed, but the image is querying a remote object (say, a github repo)
 which has changed.
 
-If `user_defined_labels` are defined, these will be added to the generated `LocalImage`, as well 
-as all subsequent types based on the `LocalImage`, like the remote image or the ultimate Lambda 
-function. They can be retrieved using the `get_labels` function, alongside the Jot-generated 
+If `user_defined_labels` are defined, these will be added to the generated `LocalImage`, as well
+as all subsequent types based on the `LocalImage`, like the remote image or the ultimate Lambda
+function. They can be retrieved using the `get_labels` function, alongside the Jot-generated
 labels.
+
+`dockerfile_update` is a function that accepts the pre-generated Dockerfile as its only argument,
+and returns a new Dockerfile. The most likely use case for this is to add customized extensions
+to the generated Dockerfile. For example, passing
+`(dockerfile) -> dockerfile * "RUN ssh-keygen -t rsa -f .ssh/id_rsa -N"`
+will cause an SSH key to be created within the docker image.
 """
 function create_local_image(
     responder::AbstractResponder;
     image_suffix::Union{Nothing, String} = nothing,
-    aws_config::Union{Nothing, AWSConfig} = nothing, 
+    aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
     julia_base_version::String = "1.6.1",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+    dockerfile_update::Function = x -> x,
   )::LocalImage
   # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
-                              julia_base_version, 
+                              julia_base_version,
                               package_compile;
                               user_defined_labels,
+                              dockerfile_update
                              )
   @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
@@ -260,7 +272,7 @@ function create_local_image(
                                                      image_suffix,
                                                      image_tag)
   # Build the actual image
-  build_cmd = get_dockerfile_build_cmd(dockerfile, 
+  build_cmd = get_dockerfile_build_cmd(dockerfile,
                                        image_name_plus_tag,
                                        no_cache)
   run(Cmd(build_cmd, dir=responder.build_dir))
@@ -268,7 +280,7 @@ function create_local_image(
   id_fname = joinpath(responder.build_dir, "id")
   @debug id_fname
   image_id = open(id_fname, "r") do f
-    full_str = String(read(f)) 
+    full_str = String(read(f))
     @debug full_str
     split(full_str, ':')[2]
   end
@@ -313,7 +325,7 @@ end
 function get_labels(image::LocalImage)::Labels
   image_inspect_json = readchomp(`docker inspect $(image.ID)`)
   iis = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})
-  if length(iis) == 0 
+  if length(iis) == 0
     error("Unable to find labels for image $(image.Repository)")
   else
     get_labels(iis[1])
@@ -328,25 +340,25 @@ function get_labels(ecr_repo::ECRRepo)::Labels
   tags_raw = JSON3.read(tags_json)
   haskey(tags_raw, "tags") || error("ECR Repo $(ecr_repo.repositoryName) has no tags")
   tags_dict = Dict(d["Key"] => d["Value"] for d in tags_raw["tags"])
-  Labels(tags_dict) 
+  Labels(tags_dict)
 end
 
 function get_labels(image::RemoteImage)::Labels
   batch_image_json = readchomp(
-    `aws ecr batch-get-image 
-      --repository-name $(image.ecr_repo.repositoryName) 
-      --image-id imageTag=$(image.imageTag) 
+    `aws ecr batch-get-image
+      --repository-name $(image.ecr_repo.repositoryName)
+      --image-id imageTag=$(image.imageTag)
       --accepted-media-types "application/vnd.docker.distribution.manifest.v1+json" --output json`
-     ) 
-  batch_image = JSON3.read(batch_image_json) 
-  try 
+     )
+  batch_image = JSON3.read(batch_image_json)
+  try
     manifest = JSON3.read(batch_image["images"][1]["imageManifest"])
     v1_compat = JSON3.read(manifest["history"][1]["v1Compatibility"])
     labels = v1_compat["config"]["Labels"]
     labels = OrderedDict{Symbol, String}(labels)
     labels = OrderedDict(String(k) => v for (k, v) in labels)
     Labels(labels)
-  catch e 
+  catch e
     if isa(e, BoundsError) || isa(e, KeyError)
       error("Unable to find labels for image $(image.ecr_repo.repositoryName)")
     else
@@ -373,17 +385,17 @@ function get_labels(lambda_function::LambdaFunction)::Labels
 end
 
 function get_labels(lc::LambdaComponents)::Labels
-  if !isnothing(lc.local_image) 
+  if !isnothing(lc.local_image)
     get_labels(lc.local_image)
-  elseif !isnothing(lc.remote_image) 
+  elseif !isnothing(lc.remote_image)
     get_labels(lc.remote_image)
-  else 
+  else
     get_labels(lc.lambda_function)
   end
 end
 
 function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
-  try 
+  try
     labels = get_labels(c)
     Meta.parse(labels.IS_JOT_GENERATED)
   catch e
@@ -394,25 +406,25 @@ end
 """
     run_test(
       image::LocalImage,
-      function_argument::Any = "", 
+      function_argument::Any = "",
       expected_response::Any = nothing;
       then_stop::Bool = false,
     )::Tuple{Bool, Float64}
 
-Runs a test of the given local docker image, passing `function_argument` (if given), and expecting 
+Runs a test of the given local docker image, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
-that any kind of response is received - this response may be an error JSON and the test will still 
+that any kind of response is received - this response may be an error JSON and the test will still
 pass, establishing only that the image can be contacted. Returns a tuple of (test result, time)
-where time is the time taken for a response to be received, in seconds. 
+where time is the time taken for a response to be received, in seconds.
 
 The test will use an already-running docker container, if one exists. If this is the case then the
-`then_stop` parameter tells the function whether to stop the docker container after running the 
+`then_stop` parameter tells the function whether to stop the docker container after running the
 test. If the run_test function finds no docker container already running, it will start one, and
 then shut it down afterwards, regardless of the value of `then_stop`.
 """
 function run_test(
     image::LocalImage,
-    function_argument::Any = "", 
+    function_argument::Any = "",
     expected_response::Any = nothing;
     then_stop::Bool = false,
   )::Tuple{Bool, Float64}
@@ -435,19 +447,19 @@ end
 """
     run_test(
       func::LambdaFunction,
-      function_argument::Any = "", 
+      function_argument::Any = "",
       expected_response::Any = nothing;
     )::Tuple{Bool, Float64}
 
-Runs a test of the given Lambda Function, passing `function_argument` (if given), and expecting 
+Runs a test of the given Lambda Function, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
-that any kind of response is received - this response may be an error JSON and the test will still 
+that any kind of response is received - this response may be an error JSON and the test will still
 pass, establishing only that the function can be contacted. Returns a tuple of (test result, time)
 where time is the time taken for a response to be received, in seconds.
 """
 function run_test(
     func::LambdaFunction,
-    function_argument::Any = "", 
+    function_argument::Any = "",
     expected_response::Any = nothing;
     check_function_state::Bool = false,
   )::Tuple{Bool, Union{Missing, Float64}}
@@ -480,7 +492,7 @@ end
     push_to_ecr!(image::LocalImage)::RemoteImage
 Pushes the given local docker image to an AWS ECR Repo, a prerequisite of creating an AWS Lambda
 Function. If an ECR Repo for the given local image does not exist, it will be created
-automatically. Returns a RemoteImage object that represents the docker image that is hosted on the 
+automatically. Returns a RemoteImage object that represents the docker image that is hosted on the
 ECR Repo. The ECR Repo itself is an attribute of the RemoteImage.
 """
 function push_to_ecr!(image::LocalImage)::RemoteImage
@@ -499,7 +511,7 @@ function push_to_ecr!(image::LocalImage)::RemoteImage
   image.Digest = all_images[img_idx].Digest
   out = get_remote_image(image)
   @debug out
-  out 
+  out
 end
 
 """
@@ -510,8 +522,8 @@ end
         timeout::Int64 = 60,
         memory_size::Int64 = 2000,
       )::LambdaFunction
-Creates a function that exists on the AWS Lambda service. The function will use the given 
-`RemoteImage`, and runs using the given AWS Role. 
+Creates a function that exists on the AWS Lambda service. The function will use the given
+`RemoteImage`, and runs using the given AWS Role.
 """
 function create_lambda_function(
     remote_image::RemoteImage;
@@ -544,7 +556,7 @@ end
         memory_size::Int64 = 2000,
       )::LambdaFunction
 Creates a function that exists on the AWS Lambda service. The function will use the given ECR Repo,
-and runs using the given AWS Role. If given, the image_tag will decide which of the images in the 
+and runs using the given AWS Role. If given, the image_tag will decide which of the images in the
 ECR Repo is used.
 """
 function create_lambda_function(
@@ -630,7 +642,7 @@ function send_local_request(request::Any)
                    [],
                    JSON3.write(request),
                   )
-  @debug http 
+  @debug http
   JSON3.read(http.body)
 end
 
@@ -668,7 +680,7 @@ function get_lambda_name(l::LambdaComponents)::String
   get_from_any_component(get_lambda_name, l)
 end
 
-# -- get_response_function_name -- 
+# -- get_response_function_name --
 
 function get_response_function_name(
     env_vars::AbstractDict{String, String}
@@ -679,20 +691,6 @@ function get_response_function_name(
     isa(e, KeyError) ? nothing : throw(e)
   end
 end
-
-# function get_response_function_name(image::LocalImage)::Union{Nothing, String}
-  # image_inspect_json = readchomp(`docker inspect $(image.ID)`)
-  # image_inspect = JSON3.read(image_inspect_json, Vector{Dict{String, Any}})[1]
-  # env_vars = get_environment_variables(image_inspect)
-  # get_response_function_name(env_vars)
-# end
-
-# function get_response_function_name(images::Vector{LocalImage})::Vector{String}
-  # image_ids = join([img.ID for img in images], " ")
-  # image_inspect = JSON3.read(readchomp(`docker inspect $image_ids`))
-  # env_var_arr = [get_environment_variables(ii) for ii in image_inspect]
-  # [get_response_function_name(env_vars) for env_vars in env_var_arr]
-# end
 
 function get_response_function_name(c::LambdaComponent)::String
   labels = get_labels(c)

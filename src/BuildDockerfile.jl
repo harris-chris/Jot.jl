@@ -11,7 +11,7 @@ end
 
 function dockerfile_add_additional_registries(additional_registries::Vector{String})::String
   using_pkg_script = "using Pkg; "
-  add_registries_script = begin 
+  add_registries_script = begin
     str = ""
     for reg in additional_registries
       str *= "Pkg.Registry.add(RegistrySpec(url = \\\"$(reg)\\\")); "
@@ -66,7 +66,7 @@ function dockerfile_add_jot()::String
     jot_github_url * "#$this_branch"
   end
   @debug jot_url
-  
+
   """
   RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_url\\\")"
   """
@@ -81,14 +81,14 @@ function dockerfile_add_aws_rie()::String
 end
 
 function dockerfile_add_bootstrap(
-    package_name::String, 
+    package_name::String,
     function_name::String,
     ::Type{IT}
   )::String where {IT}
   """
   ENV PKG_NAME=$(package_name)
   ENV FUNC_FULL_NAME=$package_name.$function_name
-  ENV FUNC_PARAM_TYPE=$IT 
+  ENV FUNC_PARAM_TYPE=$IT
   RUN chmod 775 . -R
   ENTRYPOINT ["/var/runtime/bootstrap"]
   """
@@ -109,8 +109,8 @@ function dockerfile_add_labels(labels::Labels)::String
 end
 
 function get_dockerfile_build_cmd(
-    dockerfile::String, 
-    image_full_name_plus_tag::String, 
+    dockerfile::String,
+    image_full_name_plus_tag::String,
     no_cache::Bool,
   )::Cmd
   options = ["--rm", "--iidfile", "id", "--tag", "$image_full_name_plus_tag"]
