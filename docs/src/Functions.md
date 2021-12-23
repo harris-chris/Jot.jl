@@ -51,6 +51,7 @@ create_lambda_components(
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
+    dockerfile_update::Function = x -> x,
   )
 get_all_aws_roles()
 get_all_containers(args::Vector{String} = Vector{String}())
