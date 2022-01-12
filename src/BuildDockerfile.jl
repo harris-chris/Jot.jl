@@ -112,8 +112,10 @@ function get_dockerfile_build_cmd(
     dockerfile::String,
     image_full_name_plus_tag::String,
     no_cache::Bool,
+    build_args::Vector{Pair}
   )::Cmd
   options = ["--rm", "--iidfile", "id", "--tag", "$image_full_name_plus_tag"]
+  [push!(options, e) for e in map(x -> [first(x), last(x)], build_args) |> x -> reduce(vcat, x)]
   no_cache && push!(options, "--no-cache")
   `docker build $options .`
 end
