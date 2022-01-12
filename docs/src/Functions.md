@@ -27,6 +27,7 @@ create_local_image(
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
+    build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
 delete!(con::Container)
 delete!(repo::ECRRepo)

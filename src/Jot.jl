@@ -219,7 +219,7 @@ end
         package_compile::Bool = false,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
         dockerfile_update::Function = x -> x,
-        build_args::Vector{Pair}
+        build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
       )::LocalImage
 
 Creates a locally-stored docker image containing the specified responder. This can be tested
@@ -243,7 +243,8 @@ to the generated Dockerfile. For example, passing
 `(dockerfile) -> dockerfile * "RUN ssh-keygen -t rsa -f .ssh/id_rsa -N"`
 will cause an SSH key to be created within the docker image.
 
-`build_args` are appended to the `docker build` command. 
+`build_args` are arguments that are appended to the `docker build` command using the `--build-arg`
+command-line argument.
 """
 function create_local_image(
     responder::AbstractResponder;
@@ -256,7 +257,7 @@ function create_local_image(
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
-    build_args::Vector{Pair}
+    build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
   # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
