@@ -39,7 +39,7 @@ and another to do subtraction:
 
 `function subtract_response_function(a::Number, b::Number) a - b end`
 
-have these as separate images, create a single responding function:
+and having these as separate images, instead create a single responding function:
 ```
 function arithmetic_response(f::String, a::Number, b::Number)
     if f == "add" a + b

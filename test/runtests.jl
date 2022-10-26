@@ -9,6 +9,9 @@ using Jot
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest1")))
 using JotTest1
 
+Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest2")))
+using JotTest2
+
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
 
@@ -42,13 +45,13 @@ function test_actual_labels_against_expected(
   all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
 end
 
-function run_tests(; 
+function run_tests(;
     clean_up::Bool=true,
     example_simple::Bool=false,
     example_components::Bool=false,
     quartet::Bool=false,
     quartet_tests::Vector{Bool}=[i == rand(1:4) ? true : false for i in 1:4],
-    quartet_to::AbstractString="lambda_function", 
+    quartet_to::AbstractString="lambda_function",
   )
   ENV["JOT_TEST_RUNNING"] = "true"
   if all([example_simple, example_components, quartet] .== false)
@@ -77,8 +80,8 @@ function run_example_components_test(clean_up::Bool)
     lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
 
     lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
-     
-    # Clean up 
+
+    # Clean up
     if clean_up
       delete!(lambda_components)
       rm("./increment_vector.jl")
@@ -90,7 +93,7 @@ function run_example_components_test(clean_up::Bool)
     end
   end
 end
-  
+
 
 function run_example_simple_test(clean_up::Bool)
   clean_up_example_test()
@@ -115,8 +118,8 @@ function run_example_simple_test(clean_up::Bool)
     remote_image = push_to_ecr!(local_image)
     @test get_remote_image("increment-vector") == remote_image
     @test get_lambda_name(remote_image) == "increment-vector"
-     
-    # Create a lambda function from this remote_image... 
+
+    # Create a lambda function from this remote_image...
     @info "Creating lambda function"
     increment_vector_lambda = create_lambda_function(remote_image)
     @test get_lambda_function("increment-vector") == increment_vector_lambda
@@ -126,7 +129,7 @@ function run_example_simple_test(clean_up::Bool)
     @info "Testing lambda function"
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
 
-    # Clean up 
+    # Clean up
     if clean_up
       delete!(increment_vector_lambda)
       delete!(remote_image)
@@ -156,7 +159,7 @@ end
 
 function run_quartet_test(
     test_list::Vector{Bool},
-    to::AbstractString, 
+    to::AbstractString,
     clean_up::Bool
   )
   reset_response_suffix("test/JotTest1/response_suffix")
@@ -165,10 +168,10 @@ function run_quartet_test(
   ResponderType = Tuple{Tuple{Any, Symbol, Type}, Dict}
   responder_inputs::Vector{Union{Nothing, ResponderType}} = [
     ((JotTest1, :response_func, Dict), Dict()),
-    ((PackageSpec(path=joinpath(jot_path, "test/JotTest2")), :response_func, Dict), Dict(
+    ((JotTest2, :response_func, Dict), Dict(
      :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
     (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
-    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}), 
+    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}),
      Dict(:dependencies => ["SpecialFunctions", "PRAS"],
           :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
   ]
@@ -184,14 +187,14 @@ function run_quartet_test(
   test_data[.!test_list] .= nothing
 
   responders = Vector{Union{Nothing, AbstractResponder}}()
-  @testset "Test Responder" begin 
+  @testset "Test Responder" begin
     foreach(responder_inputs) do input
       if isnothing(input)
         push!(responders, nothing)
       else
         args = first(input)
         kwargs = last(input)
-        push!(responders, test_responder(args...; kwargs)) 
+        push!(responders, test_responder(args...; kwargs))
       end
     end
   end
@@ -209,13 +212,13 @@ function run_quartet_test(
   ]
   local_image_config[.!test_list] .= nothing
 
-  local_image_inputs = [ isnothing(responder) ? nothing : 
+  local_image_inputs = [ isnothing(responder) ? nothing :
     (responder, config[1], config[2], config[3]) for (responder, config) in zip(responders, local_image_config)
   ]
 
   UserLabel = Dict{String, String}
   user_labels::Vector{Union{Nothing, UserLabel}} = [
-                 Dict("TEST"=>"1"), 
+                 Dict("TEST"=>"1"),
                  Dict("TEST"=>"2"),
                  Dict("TEST"=>"3"),
                  Dict("TEST"=>"4"),
@@ -226,7 +229,7 @@ function run_quartet_test(
                       ("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1")),
                       ("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2")),
                       ("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3"),
-                      (Jot.get_package_name_from_script_name("jot-test-4.jl"), "map_log_gamma", joinpath(jot_path, "test/JotTest4/jot-test-4.jl")) 
+                      (Jot.get_package_name_from_script_name("jot-test-4.jl"), "map_log_gamma", joinpath(jot_path, "test/JotTest4/jot-test-4.jl"))
                      ]
 
   expected_labels::Vector{Union{Nothing, ExpectedLabels}} = [
@@ -266,7 +269,7 @@ function run_quartet_test(
       end
     end
   end
-  
+
   if to == "local_image"
     clean_up && quartet_clean_up()
     return
@@ -275,9 +278,9 @@ function run_quartet_test(
   @testset "Package compiler" begin
     if(all(test_list)) # Only run test if we are testing all the quartet
       test_package_compile(;
-        compiled_image=local_images[1], 
-        uncompiled_image=local_images[2], 
-        compiled_test_data=test_data[1][1:2], 
+        compiled_image=local_images[1],
+        uncompiled_image=local_images[2],
+        compiled_test_data=test_data[1][1:2],
         uncompiled_test_data=test_data[2][1:2],
       )
     end
@@ -289,10 +292,10 @@ function run_quartet_test(
 
   repos = Vector{Union{Nothing, ECRRepo}}()
   remote_images = Vector{Union{Nothing, RemoteImage}}()
-  @testset "ECR Repo" begin 
+  @testset "ECR Repo" begin
     foreach(enumerate(test_list)) do (num, use_bl)
       if use_bl
-        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num], expected_labels[num])  
+        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num], expected_labels[num])
       else
         (this_repo, this_remote_image) = (nothing, nothing)
       end
@@ -313,10 +316,10 @@ function run_quartet_test(
   end
 
   lambda_functions = Vector{Union{Nothing, LambdaFunction}}()
-  @testset "Lambda Function" begin 
+  @testset "Lambda Function" begin
     foreach(enumerate(test_list)) do (num, use_bl)
       if use_bl
-        this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)  
+        this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)
       else
         this_lambda_function = nothing
       end
@@ -344,7 +347,7 @@ function test_responder(
 end
 
 function test_local_image(
-    res::AbstractResponder, 
+    res::AbstractResponder,
     num::Int64,
     use_config::Bool,
     package_compile::Bool,
@@ -352,8 +355,8 @@ function test_local_image(
     expected_test_result::Any,
     expected_labels::ExpectedLabels,
   )::LocalImage
-  local_image = create_local_image(res; 
-                                   aws_config = use_config ? aws_config : nothing, 
+  local_image = create_local_image(res;
+                                   aws_config = use_config ? aws_config : nothing,
                                    package_compile = package_compile,
                                    user_defined_labels = expected_labels.user_defined_labels,
                                   )
@@ -397,13 +400,13 @@ function test_package_compile(;
 end
 
 function test_ecr_repo(
-    res::AbstractResponder, 
-    local_image::LocalImage, 
+    res::AbstractResponder,
+    local_image::LocalImage,
     expected_labels::ExpectedLabels,
   )::Tuple{ECRRepo, RemoteImage}
   remote_image = push_to_ecr!(local_image)
   ecr_repo = remote_image.ecr_repo
-  @testset "Test remote image" begin 
+  @testset "Test remote image" begin
     @test Jot.matches(local_image, ecr_repo)
     @test Jot.is_jot_generated(remote_image)
     @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
@@ -420,15 +423,15 @@ end
 
 function test_aws_role()::AWSRole
   aws_role =  create_aws_role("jot-test-role-"*test_suffix)
-  @testset "Test AWS role" begin 
+  @testset "Test AWS role" begin
     @test aws_role in get_all_aws_roles()
   end
   aws_role
 end
 
 function test_lambda_function(
-    ecr_repo::ECRRepo, 
-    remote_image::RemoteImage, 
+    ecr_repo::ECRRepo,
+    remote_image::RemoteImage,
     aws_role::AWSRole,
     test_request::Any,
     expected::Any,
@@ -440,7 +443,7 @@ function test_lambda_function(
     @test Jot.matches(remote_image, lambda_function)
     # Check that we can find it
     @test lambda_function in Jot.get_all_lambda_functions()
-    # Invoke it 
+    # Invoke it
     response = invoke_function(test_request, lambda_function; check_state=true)
     @test response == expected
     # Create the same thing using a remote image

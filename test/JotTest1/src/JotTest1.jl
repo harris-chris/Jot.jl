@@ -3,7 +3,7 @@ module JotTest1
 using Format
 
 function response_func(d::Dict)
-  if haskey(d, "add suffix") 
+  if haskey(d, "add suffix")
     s = d["add suffix"] |> String
     package_root = Base.moduleroot(JotTest1) |> pathof |> splitpath
     rs_path = joinpath(package_root[begin:end-2]..., "response_suffix")
