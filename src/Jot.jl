@@ -425,8 +425,8 @@ where time is the time taken for a response to be received, in seconds.
 
 The test will use an already-running docker container, if one exists. If this is the case then the
 `then_stop` parameter tells the function whether to stop the docker container after running the
-test. If the run_test function finds no docker container already running, it will start one, and
-then shut it down afterwards, regardless of the value of `then_stop`.
+test. If the `run_test` function finds no docker container already running, it will start one, and
+then shut it down afterwards. This is true regardless of the value of `then_stop`.
 """
 function run_test(
     image::LocalImage,
@@ -511,6 +511,7 @@ function push_to_ecr!(image::LocalImage)::RemoteImage
     existing_repo
   end
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
+  @info "Pushing image to ECR; this may take a few minutes"
   readchomp(`bash -c $push_script`)
   all_images = get_all_local_images()
   img_idx = findfirst(img -> img.ID[1:docker_hash_limit] == image.ID[1:docker_hash_limit], all_images)

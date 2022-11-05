@@ -74,12 +74,6 @@ get_responder(
     registry_urls = Vector{String}(),
   )
 get_responder(
-    package_spec::Pkg.Types.PackageSpec,
-    response_function::Symbol,
-    response_function_param_type::Type;
-    registry_urls::Vector{String} = Vector{String}(),
-  )
-get_responder(
     mod::Module,
     response_function::Symbol,
     response_function_param_type::Type;

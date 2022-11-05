@@ -23,8 +23,8 @@ function start_lambda_server(host::String, port::Int64)
   function get_respond(req::HTTP.Request)
     println("received get request")
     return HTTP.Response(
-                         200, 
-                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"]; 
+                         200,
+                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"];
                          body=JSON3.write(3),
                         )
   end
@@ -51,8 +51,8 @@ function get_lambda_dummy_server_jl()::String
   function get_respond(req::HTTP.Request)
     println("received get request")
     return HTTP.Response(
-                         200, 
-                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"]; 
+                         200,
+                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"];
                          body=JSON3.write(3),
                         )
   end
@@ -84,9 +84,9 @@ function get_init_script(
   pc_script = """
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="1.7.7"))
   using PackageCompiler
-  @async Jot.start_lambda_server("127.0.0.1", 9001) 
+  @async Jot.start_lambda_server("127.0.0.1", 9001)
   create_sysimage(
-                  :Jot, 
+                  :Jot,
                   precompile_execution_file="precompile.jl",
                   replace_default=true,
                   cpu_target="$cpu_target",

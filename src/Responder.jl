@@ -22,7 +22,6 @@ A responder that is located locally (in the temporary `build_dir`) and is a Juli
 usually created by the `Responder` function.
 """
 mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
-  # TODO: remove pkg attribute?
   original_path::String
   response_function::Symbol
   response_function_param_type::Type{IT}
@@ -47,20 +46,6 @@ function get_responder_from_local_package(
   println("Pinned $package_name.$response_function with tree hash $(get_tree_hash(build_dir)) to $build_dir")
   LocalPackageResponder(path, response_function, IT, build_dir, package_name, registry_urls)
 end
-
-# function get_responder_from_package_spec(
-#       pkg::Pkg.Types.PackageSpec,
-#       path::String,
-#       response_function::Symbol,
-#       ::Type{IT};
-#       registry_urls::Vector{String} = Vector{String}(),
-#     )::LocalPackageResponder{IT} where {IT}
-#     build_dir = create_build_directory()
-#     package_name = get_responder_package_name(path)
-#     move_local_to_build_directory(build_dir, path, package_name)
-#     println("Pinned $package_name.$response_function with tree hash $(get_tree_hash(build_dir)) to $build_dir")
-#     LocalPackageResponder(path, response_function, IT, build_dir, package_name, registry_urls)
-#   end
 
 function get_responder_from_package_url(
     url::String,
@@ -102,7 +87,6 @@ function get_responder_from_local_script(
     for registry_url in registry_urls
       Pkg.Registry.add(RegistrySpec(url = registry_url))
     end
-    # Need to ad registry_urls at this point!
     Pkg.generate(pkg_name)
     Pkg.activate("./$pkg_name")
     length(dependencies) > 0 && Pkg.add(dependencies)
@@ -197,36 +181,6 @@ function get_responder(
     end
   else
     error("path/url $path_url not recognized")
-  end
-end
-
-"""
-    function get_responder(
-        package_spec::Pkg.Types.PackageSpec,
-        response_function::Symbol,
-        response_function_param_type::Type{IT};
-        registry_urls::Vector{String} = Vector{String}(),
-      )::AbstractResponder{IT} where {IT}
-
-Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
-Lambda calls.
-
-`package_spec` is an instance of `PackageSpec`, part of the standard Julia `Pkg` library.
-
-`response_function` is a function within this module that you would like to use to respond to AWS
-Lambda calls. `response_function_param_type` specifies the type that the response function is
-expecting as its only argument.
-"""
-function get_responder(
-    package_spec::Pkg.Types.PackageSpec,
-    response_function::Symbol,
-    response_function_param_type::Type{IT};
-    registry_urls::Vector{String} = Vector{String}(),
-  )::AbstractResponder{IT} where {IT}
-  if !isnothing(package_spec.repo.source)
-    get_responder(package_spec.repo.source, response_function, IT; registry_urls=registry_urls)
-  else
-    error("Not implemented")
   end
 end
 

@@ -12,7 +12,7 @@
         exists::Bool = true
     end
 
-Represents an AWS ECR (Elastic Container Registry) Repo. Should not be instantiated directly. 
+Represents an AWS ECR (Elastic Container Registry) Repo. Should not be instantiated directly.
 If `exists` is `true`, then the image is assumed to exit and so should be visible from utilities
 such as `docker image ls`.
 """
@@ -27,7 +27,7 @@ such as `docker image ls`.
   encryptionConfiguration::Union{Missing, Any} = missing
   exists::Bool = true
 end
-StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{ECRRepo}) = StructTypes.Mutable()
 Base.:(==)(a::ECRRepo, b::ECRRepo) = a.repositoryUri == b.repositoryUri
 
 """

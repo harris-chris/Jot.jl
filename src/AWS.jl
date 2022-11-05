@@ -7,14 +7,14 @@
 Defines the Amazon Web Services account id and region to use.
 
 Your current AWS CLI profile should match the account id specified here. To check that this is the
-case, run `aws sts get-caller-identity --query Account --output text` from the command line. To 
+case, run `aws sts get-caller-identity --query Account --output text` from the command line. To
 see available profiles, run `aws configure list-profiles`.
 """
 @with_kw mutable struct AWSConfig
   account_id::Union{Missing, String} = missing
   region::Union{Missing, String} = missing
 end
-StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{AWSConfig}) = StructTypes.Mutable()
 
 function get_aws_config()::AWSConfig
   AWSConfig(
@@ -28,7 +28,7 @@ end
   Principal::Union{Missing, Dict{String, Any}} = missing
   Action::Union{Missing, String} = missing
 end
-StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()
 Base.:(==)(a::AWSRolePolicyStatement, b::AWSRolePolicyStatement) = (
   a.Effect == b.Effect && a.Principal == b.Principal && a.Action == b.Action)
 
@@ -36,7 +36,7 @@ Base.:(==)(a::AWSRolePolicyStatement, b::AWSRolePolicyStatement) = (
   Version::Union{Missing, String} = missing
   Statement::Vector{AWSRolePolicyStatement} = Vector{AWSRolePolicyStatement}()
 end
-StructTypes.StructType(::Type{AWSRolePolicyDocument}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{AWSRolePolicyDocument}) = StructTypes.Mutable()
 Base.:(==)(a::AWSRolePolicyDocument, b::AWSRolePolicyDocument) = (a.Version == b.Version && a.Statement == b.Statement)
 
 @with_kw mutable struct AWSRole
@@ -49,7 +49,7 @@ Base.:(==)(a::AWSRolePolicyDocument, b::AWSRolePolicyDocument) = (a.Version == b
   MaxSessionDuration::Union{Missing, Int64} = missing
   exists::Bool = true
 end
-StructTypes.StructType(::Type{AWSRole}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{AWSRole}) = StructTypes.Mutable()
 Base.:(==)(a::AWSRole, b::AWSRole) = a.RoleId == b.RoleId
 
 const lambda_execution_policy_statement = AWSRolePolicyStatement(
@@ -84,7 +84,7 @@ end
 Create an AWS Role with Lambda execution permissions.
 """
 function create_aws_role(role_name::String)::AWSRole
-  existing_role = get_aws_role(role_name) 
+  existing_role = get_aws_role(role_name)
   @debug role_name
   @debug existing_role
   if !isnothing(existing_role)
@@ -97,7 +97,7 @@ function create_aws_role(role_name::String)::AWSRole
     create_script = get_create_lambda_role_script(role_name)
     role_json = readchomp(`bash -c $create_script`)
     @info "Creating role $role_name ..."
-    sleep(8);
+    sleep(10);
     JSON3.read(role_json, Dict{String, AWSRole})["Role"]
   end
 end
@@ -116,7 +116,7 @@ function delete!(role::AWSRole)
 end
 
 function get_role_arn_string(
-    aws_config::AWSConfig, 
+    aws_config::AWSConfig,
     role_name::String,
   )::String
   "arn:aws:iam::$(aws_config.account_id):role/$role_name"
@@ -144,6 +144,6 @@ function create_lambda_execution_role(role_name)
 end
 
 function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
-  lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement 
+  lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement
 end
 
