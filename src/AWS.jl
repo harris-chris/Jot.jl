@@ -98,6 +98,7 @@ function create_aws_role(role_name::String)::AWSRole
     role_json = readchomp(`bash -c $create_script`)
     @info "Creating role $role_name ..."
     sleep(10);
+    @debug role_json
     JSON3.read(role_json, Dict{String, AWSRole})["Role"]
   end
 end
@@ -111,6 +112,7 @@ be usable.
 function delete!(role::AWSRole)
   role.exists || error("Role does not exist")
   delete_script = get_delete_lambda_role_script(role.RoleName)
+  @info "Deleting " * role.RoleName
   run(`bash -c $delete_script`)
   role.exists = false
 end

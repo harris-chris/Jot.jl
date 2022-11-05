@@ -24,8 +24,8 @@ end
         exists::Bool = true
     end
 
-Represents a Lambda function, hosted on AWS. Should not be instantiated directly. If `exists` is 
-`true`, then the image is assumed to exit and so should be visible from utilities such as `aws 
+Represents a Lambda function, hosted on AWS. Should not be instantiated directly. If `exists` is
+`true`, then the image is assumed to exit and so should be visible from utilities such as `aws
 lambda list-functions`
 """
 @with_kw mutable struct LambdaFunction <: LambdaComponent
@@ -46,13 +46,13 @@ lambda list-functions`
   PackageType::Union{Missing, String} = missing
   exists::Bool = true
 end
-StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{LambdaFunction}) = StructTypes.Mutable()
 Base.:(==)(a::LambdaFunction, b::LambdaFunction) = (a.CodeSha256 == b.CodeSha256)
 
 """
     get_all_lambda_functions(jot_generated_only::Bool = true)::Vector{LambdaFunction}
- 
-Returns a vector of `LambdaFunction`s, representing all AWS-hosted Lambda functions. 
+
+Returns a vector of `LambdaFunction`s, representing all AWS-hosted Lambda functions.
 
 `jot_generated_only` specifies whether to filter for jot-generated lambda functions only.
 """
@@ -64,7 +64,7 @@ end
 
 """
     get_lambda_function(function_name::String)::Union{Nothing, LambdaFunction}
- 
+
 Queries AWS and returns a `LambdaFunction` object, representing a Lambda Function hosted on AWS.
 """
 function get_lambda_function(function_name::String)::Union{Nothing, LambdaFunction}
@@ -75,8 +75,8 @@ end
 
 """
     get_lambda_function(repo::ECRRepo)::Union{Nothing, LambdaFunction}
- 
-Queries AWS and returns a `LambdaFunction` object, representing a Lambda Function hosted on AWS. 
+
+Queries AWS and returns a `LambdaFunction` object, representing a Lambda Function hosted on AWS.
 The Lambda function returned is based off the given `ECRRepo` instance.
 """
 function get_lambda_function(repo::ECRRepo)::Union{Nothing, LambdaFunction}
@@ -87,8 +87,8 @@ end
 
 """
     get_remote_image(lambda_function::LambdaFunction)::RemoteImage
- 
-Queries AWS and returns a `RemoteImage` object, representing a docker image hosted on AWS ECR. 
+
+Queries AWS and returns a `RemoteImage` object, representing a docker image hosted on AWS ECR.
 The RemoteImage returned provides the code for the provided `lambda_function`.
 """
 function get_remote_image(lambda_function::LambdaFunction)::RemoteImage
@@ -104,13 +104,15 @@ end
 Deletes a Lambda function hosted on AWS. The LambdaFunction instance continues to exist, but has its
 `exists` attribute set to `false`.
 """
-function delete!(func::LambdaFunction)
+function delete!(func::LambdaFunction; delete_role::Bool = true)
   func.exists || error("Function does not exist")
   delete_script = get_delete_lambda_function_script(func.FunctionArn)
   output = readchomp(`bash -c $delete_script`)
-  func.exists = false 
-  associated_role = get_aws_role(create_role_name(func.FunctionName))
-  !isnothing(associated_role) && delete!(associated_role)
+  func.exists = false
+  if delete_role
+    associated_role = get_aws_role(create_role_name(func.FunctionName))
+    !isnothing(associated_role) && delete!(associated_role)
+  end
   nothing
 end
 
@@ -138,11 +140,10 @@ Invokes a Lambda function, hosted on AWS. `request` is the argument that it will
 This will be automatically converted to JSON before sending, so should match the
 `response_function_param_type` of the responder used to create the function.
 
-Returns the invoked Lambda function response, or throws an error if the invoked Lambda function has 
-returned an error status.
+Returns the invoked Lambda function response, or throws an error if the invoked Lambda function has returned an error status.
 
 If `check_state` is `true`, the function will wait for the AWS Lambda function to become available
-before sending the request. This can be useful if the Lambda function has been created within the 
+before sending the request. This can be useful if the Lambda function has been created within the
 last few seconds, since there is a short set-up time before it can be called.
 """
 function invoke_function(
@@ -157,8 +158,8 @@ function invoke_function(
   end
   request_json = JSON3.write(request)
   outfile_path = tempname()
-  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn, 
-                                                    request_json, 
+  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn,
+                                                    request_json,
                                                     outfile_path)
   status = readchomp(`bash -c $invoke_script`) |> JSON3.read
   response = open(outfile_path, "r") do f

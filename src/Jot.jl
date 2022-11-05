@@ -592,7 +592,7 @@ function create_lambda_function(
   existing_lf = get_lambda_function(function_name)
   if !isnothing(existing_lf)
     @info "Lambda function $function_name already exists; overwriting"
-    delete!(existing_lf)
+    delete!(existing_lf; delete_role = false)
   end
   aws_role_has_lambda_execution_permissions(role) || error("Role $role does not have permission to execute Lambda functions")
   create_script = get_create_lambda_function_script(function_name,
