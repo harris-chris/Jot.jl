@@ -15,6 +15,15 @@ using JotTest2
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
 
+@enum MultiTo begin
+  responder
+  local_image
+  package_compiler
+  multi_to
+  aws_role
+  lambda_function
+end
+
 function reset_response_suffix(test_path::String)::String
   response_suffix = randstring(12)
   open(joinpath(jot_path, test_path), "w") do rsfile
@@ -45,12 +54,12 @@ function test_actual_labels_against_expected(
   all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
 end
 
-function run_tests(;
+function run_tests(
     clean_up::Bool=true,
     example_simple::Bool=false,
     example_components::Bool=false,
     quartet::Bool=false,
-    quartet_tests::Vector{Bool}=[i == rand(1:4) ? true : false for i in 1:4],
+    quartet_tests_bl::Vector{Bool}=[true for i in 1:4],
     quartet_to::AbstractString="lambda_function",
   )
   ENV["JOT_TEST_RUNNING"] = "true"
@@ -59,7 +68,7 @@ function run_tests(;
   end
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  quartet && run_quartet_test(quartet_tests, quartet_to, clean_up)
+  quartet && run_quartet_test(quartet_tests_bl, quartet_to, clean_up)
   ENV["JOT_TEST_RUNNING"] = "false"
 end
 
@@ -157,9 +166,140 @@ function clean_up_example_test()
   !isnothing(existing_li) && delete!(existing_li)
 end
 
+struct GetResponderArgs
+  responder_obj::Union{String, Module}
+  responder_func::Symbol
+  responder_param_type::Type{A}
+  dependencies = Vector{String}
+  registry_urls = Vector{String}
+end
+
+struct ResponderFunctionTestArgs
+  good_arg::Any
+  expected_response::Any
+  invalid_arg::Any
+end
+
+struct CreateLocalImageArgs
+  use_aws_config::Bool
+  package_compile::Bool
+  expected_labels::ExpectedLabels
+end
+
+struct SingleTestData
+  ok_to_test::Bool
+  get_responder_args::GetResponderArgs
+  responder_function_test_args::ResponderFunctionTestArgs
+  create_local_image_args::CreateLocalImageArgs
+end
+
+multi_test_1 = SingleTestData(
+  ok_to_test = true,
+  get_responder_args = GetResponderArgs(
+    responder_obj=JotTest1,
+    responder_func=:response_func,
+    responder_param_type=Dict,
+    dependencies=Vector{String}(),
+    registry_urls=Vector{String}(),
+  ),
+  function_tests_args=ResponderFunctionTestArgs(
+    good_arg=Dict("double" => 4.5),
+    expected_response=9.0,
+    invalid_arg=[1,2]
+  ),
+  create_local_image_args=CreateLocalImageArgs(
+    use_aws_config=false,
+    package_compile=true,
+    expected_labels=ExpectedLabels(
+      RESPONDER_PACKAGE_NAME="JotTest1",
+      RESPONDER_FUNCTION_NAME="response_func",
+      RESPONDER_PKG_SOURCE=joinpath(jot_path, "test/JotTest1"),
+      user_defined_labels=Dict("TEST"=>"1"),
+    )
+  )
+)
+
+multi_test_2 = SingleTestData(
+  ok_to_test = true,
+  get_responder_args = GetResponderArgs(
+    responder_obj=JotTest2,
+    responder_func=:response_func,
+    responder_param_type=Dict,
+    dependencies=Vector{String}(),
+    registry_urls=["https://github.com/NREL/JuliaRegistry.git"],
+  ),
+  function_tests_args=ResponderFunctionTestArgs(
+    good_arg=Dict("add suffix" => "test-"),
+    expected_response="test-"*get_response_suffix("test/JotTest2/response_suffix"),
+    invalid_arg=[1,2]
+  ),
+  create_local_image_args=CreateLocalImageArgs(
+    use_aws_config=true,
+    package_compile=false,
+    expected_labels=ExpectedLabels(
+      RESPONDER_PACKAGE_NAME="JotTest2",
+      RESPONDER_FUNCTION_NAME="response_func",
+      RESPONDER_PKG_SOURCE=joinpath(jot_path, "test/JotTest2"),
+      user_defined_labels=Dict("TEST"=>"2"),
+    )
+  )
+)
+
+multi_test_3 = SingleTestData(
+  ok_to_test = true,
+  get_responder_args = GetResponderArgs(
+    responder_obj="https://github.com/harris-chris/JotTest3",
+    responder_func=:response_func,
+    responder_param_type=Vector{Float64},
+    dependencies=Vector{String}(),
+    registry_urls=Vector{String}(),
+  ),
+  function_tests_args=ResponderFunctionTestArgs(
+    good_arg=[1, 2, 3, 4],
+    expected_response=Vector{Float64}([1.0, 1.0, 2.0, 6.0]),
+    invalid_arg="string arg",
+  ),
+  create_local_image_args=CreateLocalImageArgs(
+    use_aws_config=false,
+    package_compile=false,
+    expected_labels=ExpectedLabels(
+      RESPONDER_PACKAGE_NAME="JotTest3",
+      RESPONDER_FUNCTION_NAME="response_func",
+      RESPONDER_PKG_SOURCE="https://github.com/harris-chris/JotTest3",
+      user_defined_labels=Dict("TEST"=>"3"),
+    )
+  )
+)
+
+multi_test_4 = SingleTestData(
+  ok_to_test = true,
+  get_responder_args = GetResponderArgs(
+    responder_obj=joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+    responder_func=:map_log_gamma,
+    responder_param_type=Vector{Float64},
+    dependencies=["SpecialFunctions", "PRAS"],
+    registry_urls=["https://github.com/NREL/JuliaRegistry.git"],
+  ),
+  function_tests_args=ResponderFunctionTestArgs(
+    good_arg=[1, 2, 3, 4],
+    expected_response=Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]),
+    invalid_arg=Dict("this" => "that"),
+  ),
+  create_local_image_args=CreateLocalImageArgs(
+    use_aws_config=false,
+    package_compile=false,
+    expected_labels=ExpectedLabels(
+      RESPONDER_PACKAGE_NAME=Jot.get_package_name_from_script_name("jot-test-4.jl"),
+      RESPONDER_FUNCTION_NAME="map_log_gamma",
+      RESPONDER_PKG_SOURCE=joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+      user_defined_labels=Dict("TEST"=>"4"),
+    )
+  )
+)
+
 function run_quartet_test(
     test_list::Vector{Bool},
-    to::AbstractString,
+    multi_to::MultiTo,
     clean_up::Bool
   )
   reset_response_suffix("test/JotTest1/response_suffix")
@@ -167,47 +307,39 @@ function run_quartet_test(
 
   ResponderType = Tuple{Tuple{Any, Symbol, Type}, Dict}
   responder_inputs::Vector{Union{Nothing, ResponderType}} = [
-    ((JotTest1, :response_func, Dict), Dict()),
-    ((JotTest2, :response_func, Dict), Dict(
-     :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
-    (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
-    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}),
-     Dict(:dependencies => ["SpecialFunctions", "PRAS"],
-          :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
   ]
   responder_inputs[.!test_list] .= nothing
 
   TestDataType = Tuple{Any, Any, Any}
   test_data::Vector{Union{Nothing, TestDataType}} = [ # Actual, expected, bad input
-    (Dict("double" => 4.5), 9.0, [1,2]),
-    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
-    ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
-    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
   ]
   test_data[.!test_list] .= nothing
 
   responders = Vector{Union{Nothing, AbstractResponder}}()
   @testset "Test Responder" begin
-    foreach(responder_inputs) do input
-      if isnothing(input)
+    foreach(enumerate(responder_inputs)) do (i, input)
+      if test_list[i] == false
         push!(responders, nothing)
       else
         args = first(input)
         kwargs = last(input)
-        push!(responders, test_responder(args...; kwargs))
+	try
+	  this_responder = test_responder(args...; kwargs)
+          push!(responders, this_responder)
+        catch e
+          push!(responders, nothing)
+          test_list[i] = false
+        end
       end
     end
   end
-  if to == "responder"
+  if multi_to == responder
     clean_up && quartet_clean_up()
     return
   end
 
   LocalImageInput = Tuple{Int64, Bool, Bool}
   local_image_config::Vector{Union{Nothing, LocalImageInput}} = [ # number, use_config, package_compile
-    (1, false, true),
-    (2, true, false),
-    (3, false, false),
     (4, false, false),
   ]
   local_image_config[.!test_list] .= nothing
@@ -218,22 +350,18 @@ function run_quartet_test(
 
   UserLabel = Dict{String, String}
   user_labels::Vector{Union{Nothing, UserLabel}} = [
-                 Dict("TEST"=>"1"),
-                 Dict("TEST"=>"2"),
-                 Dict("TEST"=>"3"),
                  Dict("TEST"=>"4"),
                 ]
   user_labels[.!test_list] .= nothing
 
   name_rfname_paths = [
-                      ("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1")),
-                      ("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2")),
-                      ("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3"),
-                      (Jot.get_package_name_from_script_name("jot-test-4.jl"), "map_log_gamma", joinpath(jot_path, "test/JotTest4/jot-test-4.jl"))
+                      (, , ),
                      ]
 
   expected_labels::Vector{Union{Nothing, ExpectedLabels}} = [
-    isnothing(user_label) ? nothing : ExpectedLabels(name_rfname_path..., user_label) for (user_label, name_rfname_path) in zip(user_labels, name_rfname_paths)
+    isnothing(user_label) ? nothing : ExpectedLabels(name_rfname_path..., user_label)
+    for (user_label, name_rfname_path)
+    in zip(user_labels, name_rfname_paths)
   ]
 
   if !(length(test_data) == length(responders) == length(local_image_inputs) == length(expected_labels))
@@ -259,18 +387,28 @@ function run_quartet_test(
 
   local_images = Vector{Union{Nothing, LocalImage}}()
   @testset "Local Images" begin
-    foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
-      if isnothing(li_inputs)
+    foreach(enumerate(test_list)) do (i, test_ok)
+      this_local_image_inputs = local_image_inputs[i]
+      this_expected_labels = expected_labels[i]
+      this_test_datum = test_data[i]
+      if !test_ok
         push!(local_images, nothing)
       else
-        (test_input, expected_result) = (test_datum[1], test_datum[2])
-        this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
-        push!(local_images, this_li)
+        (test_input, expected_result) = (this_test_datum[1], this_test_datum[2])
+        try
+          this_local_image = test_local_image(
+            this_local_image_inputs..., test_input, expected_result, this_expected_labels
+          )
+          push!(local_images, this_local_image)
+        catch e
+          push!(local_images, nothing)
+          test_list[i] = false
+        end
       end
     end
   end
 
-  if to == "local_image"
+  if multi_to == local_image
     clean_up && quartet_clean_up()
     return
   end
@@ -285,7 +423,7 @@ function run_quartet_test(
       )
     end
   end
-  if to == "package_compiler"
+  if multi_to == package_compiler
     clean_up && quartet_clean_up()
     return
   end
@@ -293,41 +431,51 @@ function run_quartet_test(
   repos = Vector{Union{Nothing, ECRRepo}}()
   remote_images = Vector{Union{Nothing, RemoteImage}}()
   @testset "ECR Repo" begin
-    foreach(enumerate(test_list)) do (num, use_bl)
-      if use_bl
-        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num], expected_labels[num])
+    foreach(enumerate(test_list)) do (i, test_ok)
+      (this_repo, this_remote_image) = if test_ok
+        try
+          test_ecr_repo(responders[i], local_images[i], expected_labels[i])
+        catch e
+          test_list[i] = false
+          (nothing, nothing)
+        end
       else
-        (this_repo, this_remote_image) = (nothing, nothing)
+        (nothing, nothing)
       end
       push!(repos, this_repo)
       push!(remote_images, this_remote_image)
     end
   end
 
-  if to == "ecr_repo"
+  if multi_to == ecr_repo
     clean_up && quartet_clean_up()
     return
   end
 
   aws_role = test_aws_role()
-  if to == "aws_role"
+  if multi_to == aws_role
     clean_up && quartet_clean_up()
     return
   end
 
   lambda_functions = Vector{Union{Nothing, LambdaFunction}}()
   @testset "Lambda Function" begin
-    foreach(enumerate(test_list)) do (num, use_bl)
-      if use_bl
-        this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)
+    foreach(enumerate(test_list)) do (i, test_ok)
+      this_lambda_function = if test_ok
+        try
+          test_lambda_function(repos[i], remote_images[i], aws_role, test_data[i]...)
+        catch e
+          test_list[i] = false
+          nothing
+        end
       else
-        this_lambda_function = nothing
+        nothing
       end
       push!(lambda_functions, this_lambda_function)
     end
   end
 
-  if to == "lambda_function"
+  if multi_to == lambda_function
     clean_up && quartet_clean_up()
     return
   end
@@ -487,13 +635,32 @@ function parse_arg(val::AbstractString)
   to_parse ? eval(Meta.parse(val)) : val
 end
 
+function show_help()::Nothing
+  println("Run Jot.jl tests")
+  println("By default no tests are run. Specify the tests to run using the following:")
+  println("--example-simple to test the example on the index page of the documentation")
+  println("--example-components to test the lambda components example on the index page")
+  println("--multi=[1,4] to, eg, run tests 1 and 4 of the multiple test set")
+  println("--multi=true to run all tests of the multiple test set")
+  m_opts = join(instances(MultiTo), " | ")
+  println("--multi-to=$(m_opts) to have the multi tests run to a specific point only")
+  println("    DEFAULT: lambda_function")
+  println("--no-clean-up to have the tests skip tear down")
+  println("--full to run all possible tests")
+end
+
 @testset "All Tests" begin
-  test_args = Dict(key => val for (key, val) in map(x -> split(x, '='), ARGS))
-  test_args = Dict(Symbol(key) => parse_arg(val) for (key, val) in test_args)
-  @info test_args
-  if haskey(test_args, :quartet_tests)
-    test_args[:quartet_tests] = [i in test_args[:quartet_tests] for i in 1:4]
+  if ("--help" in ARGS || length(ARGS) == 0)
+    show_help()
+  else
+    @info test_args
+    multi_to
+    run_tests(
+      clean_up="--no-clean-up" in ARGS ? false : true,
+      example_simple="--example-simple" in ARGS ? true : false,
+      example_components="--example-components" in ARGS ? true : false,
+      example_components="--example-components" in ARGS ? true : false,
+      ;test_args...)
   end
-  run_tests(;test_args...)
 end
 
