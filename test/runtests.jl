@@ -57,17 +57,13 @@ function run_tests(
     clean_up::Bool=true,
     example_simple::Bool=false,
     example_components::Bool=false,
-    quartet::Bool=false,
-    quartet_tests_bl::Vector{Bool}=[true for i in 1:4],
-    quartet_to::AbstractString="lambda_function",
+    multi_tests_bl::Vector{Bool}=[true for i in 1:4],
+    multi_tests_to::AbstractString="lambda_function",
   )
   ENV["JOT_TEST_RUNNING"] = "true"
-  if all([example_simple, example_components, quartet] .== false)
-    example_simple = true; example_components = true; quartet = true
-  end
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  quartet && run_quartet_test(quartet_tests_bl, quartet_to, clean_up)
+  quartet && run_multi_tests(multi_tests_bl, multi_tests_to, clean_up)
   ENV["JOT_TEST_RUNNING"] = "false"
 end
 
@@ -597,18 +593,70 @@ function show_help()::Nothing
   println("--full to run all possible tests")
 end
 
+
+function parse_clean_up(ARGS::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--no-clean-up" in ARGS ? false : true, ARGS[ARGS.!="--no-clean-up"])
+end
+
+function parse_example_simple(ARGS::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--example_simple" in ARGS ? false : true, ARGS[ARGS.!="--example_simple"])
+end
+
+function parse_example_simple(ARGS::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--example_components" in ARGS ? false : true, ARGS[ARGS.!="--example_components"])
+end
+
+function parse_multi_tests_bl(args::Vector{String})::Tuple{Vector{Bool}, Vector{String}}
+  multi_args = filter(x -> length(x >= 8) && x[begin:8] == "--multi=", args)
+  multi_tests_bl = if length(multi_args) == 1
+    val = multi_args[end][9:end]
+    if val[1] == '[' && val[end] == ']'
+      vec_int = eval(Meta.parse(val))
+      [true if i in vec_int for i in range(1, num_multi_tests)]
+    else
+      fill(eval(Meta.parse(val)), (num_multi_tests))
+    end
+  elseif length(multi_args) > 1
+    error("--multi has been passed as an argument more than once")
+  else
+    fill(false, (num_multi_tests))
+  end
+  (multi_tests_bl, filter(x -> length(x >= 8) && x[begin:8] != "--multi=", args))
+end
+
+function get_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{String}}
+  multi_args = filter(x -> length(x >= 11) && x[begin:11] == "--multi-to=", args)
+  relevant_args = filter(x -> Symbol(x) in )
+  tests_to = if length(relevant_args) == 1
+    arg = relevant_args[1]
+    if Symbol(arg) in Symbol.(instances(MultiTo))
+      eval(Meta.parse(arg))
+    else
+      valid = join(instances(MultiTo), " | ")
+      error("--multi-to argument $arg is not one of $(valid)")
+    end
+  elseif length(relevant_args) > 1
+    error("--multi has been passed as an argument more than once")
+  else
+    lambda_function
+  end
+  (tests_to, filter(x -> length(x >= 11) && x[begin:11] != "--multi-to=", args))
+end
+
 @testset "All Tests" begin
   if ("--help" in ARGS || length(ARGS) == 0)
     show_help()
   else
-    @info test_args
-    multi_to
+    clean_up, ARGS = parse_clean_up(ARGS)
+    example_simple, ARGS = parse_example_simple(ARGS)
+    example_components, ARGS = parse_example_components(ARGS)
+    multi_tests_bl, ARGS = parse_multi_tests_bl(ARGS)
+    multi_tests_to, ARGS = parse_multi_tests_to(ARGS)
+    if length(ARGS != 0)
+      error("Args $(join(ARGS, ", ")) not recognized")
     run_tests(
-      clean_up="--no-clean-up" in ARGS ? false : true,
-      example_simple="--example-simple" in ARGS ? true : false,
-      example_components="--example-components" in ARGS ? true : false,
-      example_components="--example-components" in ARGS ? true : false,
-      ;test_args...)
+      clean_up, example_simple, example_components, multi_tests_bl, multi_tests_to
+    )
   end
 end
 
