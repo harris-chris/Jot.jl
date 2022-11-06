@@ -2,7 +2,6 @@ module Jot
 
 # IMPORTS
 using Base.Filesystem
-using Dates
 using JSON3
 using OrderedCollections
 using Parameters
@@ -40,6 +39,11 @@ export LambdaComponents
 
 # CONSTANTS
 const docker_hash_limit = 12
+const runtime_path = "/var/runtime"
+const julia_depot_path = "/var/runtime/julia_depot"
+const temp_path = "/tmp"
+const jot_github_url = "https://github.com/harris-chris/Jot.jl#main"
+const writable_depot_folders = ["logs", "scratchspaces"]
 
 abstract type LambdaComponent end
 
@@ -157,8 +161,10 @@ function add_scripts_to_build_dir(
     responder::AbstractResponder,
   )
   add_to_build(content, fname) = write_to_build_dir(content, responder.build_dir, fname)
+  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path)
   bootstrap_script |> x -> add_to_build(x, "bootstrap")
-  get_init_script(package_compile, julia_cpu_target) |> x -> add_to_build(x, "init.jl")
+  init_script = get_init_script(package_compile, julia_cpu_target)
+  add_to_build(init_script, "init.jl")
   if package_compile
     get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl")
   end
@@ -192,16 +198,19 @@ function get_dockerfile(
     *, [
     dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
-    dockerfile_add_runtime_directories(),
+    dockerfile_add_runtime_directories(julia_depot_path, temp_path, runtime_path),
     dockerfile_add_additional_registries(responder.registry_urls),
     dockerfile_copy_build_dir(),
-    dockerfile_add_responder(responder),
+    dockerfile_add_responder(runtime_path, responder),
     dockerfile_add_labels(combined_labels),
     dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
-    dockerfile_add_bootstrap(responder.package_name,
-                             String(responder.response_function),
-                             responder.response_function_param_type),
+    dockerfile_add_bootstrap(
+      runtime_path,
+      responder.package_name,
+      String(responder.response_function),
+      responder.response_function_param_type
+    ),
     dockerfile_add_precompile(package_compile),
   ]; init = "")
   dockerfile_update(generated_dockerfile)

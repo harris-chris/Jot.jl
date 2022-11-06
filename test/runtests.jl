@@ -14,6 +14,24 @@ using JotTest2
 
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
+const jot_multi_test_tag_key = "JOT_MULTI_TEST_NUM"
+
+@enum MultiTo begin
+  responder = 1
+  local_image = 2
+  ecr_repo = 3
+  lambda_function = 4
+  package_compiler_local = 5
+  package_compiler_lambda = 6
+  to_end = 1000
+end
+
+function continue_tests(
+    multi_to::MultiTo,
+    up_to::MultiTo,
+  )::Bool
+  Int(up_to) <= Int(multi_to)
+end
 
 function reset_response_suffix(test_path::String)::String
   response_suffix = randstring(12)
@@ -45,26 +63,40 @@ function test_actual_labels_against_expected(
   all([getfield(actual, fn) == getfield(expected, fn) for fn in fieldnames(ExpectedLabels)])
 end
 
-function run_tests(;
-    clean_up::Bool=true,
-    example_simple::Bool=false,
-    example_components::Bool=false,
-    quartet::Bool=false,
-    quartet_tests::Vector{Bool}=[i == rand(1:4) ? true : false for i in 1:4],
-    quartet_to::AbstractString="lambda_function",
+function run_tests(
+    example_simple::Bool,
+    example_components::Bool,
+    multi_tests_list::Union{Nothing, Vector{Int64}},
+    compile_tests_list::Union{Nothing, Vector{Int64}},
+    multi_tests_to::MultiTo,
+    clean_up::Bool,
+    clean_up_only::Bool,
   )
-  ENV["JOT_TEST_RUNNING"] = "true"
-  if all([example_simple, example_components, quartet] .== false)
-    example_simple = true; example_components = true; quartet = true
+  if clean_up_only
+    if any([example_simple, example_components, !isnothing(multi_tests_list)])
+      error("--clean-up-only passed but tests also passed")
+    else
+      clean_up_multi_tests()
+      clean_up_example_simple_test()
+    end
+  else
+    ENV["JOT_TEST_RUNNING"] = "true"
+    example_simple && run_example_simple_test(clean_up)
+    example_components && run_example_components_test(clean_up)
+    if !isnothing(multi_tests_list) && !isnothing(compile_tests_list)
+      multi_tests_list = unique([multi_tests_list; compile_tests_list])
+    end
+    compile_tests_list = if isnothing(compile_tests_list)
+      Vector{Int64}()
+      else compile_tests_list end
+    !isnothing(multi_tests_list) && run_multi_tests(
+      multi_tests_list, compile_tests_list, multi_tests_to, clean_up
+    )
+    ENV["JOT_TEST_RUNNING"] = "false"
   end
-  example_simple && run_example_simple_test(clean_up)
-  example_components && run_example_components_test(clean_up)
-  quartet && run_quartet_test(quartet_tests, quartet_to, clean_up)
-  ENV["JOT_TEST_RUNNING"] = "false"
 end
 
 function run_example_components_test(clean_up::Bool)
-  clean_up_example_test()
   @testset "Example components" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -77,26 +109,29 @@ function run_example_components_test(clean_up::Bool)
 
     # Create a LambdaComponents instance from the responder
     @info "Creating LambdaComponents"
-    lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+    lambda_components = create_lambda_components(
+      increment_responder; image_suffix="increment-vector"
+    )
 
     lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
-
-    # Clean up
     if clean_up
-      delete!(lambda_components)
-      rm("./increment_vector.jl")
-
-      @test isnothing(get_local_image("increment-vector"))
-      @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
-      @test isnothing(get_ecr_repo("increment-vector"))
-      @test isnothing(get_remote_image("increment-vector"))
+      clean_up_lambda_components(lambda_components)
     end
   end
+  # Finally, run this in case clean-up has failed
+  clean_up_example_simple_test()
 end
 
+function clean_up_lambda_components(lambda_components::LambdaComponents)
+  delete!(lambda_components)
+  rm("./increment_vector.jl")
+
+  @test isnothing(get_local_image("increment-vector"))
+  @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
+  @test isnothing(get_remote_image("increment-vector"))
+end
 
 function run_example_simple_test(clean_up::Bool)
-  clean_up_example_test()
   @testset "Example simple" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -128,219 +163,348 @@ function run_example_simple_test(clean_up::Bool)
     # ... and test it to see if it's working OK
     @info "Testing lambda function"
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+  end
+  if clean_up
+    clean_up_example_simple_test()
+  end
+  # Finally, run this in case clean-up has failed
+  clean_up_example_simple_test()
+end
 
-    # Clean up
-    if clean_up
-      delete!(increment_vector_lambda)
-      delete!(remote_image)
-      delete!(local_image)
-      rm("./increment_vector.jl")
-      @test isnothing(get_aws_role(increment_vector_lambda.Role))
-      @test isnothing(get_ecr_repo("increment-vector"))
+function clean_up_example_simple_test()
+  @testset "Clean up example simple test" begin
+    while true
+      existing_ri = get_lambda_function("increment-vector")
+      if isnothing(existing_ri) break
+      else delete!(existing_ri) end
     end
-    # Check that this has also cleaned up the ECR Repo and the AWS Role
+    @test isnothing(get_lambda_function("increment-vector"))
+
+    while true
+      existing_ri = get_remote_image("increment-vector")
+      if isnothing(existing_ri) break
+      else delete!(existing_ri) end
+    end
+    @test isnothing(get_remote_image("increment-vector"))
+
+    while true
+      existing_ecr = get_ecr_repo("increment-vector")
+      if isnothing(existing_ecr) break
+      else delete!(existing_ecr) end
+    end
+    @test isnothing(get_ecr_repo("increment-vector"))
+
+    while true
+      @info "Starting to delete local images"
+      existing_li = get_local_image("increment-vector")
+      @show existing_li
+      if isnothing(existing_li) break
+      else delete!(existing_li) end
+    end
+    @test isnothing(get_local_image("increment-vector"))
   end
 end
 
-function clean_up_example_test()
-  # Before the test, delete anything which might be left over
-  existing_lf = get_lambda_function("increment-vector")
-  !isnothing(existing_lf) && delete!(existing_lf)
-
-  existing_ri = get_remote_image("increment-vector")
-  !isnothing(existing_ri) && delete!(existing_ri)
-
-  existing_ecr = get_ecr_repo("increment-vector")
-  !isnothing(existing_ecr) && delete!(existing_ecr)
-
-  existing_li = get_local_image("increment-vector")
-  !isnothing(existing_li) && delete!(existing_li)
+struct GetResponderArgs
+  responder_obj::Union{String, Module}
+  responder_func::Symbol
+  responder_param_type::Type
+  kwargs::Dict{Symbol, Any}
 end
 
-function run_quartet_test(
-    test_list::Vector{Bool},
-    to::AbstractString,
-    clean_up::Bool
-  )
+struct ResponderFunctionTestArgs
+  good_arg::Any
+  expected_response::Any
+  invalid_arg::Any
+end
+
+struct CreateLocalImageArgs
+  use_aws_config::Bool
+  expected_labels::ExpectedLabels
+end
+
+mutable struct TestState
+  responder::Union{Nothing, AbstractResponder}
+  local_image::Union{Nothing, LocalImage}
+  compiled_local_image::Union{Nothing, LocalImage}
+  ecr_repo::Union{Nothing, ECRRepo}
+  remote_image::Union{Nothing, RemoteImage}
+  compiled_remote_image::Union{Nothing, RemoteImage}
+  lambda_function::Union{Nothing, LambdaFunction}
+  compiled_lambda_function::Union{Nothing, LambdaFunction}
+end
+
+get_empty_test_state() = TestState(
+  nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+)
+
+mutable struct SingleTestData
+  get_responder_args::GetResponderArgs
+  responder_function_test_args::ResponderFunctionTestArgs
+  create_local_image_args::CreateLocalImageArgs
+  test_state::TestState
+end
+
+function get_multi_tests_data()::Vector{SingleTestData}
+
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
-  ResponderType = Tuple{Tuple{Any, Symbol, Type}, Dict}
-  responder_inputs::Vector{Union{Nothing, ResponderType}} = [
-    ((JotTest1, :response_func, Dict), Dict()),
-    ((JotTest2, :response_func, Dict), Dict(
-     :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
-    (("https://github.com/harris-chris/JotTest3", :response_func, Vector{Float64}), Dict()),
-    ((joinpath(jot_path, "test/JotTest4/jot-test-4.jl"), :map_log_gamma, Vector{Float64}),
-     Dict(:dependencies => ["SpecialFunctions", "PRAS"],
-          :registry_urls => ["https://github.com/NREL/JuliaRegistry.git"])),
-  ]
-  responder_inputs[.!test_list] .= nothing
-
-  TestDataType = Tuple{Any, Any, Any}
-  test_data::Vector{Union{Nothing, TestDataType}} = [ # Actual, expected, bad input
-    (Dict("double" => 4.5), 9.0, [1,2]),
-    (Dict("add suffix" => "test-"), "test-"*get_response_suffix("test/JotTest2/response_suffix"), [1,2]),
-    ([1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg"),
-    ([1, 2, 3, 4], Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]), Dict("this" => "that")),
-  ]
-  test_data[.!test_list] .= nothing
-
-  responders = Vector{Union{Nothing, AbstractResponder}}()
-  @testset "Test Responder" begin
-    foreach(responder_inputs) do input
-      if isnothing(input)
-        push!(responders, nothing)
-      else
-        args = first(input)
-        kwargs = last(input)
-        push!(responders, test_responder(args...; kwargs))
-      end
-    end
-  end
-  if to == "responder"
-    clean_up && quartet_clean_up()
-    return
-  end
-
-  LocalImageInput = Tuple{Int64, Bool, Bool}
-  local_image_config::Vector{Union{Nothing, LocalImageInput}} = [ # number, use_config, package_compile
-    (1, false, true),
-    (2, true, false),
-    (3, false, false),
-    (4, false, false),
-  ]
-  local_image_config[.!test_list] .= nothing
-
-  local_image_inputs = [ isnothing(responder) ? nothing :
-    (responder, config[1], config[2], config[3]) for (responder, config) in zip(responders, local_image_config)
-  ]
-
-  UserLabel = Dict{String, String}
-  user_labels::Vector{Union{Nothing, UserLabel}} = [
-                 Dict("TEST"=>"1"),
-                 Dict("TEST"=>"2"),
-                 Dict("TEST"=>"3"),
-                 Dict("TEST"=>"4"),
-                ]
-  user_labels[.!test_list] .= nothing
-
-  name_rfname_paths = [
-                      ("JotTest1", "response_func", joinpath(jot_path, "test/JotTest1")),
-                      ("JotTest2", "response_func", joinpath(jot_path, "test/JotTest2")),
-                      ("JotTest3", "response_func", "https://github.com/harris-chris/JotTest3"),
-                      (Jot.get_package_name_from_script_name("jot-test-4.jl"), "map_log_gamma", joinpath(jot_path, "test/JotTest4/jot-test-4.jl"))
-                     ]
-
-  expected_labels::Vector{Union{Nothing, ExpectedLabels}} = [
-    isnothing(user_label) ? nothing : ExpectedLabels(name_rfname_path..., user_label) for (user_label, name_rfname_path) in zip(user_labels, name_rfname_paths)
-  ]
-
-  if !(length(test_data) == length(responders) == length(local_image_inputs) == length(expected_labels))
-    @debug length(test_data)
-    @debug length(responders)
-    @debug length(local_image_inputs)
-    @debug length(expected_labels)
-    error("Input lengths do not match")
-  end
-
-  for i in 1:length(test_list)
-    check = [isnothing(test_data[i]), isnothing(responders[i]), isnothing(local_image_inputs[i]), isnothing(expected_labels[i]), !test_list[i]]
-    !(all(check) || all(.!check)) && error("Input vectors are not correctly aligned")
-  end
-
-  for res in responders
-    isnothing(res) || @show res.package_name
-  end
-
-  for li in local_image_inputs
-    isnothing(li) || @show li[1].package_name
-  end
-
-  local_images = Vector{Union{Nothing, LocalImage}}()
-  @testset "Local Images" begin
-    foreach(zip(local_image_inputs, expected_labels, test_data)) do (li_inputs, labels, test_datum)
-      if isnothing(li_inputs)
-        push!(local_images, nothing)
-      else
-        (test_input, expected_result) = (test_datum[1], test_datum[2])
-        this_li = test_local_image(li_inputs..., test_input, expected_result, labels)
-        push!(local_images, this_li)
-      end
-    end
-  end
-
-  if to == "local_image"
-    clean_up && quartet_clean_up()
-    return
-  end
-
-  @testset "Package compiler" begin
-    if(all(test_list)) # Only run test if we are testing all the quartet
-      test_package_compile(;
-        compiled_image=local_images[1],
-        uncompiled_image=local_images[2],
-        compiled_test_data=test_data[1][1:2],
-        uncompiled_test_data=test_data[2][1:2],
+  multi_test_1_data = SingleTestData(
+    GetResponderArgs(
+      JotTest1,
+      :response_func,
+      Dict,
+      Dict{Symbol, Any}(),
+    ),
+    ResponderFunctionTestArgs(
+      Dict("double" => 4.5), 9.0, [1,2]
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        "JotTest1",
+        "response_func",
+        joinpath(jot_path, "test/JotTest1"),
+        Dict(jot_multi_test_tag_key=>"1"),
       )
-    end
-  end
-  if to == "package_compiler"
-    clean_up && quartet_clean_up()
-    return
-  end
+    ),
+    get_empty_test_state(),
+  )
 
-  repos = Vector{Union{Nothing, ECRRepo}}()
-  remote_images = Vector{Union{Nothing, RemoteImage}}()
-  @testset "ECR Repo" begin
-    foreach(enumerate(test_list)) do (num, use_bl)
-      if use_bl
-        (this_repo, this_remote_image) = test_ecr_repo(responders[num], local_images[num], expected_labels[num])
-      else
-        (this_repo, this_remote_image) = (nothing, nothing)
-      end
-      push!(repos, this_repo)
-      push!(remote_images, this_remote_image)
-    end
-  end
+  multi_test_2_data = SingleTestData(
+    GetResponderArgs(
+      JotTest2,
+      :response_func,
+      Dict,
+      Dict(Symbol("registry_urls") => ["https://github.com/NREL/JuliaRegistry.git"]),
+    ),
+    ResponderFunctionTestArgs(
+      Dict("add suffix" => "test-"),
+      "test-"*get_response_suffix("test/JotTest2/response_suffix"),
+      [1,2],
+    ),
+    CreateLocalImageArgs(
+      true, ExpectedLabels(
+        "JotTest2",
+        "response_func",
+        joinpath(jot_path, "test/JotTest2"),
+        Dict(jot_multi_test_tag_key=>"2"),
+      )
+    ),
+    get_empty_test_state(),
+  )
 
-  if to == "ecr_repo"
-    clean_up && quartet_clean_up()
-    return
-  end
+  multi_test_3_data = SingleTestData(
+    GetResponderArgs(
+      "https://github.com/harris-chris/JotTest3",
+      :response_func,
+      Vector{Float64},
+      Dict{Symbol, Any}(),
+    ),
+    ResponderFunctionTestArgs(
+      [1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg",
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        "JotTest3",
+        "response_func",
+        "https://github.com/harris-chris/JotTest3",
+        Dict(jot_multi_test_tag_key=>"3"),
+      )
+    ),
+    get_empty_test_state(),
+  )
+
+  multi_test_4_data = SingleTestData(
+    GetResponderArgs(
+      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+      :map_log_gamma,
+      Vector{Float64},
+      Dict(
+        Symbol("dependencies") => ["SpecialFunctions"],
+        Symbol("registry_urls") => ["https://github.com/NREL/JuliaRegistry.git"],
+      )
+    ),
+    ResponderFunctionTestArgs(
+      [1, 2, 3, 4],
+      Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]),
+      Dict("this" => "that"),
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        Jot.get_package_name_from_script_name("jot-test-4.jl"),
+        "map_log_gamma",
+        joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+        Dict(jot_multi_test_tag_key=>"4"),
+      )
+    ),
+    get_empty_test_state(),
+  )
+
+  multi_test_5_arg = randstring(8)
+  multi_test_5_data = SingleTestData(
+    GetResponderArgs(
+      joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
+      :use_scratch_space,
+      String,
+      Dict(
+        Symbol("dependencies") => ["Scratch"],
+      )
+    ),
+    ResponderFunctionTestArgs(
+      multi_test_5_arg,
+      "read: " * multi_test_5_arg,
+      1,
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        Jot.get_package_name_from_script_name("jot-test-5.jl"),
+        "use_scratch_space",
+        joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
+        Dict(jot_multi_test_tag_key=>"5"),
+      )
+    ),
+    get_empty_test_state(),
+  )
+
+  [
+    multi_test_1_data,
+    multi_test_2_data,
+    multi_test_3_data,
+    multi_test_4_data,
+    multi_test_5_data,
+  ]
+end
+
+function run_multi_tests(
+    test_list::Vector{Int64},
+    compile_list::Vector{Int64},
+    multi_to::MultiTo,
+    clean_up::Bool
+  )
+  tests_data_all = get_multi_tests_data()
+  test_list = if isempty(test_list)
+    test_list = [i for (i, _) in enumerate(tests_data_all)]
+  else test_list end
+  tests_data = tests_data_all[test_list]
 
   aws_role = test_aws_role()
-  if to == "aws_role"
-    clean_up && quartet_clean_up()
-    return
-  end
 
-  lambda_functions = Vector{Union{Nothing, LambdaFunction}}()
-  @testset "Lambda Function" begin
-    foreach(enumerate(test_list)) do (num, use_bl)
-      if use_bl
-        this_lambda_function = test_lambda_function(repos[num], remote_images[num], aws_role, test_data[num]...)
-      else
-        this_lambda_function = nothing
+  @testset "Multi-Tests" begin
+    foreach(zip(test_list, tests_data)) do (i, test_data)
+      @testset "Multi-Tests Test $i" begin
+        if continue_tests(multi_to, responder)
+          @testset "Responder test" begin
+            test_data.test_state.responder = test_responder(
+              test_data.get_responder_args.responder_obj,
+              test_data.get_responder_args.responder_func,
+              test_data.get_responder_args.responder_param_type,
+              test_data.get_responder_args.kwargs,
+            )
+          end
+        end
+
+        if continue_tests(multi_to, local_image)
+          if test_data.test_state.responder != nothing
+            @testset "Local image test" begin
+              test_data.test_state.local_image = test_local_image(
+                test_data.test_state.responder,
+                test_data.create_local_image_args,
+                test_data.responder_function_test_args,
+              )
+            end
+          else
+            @info "RESPONDER NOT FOUND, SKIPPING LOCAL IMAGE TEST"
+          end
+        end
+
+        if continue_tests(multi_to, ecr_repo)
+          if test_data.test_state.local_image != nothing
+            @testset "Remote image test" begin
+              (ecr_repo, remote_image) = test_ecr_repo(
+                test_data.test_state.responder,
+                test_data.test_state.local_image,
+                test_data.create_local_image_args.expected_labels,
+              )
+              test_data.test_state.ecr_repo = ecr_repo
+              test_data.test_state.remote_image = remote_image
+            end
+          else
+            @info "LOCAL IMAGE NOT FOUND, SKIPPING REMOTE IMAGE TEST"
+          end
+        end
+
+        if continue_tests(multi_to, lambda_function)
+          if isnothing(test_data.test_state.remote_image)
+            @info "REMOTE IMAGE NOT FOUND, SKIPPING LAMBDA FUNCTION TEST"
+          else
+            skip_test_because_running_comparison_test_later = (
+              i in compile_list && continue_tests(multi_to, package_compiler_lambda)
+            )
+            @testset "Lambda Function test" begin
+              test_data.test_state.lambda_function = test_lambda_function(
+                test_data.test_state.ecr_repo,
+                test_data.test_state.remote_image,
+                aws_role,
+                test_data.responder_function_test_args,
+                skip_test_because_running_comparison_test_later,
+              )
+            end
+          end
+        end
+
+        if continue_tests(multi_to, package_compiler_local)
+          if !(i in compile_list)
+            @info "--compile NOT SET FOR $i, SKIPPING LOCAL PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.responder)
+            @info "RESPONDER NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.local_image)
+            @info "LOCAL IMAGE NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          else
+            @testset "Package compiler local test" begin
+              test_data.test_state.compiled_local_image = test_compiled_local_image(
+                test_data.test_state.responder,
+                test_data.create_local_image_args,
+                test_data.responder_function_test_args,
+                test_data.test_state.local_image,
+              )
+            end
+          end
+        end
+
+        if continue_tests(multi_to, package_compiler_lambda)
+          if !(i in compile_list)
+            @info "--compile NOT SET FOR $i, SKIPPING LAMBDA PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.responder)
+            @info "RESPONDER NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.lambda_function)
+            @info "LAMBDA FUNCTION NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          else
+            @testset "Package compiler lambda function test" begin
+              test_data.test_state.compiled_lambda_function = test_compiled_lambda_function(
+                test_data.test_state.compiled_local_image,
+                aws_role,
+                test_data.responder_function_test_args,
+                test_data.test_state.lambda_function,
+              )
+            end
+          end
+        end
       end
-      push!(lambda_functions, this_lambda_function)
     end
+  clean_up && clean_up_multi_tests()
   end
-
-  if to == "lambda_function"
-    clean_up && quartet_clean_up()
-    return
-  end
-  clean_up && clean_up()
 end
 
 function test_responder(
-    res_obj::Any,
+    res_obj::Union{String, Module},
     res_func::Symbol,
-    res_type::Type{IT};
-    kwargs::Dict = Dict(),
+    res_type::Type{IT},
+    kwargs::Dict{Symbol, Any},
   )::AbstractResponder{IT} where {IT}
-  this_res = get_responder(res_obj, res_func, IT; kwargs...)
+  this_res = get_responder(
+    res_obj, res_func, IT; kwargs...
+  )
   @test isa(Jot.get_tree_hash(this_res), String)
   @test isa(Jot.get_commit(this_res), String)
   this_res
@@ -348,21 +512,20 @@ end
 
 function test_local_image(
     res::AbstractResponder,
-    num::Int64,
-    use_config::Bool,
-    package_compile::Bool,
-    test_request::Any,
-    expected_test_result::Any,
-    expected_labels::ExpectedLabels,
+    create_local_image_args::CreateLocalImageArgs,
+    responder_function_test_args::ResponderFunctionTestArgs,
   )::LocalImage
-  local_image = create_local_image(res;
-                                   aws_config = use_config ? aws_config : nothing,
-                                   package_compile = package_compile,
-                                   user_defined_labels = expected_labels.user_defined_labels,
-                                  )
+  local_image = create_local_image(
+    res;
+    aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
+    package_compile = false,
+    user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
+  )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
-  @test test_actual_labels_against_expected(get_labels(local_image), expected_labels)
+  @test test_actual_labels_against_expected(
+    get_labels(local_image), create_local_image_args.expected_labels
+  )
   # Test that container runs
   cont = run_image_locally(local_image)
   @test is_container_running(cont)
@@ -374,29 +537,64 @@ function test_local_image(
   # Run local test of container, without value
   @test run_test(local_image) |> first
   # Run local test of container, with expected response
-  @show test_request
-  @test run_test(local_image, test_request, expected_test_result; then_stop=true) |> first
+  @test run_test(
+    local_image,
+    responder_function_test_args.good_arg,
+    responder_function_test_args.expected_response;
+    then_stop=true
+  ) |> first
   sleep(1)
-  return local_image
+  local_image
 end
 
-function test_package_compile(;
-    uncompiled_image::LocalImage,
-    compiled_image::LocalImage,
-    uncompiled_test_data::Tuple{Any, Any},
-    compiled_test_data::Tuple{Any, Any},
+function compare_test_times(
+    compiled::Union{LocalImage, RemoteImage, LambdaFunction},
+    uncompiled::Union{LocalImage, RemoteImage, LambdaFunction},
+    test_arg::Any,
+    expected_response::Any,
+    repeat_num::Int64,
+  )::Tuple{Float64, Float64}
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, this_run_time = run_test(compiled, test_arg, expected_response)
+    @info "Test run $num with compiled local image took $this_run_time"
+    total_run_time += this_run_time
+  end
+  average_compiled_run_time = total_run_time / repeat_num
+  @info "Average compiled run time was $average_compiled_run_time"
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, this_run_time = run_test(uncompiled, test_arg, expected_response)
+    @info "Test run $num with uncompiled local image took $this_run_time"
+    total_run_time += this_run_time
+  end
+  average_uncompiled_run_time = total_run_time / repeat_num
+  @info "Average uncompiled run time was $average_uncompiled_run_time"
+  return (average_compiled_run_time, average_uncompiled_run_time)
+end
+
+function test_compiled_local_image(
+    res::AbstractResponder,
+    create_local_image_args::CreateLocalImageArgs,
+    responder_function_test_args::ResponderFunctionTestArgs,
+    uncompiled_local_image::LocalImage;
+    repeat_num::Int64 = 5,
+  )::LocalImage
+  compiled_local_image = create_local_image(
+    res;
+    aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
+    package_compile = true,
+    user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
-  @show "test_package_compile"
-  sleep(2)
-  @show "running test on compiled"
-  @show compiled_test_data
-  (_, compiled_time) = run_test(compiled_image, compiled_test_data...; then_stop=true)
-  @show "first test ran"
-  @show (readchomp(`docker container ls`))
-  sleep(2)
-  (_, uncompiled_time) = run_test(uncompiled_image, uncompiled_test_data...; then_stop=true)
-  @show "second test ran"
-  @test compiled_time < (uncompiled_time / 2)
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+    compiled_local_image,
+    uncompiled_local_image,
+    responder_function_test_args.good_arg,
+    responder_function_test_args.expected_response,
+    repeat_num,
+  )
+  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
+  compiled_local_image
 end
 
 function test_ecr_repo(
@@ -406,18 +604,16 @@ function test_ecr_repo(
   )::Tuple{ECRRepo, RemoteImage}
   remote_image = push_to_ecr!(local_image)
   ecr_repo = remote_image.ecr_repo
-  @testset "Test remote image" begin
-    @test Jot.matches(local_image, ecr_repo)
-    @test Jot.is_jot_generated(remote_image)
-    @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
-    # Check we can find the repo
-    @test !isnothing(Jot.get_ecr_repo(local_image))
-    # Check that we can find the remote image which matches our local image
-    ri_check = Jot.get_remote_image(local_image)
-    @test !isnothing(ri_check)
-    @test Jot.matches(local_image, remote_image)
-    @test Jot.matches(res, remote_image)
-  end
+  @test Jot.matches(local_image, ecr_repo)
+  @test Jot.is_jot_generated(remote_image)
+  @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
+  # Check we can find the repo
+  @test !isnothing(Jot.get_ecr_repo(local_image))
+  # Check that we can find the remote image which matches our local image
+  ri_check = Jot.get_remote_image(local_image)
+  @test !isnothing(ri_check)
+  @test Jot.matches(local_image, remote_image)
+  @test Jot.matches(res, remote_image)
   (ecr_repo, remote_image)
 end
 
@@ -433,35 +629,70 @@ function test_lambda_function(
     ecr_repo::ECRRepo,
     remote_image::RemoteImage,
     aws_role::AWSRole,
-    test_request::Any,
-    expected::Any,
-    exception_request::Any,
+    responder_function_test_args::ResponderFunctionTestArgs,
+    skip_test::Bool,
   )::LambdaFunction
   lambda_function = create_lambda_function(ecr_repo; role = aws_role)
-  @testset "Lambda Function test" begin
-    @test Jot.is_jot_generated(lambda_function)
-    @test Jot.matches(remote_image, lambda_function)
-    # Check that we can find it
-    @test lambda_function in Jot.get_all_lambda_functions()
+  @test Jot.is_jot_generated(lambda_function)
+  @test Jot.matches(remote_image, lambda_function)
+  # Check that we can find it
+  @test lambda_function in Jot.get_all_lambda_functions()
+  if !skip_test
     # Invoke it
-    response = invoke_function(test_request, lambda_function; check_state=true)
-    @test response == expected
+    (result, time_taken) = run_test(
+      lambda_function,
+      responder_function_test_args.good_arg,
+      responder_function_test_args.expected_response;
+      check_function_state=true
+    )
+    @test result
+    @info "Lambda function ran in $time_taken"
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
-      remote_image; role=aws_role, function_name="addl"*test_suffix
+      remote_image;
+      role = aws_role,
+      function_name = "addl" * ecr_repo.repositoryName
     )
-    @test_throws LambdaException invoke_function(exception_request, lambda_function; check_state=true)
+    @test_throws LambdaException invoke_function(
+      responder_function_test_args.invalid_arg, lambda_function; check_state=true
+    )
   end
   lambda_function
 end
 
-function quartet_clean_up()
+function test_compiled_lambda_function(
+    compiled_local_image::LocalImage,
+    aws_role::AWSRole,
+    responder_function_test_args::ResponderFunctionTestArgs,
+    uncompiled_lambda_function::LambdaFunction,
+    repeat_num::Int64 = 1,
+  )::LambdaFunction
+  remote_image = push_to_ecr!(compiled_local_image)
+  ecr_repo = remote_image.ecr_repo
+  compiled_lambda_function = create_lambda_function(
+    ecr_repo; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
+  )
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+    compiled_lambda_function,
+    uncompiled_lambda_function,
+    responder_function_test_args.good_arg,
+    responder_function_test_args.expected_response,
+    repeat_num,
+  )
+  @test average_compiled_run_time < (average_uncompiled_run_time * 0.8)
+  compiled_lambda_function
+end
+
+function clean_up_multi_tests()
   # Clean up
   # TODO clean up based on lambdas, eventually
-  @show "running clean up"
-  @testset "Clean up" begin
+  @testset "Clean up multi tests" begin
     test_lfs = [x for x in Jot.get_all_lambda_functions() if occursin(test_suffix, x.FunctionName)]
-    test_repos = [x for x in Jot.get_all_ecr_repos() if occursin(test_suffix, x.repositoryName)]
+    test_repos = filter(Jot.get_all_ecr_repos()) do repo
+      repo_tags = Jot.get_all_tags(repo)
+      jot_multi_test_tag_key in map(first, repo_tags)
+    end
+    @show test_repos
     test_roles = [x for x in Jot.get_all_aws_roles() if occursin(test_suffix, x.RoleName)]
     test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
@@ -487,13 +718,105 @@ function parse_arg(val::AbstractString)
   to_parse ? eval(Meta.parse(val)) : val
 end
 
-@testset "All Tests" begin
-  test_args = Dict(key => val for (key, val) in map(x -> split(x, '='), ARGS))
-  test_args = Dict(Symbol(key) => parse_arg(val) for (key, val) in test_args)
-  @info test_args
-  if haskey(test_args, :quartet_tests)
-    test_args[:quartet_tests] = [i in test_args[:quartet_tests] for i in 1:4]
+function show_help()::Nothing
+  println("Run Jot.jl tests")
+  println("By default no tests are run. Specify the tests to run using the following:")
+  println("--example-simple to test the example on the index page of the documentation")
+  println("--example-components to test the lambda components example on the index page")
+  println("--multi to run all tests of the multiple test set")
+  println("--multi=[1,4] to, eg, run tests 1 and 4 of the multiple test set")
+  m_opts = join(instances(MultiTo), " | ")
+  println("--multi-to=have the multi tests run to a specific point only")
+  println("    select from $m_opts")
+  println("    DEFAULT: lambda_function")
+  println("--no-clean-up to have the tests skip tear down")
+  println("--clean_up_only to have clean-up performed even though no tests have run")
+  println("--full to run all possible tests")
+end
+
+
+function parse_example_simple(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--example-simple" in args, args[args.!="--example-simple"])
+end
+
+function parse_example_components(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--example-components" in args, args[args.!="--example-components"])
+end
+
+function parse_tests_list(
+    args::Vector{String},
+    kwarg::String,
+  )::Tuple{Union{Nothing, Vector{Int64}}, Vector{String}}
+  kwarg_len = length(kwarg)
+  test_args = filter(x -> length(x) >= kwarg_len && x[begin:kwarg_len] == kwarg, args)
+  test_list = if length(test_args) == 1
+    arg = test_args[begin]
+    if length(arg) > kwarg_len
+      list_str = test_args[end][kwarg_len + 2:end]
+      if list_str[1] == '[' && list_str[end] == ']'
+        list_int = eval(Meta.parse(list_str))
+	unique(list_int)
+      else
+        error("Could not parse {kwarg} argument $list_str as list of integers, "
+              * "please use format [x,y,...]")
+      end
+    else
+      Vector{Int64}() # Means run all tests
+    end
+  elseif length(test_args) > 1
+    error("$kwarg has been passed as an argument more than once")
+  else
+    nothing
   end
-  run_tests(;test_args...)
+  (test_list, filter(
+    x -> !(length(x) >= kwarg_len && x[begin:kwarg_len] == kwarg), args)
+  )
+end
+
+function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{String}}
+  multi_args = filter(x -> length(x) >= 11 && x[begin:11] == "--multi-to=", args)
+  tests_to = if length(multi_args) == 1
+    arg = multi_args[1]
+    if Symbol(arg) in Symbol.(instances(MultiTo))
+      eval(Meta.parse(arg))
+    else
+      valid = join(instances(MultiTo), " | ")
+      error("--multi-to argument $arg is not one of $(valid)")
+    end
+  elseif length(multi_args) > 1
+    error("--multi has been passed as an argument more than once")
+  else
+    to_end
+  end
+  (tests_to, filter(x -> !(length(x) >= 11 && x[begin:11] == "--multi-to="), args))
+end
+
+function parse_clean_up(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--no-clean-up" in args ? false : true, args[args.!="--no-clean-up"])
+end
+
+function parse_clean_up_only(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--clean-up-only" in args, args[args.!="--clean-up-only"])
+end
+
+if ("--help" in ARGS || length(ARGS) == 0)
+  show_help()
+else
+  args = ARGS
+  simple, args = parse_example_simple(args)
+  components, args = parse_example_components(args)
+  multi_list, args = parse_tests_list(args, "--multi")
+  compile_list, args = parse_tests_list(args, "--compile")
+  @show compile_list
+  multi_to, args = parse_multi_tests_to(args)
+  clean_up, args = parse_clean_up(args)
+  clean_up_only, args = parse_clean_up_only(args)
+  @show args
+  if length(args) != 0
+    error("Args $(join(args, ", ")) not recognized")
+  end
+  run_tests(
+    simple, components, multi_list, compile_list, multi_to, clean_up, clean_up_only
+  )
 end
 

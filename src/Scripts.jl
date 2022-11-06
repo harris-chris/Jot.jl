@@ -1,20 +1,32 @@
 using Sockets
 
-bootstrap_script = raw"""
-#!/bin/bash
-if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
-  LOCAL="127.0.0.1:9001"
-  echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-  exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
-else
-  echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-  # touch /tmp/working
-  # echo "CREATED TEMPORARY FILE"
-  # exec /usr/local/julia/bin/julia -e "using Jot; println(pwd())"
-  # echo "JULIA CREATED TEMP"
-  exec /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
-fi
-"""
+function get_bootstrap_script(
+    julia_depot_path::String,
+    temp_path::String,
+  )::String
+
+  bootstrap_shebang = raw"""
+  #!/bin/bash
+  """
+
+  bootstrap_env_vars = """
+  export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
+  """
+
+  bootstrap_body = raw"""
+  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+    LOCAL="127.0.0.1:9001"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
+    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+  else
+    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
+    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+  fi
+  """
+  bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
+  @debug bootstrap_script
+  bootstrap_script
+end
 
 function start_lambda_server(host::String, port::Int64)
   ROUTER = HTTP.Router()
@@ -81,7 +93,7 @@ function get_init_script(
   using Jot
   Pkg.precompile()
   """
-  pc_script = """
+  package_compile_script = """
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="1.7.7"))
   using PackageCompiler
   @async Jot.start_lambda_server("127.0.0.1", 9001)
@@ -92,7 +104,7 @@ function get_init_script(
                   cpu_target="$cpu_target",
                  )
   """
-  package_compile ? precomp * pc_script : precomp
+  package_compile ? precomp * package_compile_script : precomp
 end
 
 function get_precompile_jl(
@@ -103,7 +115,13 @@ function get_precompile_jl(
   using $package_name
   using Pkg
 
-  Pkg.test("$package_name")
+  try
+    Pkg.test("$package_name")
+  catch e
+    if isa(e, LoadError)
+      rethrow(e)
+    end
+  end
 
   rf(i::Int64) = i + 1
 
@@ -114,6 +132,23 @@ end
 function get_lambda_function_tags_script(lambda_function::LambdaFunction)::String
   """
   aws lambda list-tags --resource $(lambda_function.FunctionArn)
+  """
+end
+
+function get_ecr_repo_tags_script(ecr_repo::ECRRepo)::String
+  """
+  aws ecr list-tags-for-resource --resource-arn=$(ecr_repo.repositoryArn)
+  """
+end
+
+function get_delete_ecr_repo_tags_script(
+    ecr_repo::ECRRepo,
+    tag_keys::Vector{String}
+  )::String
+  """
+  aws ecr untag-resource \\
+       --resource-arn $(ecr_repo.repositoryArn) \\
+       --tag-keys $(join(tag_keys, " "))
   """
 end
 
