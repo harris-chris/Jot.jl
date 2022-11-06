@@ -57,13 +57,15 @@ function run_tests(
     clean_up::Bool,
     example_simple::Bool,
     example_components::Bool,
-    multi_tests_bl::Vector{Bool},
+    multi_tests_list::Union{Nothing, Vector{Int64}},
     multi_tests_to::MultiTo,
   )
   ENV["JOT_TEST_RUNNING"] = "true"
   example_simple && run_example_simple_test(clean_up)
   example_components && run_example_components_test(clean_up)
-  any(multi_tests_bl) && run_multi_tests(multi_tests_bl, multi_tests_to, clean_up)
+  !isnothing(multi_tests_list) && run_multi_tests(
+    multi_tests_list, multi_tests_to, clean_up
+  )
   ENV["JOT_TEST_RUNNING"] = "false"
 end
 
@@ -165,8 +167,7 @@ struct GetResponderArgs
   responder_obj::Union{String, Module}
   responder_func::Symbol
   responder_param_type::Type
-  dependencies::Vector{String}
-  registry_urls::Vector{String}
+  kwargs::Dict{Symbol, Any}
 end
 
 struct ResponderFunctionTestArgs
@@ -177,11 +178,10 @@ end
 
 struct CreateLocalImageArgs
   use_aws_config::Bool
-  package_compile::Bool
   expected_labels::ExpectedLabels
 end
 
-struct TestState
+mutable struct TestState
   responder::Union{Nothing, AbstractResponder}
   local_image::Union{Nothing, LocalImage}
   ecr_repo::Union{Nothing, ECRRepo}
@@ -189,112 +189,120 @@ struct TestState
   lambda_function::Union{Nothing, LambdaFunction}
 end
 
-struct SingleTestData
+mutable struct SingleTestData
   get_responder_args::GetResponderArgs
   responder_function_test_args::ResponderFunctionTestArgs
   create_local_image_args::CreateLocalImageArgs
   test_state::TestState
 end
 
-multi_test_1_data = SingleTestData(
-  GetResponderArgs(
-    JotTest1,
-    :response_func,
-    Dict,
-    Vector{String}(),
-    Vector{String}(),
-  ),
-  ResponderFunctionTestArgs(
-    Dict("double" => 4.5), 9.0, [1,2]
-  ),
-  CreateLocalImageArgs(
-    false, true, ExpectedLabels(
-      "JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), Dict("TEST"=>"1"),
-    )
-  ),
-  TestState(nothing, nothing, nothing, nothing, nothing),
-)
+function get_multi_tests_data()::Vector{SingleTestData}
 
-multi_test_2_data = SingleTestData(
-  GetResponderArgs(
-    JotTest2,
-    :response_func,
-    Dict,
-    Vector{String}(),
-    ["https://github.com/NREL/JuliaRegistry.git"],
-  ),
-  ResponderFunctionTestArgs(
-    Dict("add suffix" => "test-"),
-    "test-"*get_response_suffix("test/JotTest2/response_suffix"),
-    [1,2],
-  ),
-  CreateLocalImageArgs(
-    true, false, ExpectedLabels(
-      "JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), Dict("TEST"=>"2"),
-    )
-  ),
-  TestState(nothing, nothing, nothing, nothing, nothing),
-)
-
-multi_test_3_data = SingleTestData(
-  GetResponderArgs(
-    "https://github.com/harris-chris/JotTest3",
-    :response_func,
-    Vector{Float64},
-    Vector{String}(),
-    Vector{String}(),
-  ),
-  ResponderFunctionTestArgs(
-    [1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg",
-  ),
-  CreateLocalImageArgs(
-    false, false, ExpectedLabels(
-      "JotTest3",
-      "response_func",
-      "https://github.com/harris-chris/JotTest3",
-      Dict("TEST"=>"3"),
-    )
-  ),
-  TestState(nothing, nothing, nothing, nothing, nothing),
-)
-
-multi_test_4_data = SingleTestData(
-  GetResponderArgs(
-    joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
-    :map_log_gamma,
-    Vector{Float64},
-    ["SpecialFunctions", "PRAS"],
-    ["https://github.com/NREL/JuliaRegistry.git"],
-  ),
-  ResponderFunctionTestArgs(
-    [1, 2, 3, 4],
-    Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]),
-    Dict("this" => "that"),
-  ),
-  CreateLocalImageArgs(
-    false, false, ExpectedLabels(
-      Jot.get_package_name_from_script_name("jot-test-4.jl"),
-      "map_log_gamma",
-      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
-      Dict("TEST"=>"4"),
-    )
-  ),
-  TestState(nothing, nothing, nothing, nothing, nothing),
-)
-
-multi_tests_data=[ multi_test_1_data, multi_test_2_data, multi_test_3_data, multi_test_4_data ]
-
-function run_multi_tests(
-    test_list::Vector{Bool},
-    multi_to::MultiTo,
-    clean_up::Bool
-  )
   reset_response_suffix("test/JotTest1/response_suffix")
   reset_response_suffix("test/JotTest2/response_suffix")
 
-  aws_role = test_aws_role()
+  multi_test_1_data = SingleTestData(
+    GetResponderArgs(
+      JotTest1,
+      :response_func,
+      Dict,
+      Dict{Symbol, Any}(),
+    ),
+    ResponderFunctionTestArgs(
+      Dict("double" => 4.5), 9.0, [1,2]
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        "JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), Dict("TEST"=>"1"),
+      )
+    ),
+    TestState(nothing, nothing, nothing, nothing, nothing),
+  )
 
-  tests_data = multi_tests_data[test_list]
+  multi_test_2_data = SingleTestData(
+    GetResponderArgs(
+      JotTest2,
+      :response_func,
+      Dict,
+      Dict(Symbol("registry_urls") => ["https://github.com/NREL/JuliaRegistry.git"]),
+    ),
+    ResponderFunctionTestArgs(
+      Dict("add suffix" => "test-"),
+      "test-"*get_response_suffix("test/JotTest2/response_suffix"),
+      [1,2],
+    ),
+    CreateLocalImageArgs(
+      true, ExpectedLabels(
+        "JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), Dict("TEST"=>"2"),
+      )
+    ),
+    TestState(nothing, nothing, nothing, nothing, nothing),
+  )
+
+  multi_test_3_data = SingleTestData(
+    GetResponderArgs(
+      "https://github.com/harris-chris/JotTest3",
+      :response_func,
+      Vector{Float64},
+      Dict{Symbol, Any}(),
+    ),
+    ResponderFunctionTestArgs(
+      [1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg",
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        "JotTest3",
+        "response_func",
+        "https://github.com/harris-chris/JotTest3",
+        Dict("TEST"=>"3"),
+      )
+    ),
+    TestState(nothing, nothing, nothing, nothing, nothing),
+  )
+
+  multi_test_4_data = SingleTestData(
+    GetResponderArgs(
+      joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+      :map_log_gamma,
+      Vector{Float64},
+      Dict(
+        Symbol("dependencies") => ["SpecialFunctions", "PRAS"],
+        Symbol("registry_urls") => ["https://github.com/NREL/JuliaRegistry.git"],
+      )
+    ),
+    ResponderFunctionTestArgs(
+      [1, 2, 3, 4],
+      Vector{Float64}([0.0, 0.0, 0.6931471805599453, 1.791759469228055]),
+      Dict("this" => "that"),
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        Jot.get_package_name_from_script_name("jot-test-4.jl"),
+        "map_log_gamma",
+        joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
+        Dict("TEST"=>"4"),
+      )
+    ),
+    TestState(nothing, nothing, nothing, nothing, nothing),
+  )
+
+  [ multi_test_1_data, multi_test_2_data, multi_test_3_data, multi_test_4_data ]
+end
+
+function run_multi_tests(
+    test_list::Vector{Int64},
+    multi_to::MultiTo,
+    clean_up::Bool
+  )
+  tests_data_all = get_multi_tests_data()
+  if isempty(test_list)
+    tests_data = tests_data_all
+  else
+    test_list_bl = [i in vec_int for i in range(1, length(tests_data_all))]
+    tests_data = tests_data_all[test_list_bl]
+  end
+
+  aws_role = test_aws_role()
 
   foreach(enumerate(tests_data)) do (i, test_data)
     @testset "Multi-Tests Test $i" begin
@@ -302,57 +310,52 @@ function run_multi_tests(
         test_data.get_responder_args.responder_obj,
         test_data.get_responder_args.responder_func,
         test_data.get_responder_args.responder_param_type,
-        test_data.get_responder_args.dependencies,
-        test_data.get_responder_args.registry_urls,
+        test_data.get_responder_args.kwargs,
       )
-    end
-    if multi_to == responder
-      clean_up && quartet_clean_up()
-      return
-    end
+      if multi_to == responder
+        return
+      end
 
-    if test_data.test_state.responder != nothing
-      test_data.test_state.local_image = test_local_image(
-        test_data.test_state.responder,
-        test_data.create_local_image_args,
-        test_data.responder_function_test_args,
-      )
-    end
+      if test_data.test_state.responder != nothing
+        test_data.test_state.local_image = test_local_image(
+          test_data.test_state.responder,
+          test_data.create_local_image_args,
+          test_data.responder_function_test_args,
+        )
+      end
 
-    if multi_to == local_image
-      clean_up && quartet_clean_up()
-      return
-    end
+      if multi_to == local_image
+        return
+      end
 
-    if test_data.test_state.local_image != nothing
-      (ecr_repo, remote_image) = test_ecr_repo(
-        test_data.test_state.responder,
-        test_data.test_state.local_image,
-        test_data.create_local_image_args.expected_labels,
-      )
-      test_data.test_state.ecr_repo = ecr_repo
-      test_data.test_state.remote_image = remote_image
-    end
+      if test_data.test_state.local_image != nothing
+        (ecr_repo, remote_image) = test_ecr_repo(
+          test_data.test_state.responder,
+          test_data.test_state.local_image,
+          test_data.create_local_image_args.expected_labels,
+        )
+        test_data.test_state.ecr_repo = ecr_repo
+        test_data.test_state.remote_image = remote_image
+      end
 
-    if multi_to == ecr_repo
-      clean_up && quartet_clean_up()
-      return
-    end
+      if multi_to == ecr_repo
+        return
+      end
 
-    if test_data.test_state.remote_image != nothing
-      test_lambda_function(
-        test_data.test_state.ecr_repo,
-        test_data.test_state.remote_image,
-        aws_role,
-        test_data.responder_function_test_args,
-      )
-    end
+      if test_data.test_state.remote_image != nothing
+        test_lambda_function(
+          test_data.test_state.ecr_repo,
+          test_data.test_state.remote_image,
+          aws_role,
+          test_data.responder_function_test_args,
+        )
+      end
 
-    if multi_to == lambda_function
-      clean_up && quartet_clean_up()
-      return
+      if multi_to == lambda_function
+        return
+      end
     end
-    clean_up && clean_up()
+    clean_up && multi_tests_clean_up()
   end
 
 
@@ -377,11 +380,10 @@ function test_responder(
     res_obj::Union{String, Module},
     res_func::Symbol,
     res_type::Type{IT},
-    dependencies = Vector{String},
-    registry_urls = Vector{String},
+    kwargs::Dict{Symbol, Any},
   )::AbstractResponder{IT} where {IT}
   this_res = get_responder(
-    res_obj, res_func, IT; dependencies=dependencies, registry_urls=registry_urls
+    res_obj, res_func, IT; kwargs...
   )
   @test isa(Jot.get_tree_hash(this_res), String)
   @test isa(Jot.get_commit(this_res), String)
@@ -396,7 +398,7 @@ function test_local_image(
   local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
-    package_compile = create_local_image_args.package_compile,
+    package_compile = false,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
   @test Jot.matches(res, local_image)
@@ -502,10 +504,10 @@ function test_lambda_function(
   lambda_function
 end
 
-function quartet_clean_up()
+function multi_tests_clean_up()
   # Clean up
   # TODO clean up based on lambdas, eventually
-  @show "running clean up"
+  @show "running clean up for multi tests"
   @testset "Clean up" begin
     test_lfs = [x for x in Jot.get_all_lambda_functions() if occursin(test_suffix, x.FunctionName)]
     test_repos = [x for x in Jot.get_all_ecr_repos() if occursin(test_suffix, x.repositoryName)]
@@ -539,8 +541,8 @@ function show_help()::Nothing
   println("By default no tests are run. Specify the tests to run using the following:")
   println("--example-simple to test the example on the index page of the documentation")
   println("--example-components to test the lambda components example on the index page")
+  println("--multi to run all tests of the multiple test set")
   println("--multi=[1,4] to, eg, run tests 1 and 4 of the multiple test set")
-  println("--multi=true to run all tests of the multiple test set")
   m_opts = join(instances(MultiTo), " | ")
   println("--multi-to=have the multi tests run to a specific point only")
   println("    select from $m_opts")
@@ -562,23 +564,28 @@ function parse_example_components(args::Vector{String})::Tuple{Bool, Vector{Stri
   ("--example_components" in args, args[args.!="--example_components"])
 end
 
-function parse_multi_tests_bl(args::Vector{String})::Tuple{Vector{Bool}, Vector{String}}
-  multi_args = filter(x -> length(x) >= 8 && x[begin:8] == "--multi=", args)
-  num_multi_tests = length(multi_tests_data)
-  multi_tests_bl = if length(multi_args) == 1
-    val = multi_args[end][9:end]
-    if val[1] == '[' && val[end] == ']'
-      vec_int = eval(Meta.parse(val))
-      [i in vec_int for i in range(1, num_multi_tests)]
+function parse_multi_tests_list(
+    args::Vector{String}
+  )::Tuple{Union{Nothing, Vector{Int64}}, Vector{String}}
+  multi_args = filter(x -> length(x) >= 7 && x[begin:7] == "--multi", args)
+  multi_tests_list = if length(multi_args) == 1
+    arg = multi_args[begin]
+    if length(arg) > 7
+      list_str = multi_args[end][9:end]
+      if list_str[1] == '[' && val[end] == ']'
+        eval(Meta.parse(val))
+      else
+        error("Could not parse $list_str as list of integers, please use format [x,y,...]")
+      end
     else
-      fill(eval(Meta.parse(val)), (num_multi_tests))
+      Vector{Int64}() # Means run all tests
     end
   elseif length(multi_args) > 1
     error("--multi has been passed as an argument more than once")
   else
-    fill(false, (num_multi_tests))
+    nothing
   end
-  (multi_tests_bl, filter(x -> !(length(x) >= 8 && x[begin:8] == "--multi="), args))
+  (multi_tests_list, filter(x -> !(length(x) >= 7 && x[begin:7] == "--multi"), args))
 end
 
 function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{String}}
@@ -603,27 +610,16 @@ if ("--help" in ARGS || length(ARGS) == 0)
   show_help()
 else
   args = ARGS
-  @info args
   clean_up, args = parse_clean_up(args)
-  @info args
   example_simple, args = parse_example_simple(args)
-  @info args
   example_components, args = parse_example_components(args)
-  @info args
-  multi_tests_bl, args = parse_multi_tests_bl(args)
-  @info args
+  multi_tests_list, args = parse_multi_tests_list(args)
   multi_tests_to, args = parse_multi_tests_to(args)
-  @info args
   if length(args) != 0
     error("Args $(join(args, ", ")) not recognized")
   end
-  @info clean_up
-  @info example_simple
-  @info example_components
-  @info multi_tests_bl
-  @info multi_tests_to
   run_tests(
-    clean_up, example_simple, example_components, multi_tests_bl, multi_tests_to
+    clean_up, example_simple, example_components, multi_tests_list, multi_tests_to
   )
 end
 
