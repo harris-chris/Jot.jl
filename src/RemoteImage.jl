@@ -15,7 +15,7 @@ the RemoteImage still exists.
   ecr_repo::Union{Missing, ECRRepo} = missing
   exists::Bool = true
 end
-StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{RemoteImage}) = StructTypes.Mutable()
 Base.:(==)(a::RemoteImage, b::RemoteImage) = a.imageDigest == b.imageDigest
 
 """
@@ -45,7 +45,6 @@ function delete!(r::RemoteImage)
   delete_script = get_delete_remote_image_script(r)
   output = readchomp(`bash -c $delete_script`)
   r.exists = false
-  @debug get_remote_images(r.ecr_repo)
   if length(get_remote_images(r.ecr_repo)) == 0
     delete!(r.ecr_repo)
   end
@@ -55,7 +54,7 @@ end
 """
     get_remote_image(local_image::LocalImage)::Union{Nothing, RemoteImage}
 
-Queries AWS and returns a `RemoteImage` instance corresponding to the given `local_image`. 
+Queries AWS and returns a `RemoteImage` instance corresponding to the given `local_image`.
 
 If multiple valid images exist, this will return the first only. If none exists, returns `nothing`.
 """
@@ -71,7 +70,7 @@ end
 """
     get_remote_image(identity::AbstractString)::Union{Nothing, RemoteImage}
 
-Queries AWS and returns a `RemoteImage` instance corresponding to the given `identity` string. 
+Queries AWS and returns a `RemoteImage` instance corresponding to the given `identity` string.
 
 The identity string will attempt to match on the name of the remote image, or the image's Digest.
 

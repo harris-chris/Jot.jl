@@ -14,6 +14,7 @@ using JotTest2
 
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
+const jot_multi_test_tag_key = "JOT_MULTI_TEST_NUM"
 
 @enum MultiTo begin
   responder
@@ -54,23 +55,32 @@ function test_actual_labels_against_expected(
 end
 
 function run_tests(
-    clean_up::Bool,
     example_simple::Bool,
     example_components::Bool,
     multi_tests_list::Union{Nothing, Vector{Int64}},
     multi_tests_to::MultiTo,
+    clean_up::Bool,
+    clean_up_only::Bool,
   )
-  ENV["JOT_TEST_RUNNING"] = "true"
-  example_simple && run_example_simple_test(clean_up)
-  example_components && run_example_components_test(clean_up)
-  !isnothing(multi_tests_list) && run_multi_tests(
-    multi_tests_list, multi_tests_to, clean_up
-  )
-  ENV["JOT_TEST_RUNNING"] = "false"
+  if clean_up_only
+    if any([example_simple, example_components, !isnothing(multi_tests_list)])
+      error("--clean-up-only passed but tests also passed")
+    else
+      clean_up_multi_tests()
+      clean_up_example_simple_test()
+    end
+  else
+    ENV["JOT_TEST_RUNNING"] = "true"
+    example_simple && run_example_simple_test(clean_up)
+    example_components && run_example_components_test(clean_up)
+    !isnothing(multi_tests_list) && run_multi_tests(
+      multi_tests_list, multi_tests_to, clean_up
+    )
+    ENV["JOT_TEST_RUNNING"] = "false"
+  end
 end
 
 function run_example_components_test(clean_up::Bool)
-  clean_up_example_test()
   @testset "Example components" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -83,26 +93,28 @@ function run_example_components_test(clean_up::Bool)
 
     # Create a LambdaComponents instance from the responder
     @info "Creating LambdaComponents"
-    lambda_components = create_lambda_components(increment_responder; image_suffix="increment-vector")
+    lambda_components = create_lambda_components(
+      increment_responder; image_suffix="increment-vector"
+    )
 
     lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
-
-    # Clean up
-    if clean_up
-      delete!(lambda_components)
-      rm("./increment_vector.jl")
-
-      @test isnothing(get_local_image("increment-vector"))
-      @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
-      @test isnothing(get_ecr_repo("increment-vector"))
-      @test isnothing(get_remote_image("increment-vector"))
-    end
+  end
+  if clean_up
+    clean_up_lambda_components(lambda_components)
   end
 end
 
+function clean_up_lambda_components(lambda_components::LambdaComponents)
+  delete!(lambda_components)
+  rm("./increment_vector.jl")
+
+  @test isnothing(get_local_image("increment-vector"))
+  @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
+  @test isnothing(get_ecr_repo("increment-vector"))
+  @test isnothing(get_remote_image("increment-vector"))
+end
 
 function run_example_simple_test(clean_up::Bool)
-  clean_up_example_test()
   @testset "Example simple" begin
     # Create a simple script to use as a lambda function
     open("increment_vector.jl", "w") do f
@@ -134,33 +146,38 @@ function run_example_simple_test(clean_up::Bool)
     # ... and test it to see if it's working OK
     @info "Testing lambda function"
     @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
-
-    # Clean up
-    if clean_up
-      delete!(increment_vector_lambda)
-      delete!(remote_image)
-      delete!(local_image)
-      rm("./increment_vector.jl")
-      @test isnothing(get_aws_role(increment_vector_lambda.Role))
-      @test isnothing(get_ecr_repo("increment-vector"))
-    end
-    # Check that this has also cleaned up the ECR Repo and the AWS Role
+  end
+  if clean_up
+    clean_up_example_simple_test()
   end
 end
 
-function clean_up_example_test()
-  # Before the test, delete anything which might be left over
-  existing_lf = get_lambda_function("increment-vector")
-  !isnothing(existing_lf) && delete!(existing_lf)
+function clean_up_example_simple_test()
+  @testset "Clean up example simple test" begin
+    existing_lf = get_lambda_function("increment-vector")
+    if !isnothing(existing_lf)
+      delete!(existing_lf)
+      @test isnothing(get_lambda_function("increment-vector"))
+    end
 
-  existing_ri = get_remote_image("increment-vector")
-  !isnothing(existing_ri) && delete!(existing_ri)
+    existing_ri = get_remote_image("increment-vector")
+    if !isnothing(existing_ri)
+      delete!(existing_ri)
+      @test isnothing(get_remote_image("increment-vector"))
+    end
 
-  existing_ecr = get_ecr_repo("increment-vector")
-  !isnothing(existing_ecr) && delete!(existing_ecr)
+    existing_ecr = get_ecr_repo("increment-vector")
+    if !isnothing(existing_ecr)
+      delete!(existing_ecr)
+      @test isnothing(get_ecr_repo("increment-vector"))
+    end
 
-  existing_li = get_local_image("increment-vector")
-  !isnothing(existing_li) && delete!(existing_li)
+    existing_li = get_local_image("increment-vector")
+    if !isnothing(existing_li)
+      delete!(existing_li)
+      @test isnothing(get_local_image("increment-vector"))
+    end
+  end
 end
 
 struct GetResponderArgs
@@ -213,7 +230,10 @@ function get_multi_tests_data()::Vector{SingleTestData}
     ),
     CreateLocalImageArgs(
       false, ExpectedLabels(
-        "JotTest1", "response_func", joinpath(jot_path, "test/JotTest1"), Dict("TEST"=>"1"),
+        "JotTest1",
+        "response_func",
+        joinpath(jot_path, "test/JotTest1"),
+        Dict(jot_multi_test_tag_key=>"1"),
       )
     ),
     TestState(nothing, nothing, nothing, nothing, nothing),
@@ -233,7 +253,10 @@ function get_multi_tests_data()::Vector{SingleTestData}
     ),
     CreateLocalImageArgs(
       true, ExpectedLabels(
-        "JotTest2", "response_func", joinpath(jot_path, "test/JotTest2"), Dict("TEST"=>"2"),
+        "JotTest2",
+        "response_func",
+        joinpath(jot_path, "test/JotTest2"),
+        Dict(jot_multi_test_tag_key=>"2"),
       )
     ),
     TestState(nothing, nothing, nothing, nothing, nothing),
@@ -254,7 +277,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "JotTest3",
         "response_func",
         "https://github.com/harris-chris/JotTest3",
-        Dict("TEST"=>"3"),
+        Dict(jot_multi_test_tag_key=>"3"),
       )
     ),
     TestState(nothing, nothing, nothing, nothing, nothing),
@@ -280,7 +303,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Jot.get_package_name_from_script_name("jot-test-4.jl"),
         "map_log_gamma",
         joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
-        Dict("TEST"=>"4"),
+        Dict(jot_multi_test_tag_key=>"4"),
       )
     ),
     TestState(nothing, nothing, nothing, nothing, nothing),
@@ -298,30 +321,34 @@ function run_multi_tests(
   if isempty(test_list)
     tests_data = tests_data_all
   else
-    test_list_bl = [i in vec_int for i in range(1, length(tests_data_all))]
+    test_list_bl = [i in test_list for i in range(1, length(tests_data_all))]
     tests_data = tests_data_all[test_list_bl]
   end
 
   aws_role = test_aws_role()
 
-  foreach(enumerate(tests_data)) do (i, test_data)
+  foreach(zip(test_list, tests_data)) do (i, test_data)
     @testset "Multi-Tests Test $i" begin
-      test_data.test_state.responder = test_responder(
-        test_data.get_responder_args.responder_obj,
-        test_data.get_responder_args.responder_func,
-        test_data.get_responder_args.responder_param_type,
-        test_data.get_responder_args.kwargs,
-      )
+      @testset "Responder test" begin
+        test_data.test_state.responder = test_responder(
+          test_data.get_responder_args.responder_obj,
+          test_data.get_responder_args.responder_func,
+          test_data.get_responder_args.responder_param_type,
+          test_data.get_responder_args.kwargs,
+        )
+      end
       if multi_to == responder
         return
       end
 
       if test_data.test_state.responder != nothing
-        test_data.test_state.local_image = test_local_image(
-          test_data.test_state.responder,
-          test_data.create_local_image_args,
-          test_data.responder_function_test_args,
-        )
+        @testset "Local image test" begin
+          test_data.test_state.local_image = test_local_image(
+            test_data.test_state.responder,
+            test_data.create_local_image_args,
+            test_data.responder_function_test_args,
+          )
+        end
       end
 
       if multi_to == local_image
@@ -329,13 +356,15 @@ function run_multi_tests(
       end
 
       if test_data.test_state.local_image != nothing
-        (ecr_repo, remote_image) = test_ecr_repo(
-          test_data.test_state.responder,
-          test_data.test_state.local_image,
-          test_data.create_local_image_args.expected_labels,
-        )
-        test_data.test_state.ecr_repo = ecr_repo
-        test_data.test_state.remote_image = remote_image
+        @testset "Remote image test" begin
+          (ecr_repo, remote_image) = test_ecr_repo(
+            test_data.test_state.responder,
+            test_data.test_state.local_image,
+            test_data.create_local_image_args.expected_labels,
+          )
+          test_data.test_state.ecr_repo = ecr_repo
+          test_data.test_state.remote_image = remote_image
+        end
       end
 
       if multi_to == ecr_repo
@@ -355,7 +384,6 @@ function run_multi_tests(
         return
       end
     end
-    clean_up && multi_tests_clean_up()
   end
 
 
@@ -373,7 +401,7 @@ function run_multi_tests(
   #   clean_up && quartet_clean_up()
   #   return
   # end
-
+  clean_up && clean_up_multi_tests()
 end
 
 function test_responder(
@@ -428,22 +456,31 @@ function test_local_image(
 end
 
 function test_package_compile(;
-    uncompiled_image::LocalImage,
-    compiled_image::LocalImage,
-    uncompiled_test_data::Tuple{Any, Any},
-    compiled_test_data::Tuple{Any, Any},
+    uncompiled::LocalImage,
+    compiled::LocalImage,
+    uncompiled_data::Tuple{Any, Any},
+    compiled_data::Tuple{Any, Any},
+    repeat_num::Int64,
   )
   @show "test_package_compile"
   sleep(2)
   @show "running test on compiled"
-  @show compiled_test_data
-  (_, compiled_time) = run_test(compiled_image, compiled_test_data...; then_stop=true)
-  @show "first test ran"
-  @show (readchomp(`docker container ls`))
+  total_run_time = 0
+  total_run_time = for _ = 1:repeat_num
+    _, this_run_time = run_test(compiled, compiled_data...; then_stop=true)
+    total_run_time += this_run_time
+  end
+  average_compiled_run_time = total_run_time / repeat_num
+  @show "Average compiled run time was $average_compiled_run_time"
   sleep(2)
-  (_, uncompiled_time) = run_test(uncompiled_image, uncompiled_test_data...; then_stop=true)
-  @show "second test ran"
-  @test compiled_time < (uncompiled_time / 2)
+  total_run_time = 0
+  total_run_time = for _ = 1:repeat_num
+    _, this_run_time = run_test(uncompiled, uncompiled_data...; then_stop=true)
+    total_run_time += this_run_time
+  end
+  average_uncompiled_run_time = total_run_time / repeat_num
+  @show "Average uncompiled run time was $average_uncompiled_run_time"
+  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
 end
 
 function test_ecr_repo(
@@ -453,18 +490,16 @@ function test_ecr_repo(
   )::Tuple{ECRRepo, RemoteImage}
   remote_image = push_to_ecr!(local_image)
   ecr_repo = remote_image.ecr_repo
-  @testset "Test remote image" begin
-    @test Jot.matches(local_image, ecr_repo)
-    @test Jot.is_jot_generated(remote_image)
-    @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
-    # Check we can find the repo
-    @test !isnothing(Jot.get_ecr_repo(local_image))
-    # Check that we can find the remote image which matches our local image
-    ri_check = Jot.get_remote_image(local_image)
-    @test !isnothing(ri_check)
-    @test Jot.matches(local_image, remote_image)
-    @test Jot.matches(res, remote_image)
-  end
+  @test Jot.matches(local_image, ecr_repo)
+  @test Jot.is_jot_generated(remote_image)
+  @test test_actual_labels_against_expected(get_labels(ecr_repo), expected_labels)
+  # Check we can find the repo
+  @test !isnothing(Jot.get_ecr_repo(local_image))
+  # Check that we can find the remote image which matches our local image
+  ri_check = Jot.get_remote_image(local_image)
+  @test !isnothing(ri_check)
+  @test Jot.matches(local_image, remote_image)
+  @test Jot.matches(res, remote_image)
   (ecr_repo, remote_image)
 end
 
@@ -504,13 +539,16 @@ function test_lambda_function(
   lambda_function
 end
 
-function multi_tests_clean_up()
+function clean_up_multi_tests()
   # Clean up
   # TODO clean up based on lambdas, eventually
-  @show "running clean up for multi tests"
-  @testset "Clean up" begin
+  @testset "Clean up multi tests" begin
     test_lfs = [x for x in Jot.get_all_lambda_functions() if occursin(test_suffix, x.FunctionName)]
-    test_repos = [x for x in Jot.get_all_ecr_repos() if occursin(test_suffix, x.repositoryName)]
+    test_repos = filter(Jot.get_all_ecr_repos()) do repo
+      repo_tags = Jot.get_all_tags(repo)
+      jot_multi_test_tag_key in map(first, repo_tags)
+    end
+    @show test_repos
     test_roles = [x for x in Jot.get_all_aws_roles() if occursin(test_suffix, x.RoleName)]
     test_local_images = [x for x in Jot.get_all_local_images() if occursin(test_suffix, x.Repository)]
     test_containers = [x for img in test_local_images for x in get_all_containers(img)]
@@ -548,20 +586,17 @@ function show_help()::Nothing
   println("    select from $m_opts")
   println("    DEFAULT: lambda_function")
   println("--no-clean-up to have the tests skip tear down")
+  println("--clean_up_only to have clean-up performed even though no tests have run")
   println("--full to run all possible tests")
 end
 
 
-function parse_clean_up(args::Vector{String})::Tuple{Bool, Vector{String}}
-  ("--no-clean-up" in args ? false : true, args[args.!="--no-clean-up"])
-end
-
 function parse_example_simple(args::Vector{String})::Tuple{Bool, Vector{String}}
-  ("--example_simple" in args, args[args.!="--example_simple"])
+  ("--example-simple" in args, args[args.!="--example-simple"])
 end
 
 function parse_example_components(args::Vector{String})::Tuple{Bool, Vector{String}}
-  ("--example_components" in args, args[args.!="--example_components"])
+  ("--example-components" in args, args[args.!="--example-components"])
 end
 
 function parse_multi_tests_list(
@@ -572,8 +607,8 @@ function parse_multi_tests_list(
     arg = multi_args[begin]
     if length(arg) > 7
       list_str = multi_args[end][9:end]
-      if list_str[1] == '[' && val[end] == ']'
-        eval(Meta.parse(val))
+      if list_str[1] == '[' && list_str[end] == ']'
+        eval(Meta.parse(list_str))
       else
         error("Could not parse $list_str as list of integers, please use format [x,y,...]")
       end
@@ -606,20 +641,30 @@ function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{Strin
   (tests_to, filter(x -> !(length(x) >= 11 && x[begin:11] == "--multi-to="), args))
 end
 
+function parse_clean_up(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--no-clean-up" in args ? false : true, args[args.!="--no-clean-up"])
+end
+
+function parse_clean_up_only(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--clean-up-only" in args, args[args.!="--clean-up-only"])
+end
+
 if ("--help" in ARGS || length(ARGS) == 0)
   show_help()
 else
   args = ARGS
+  simple, args = parse_example_simple(args)
+  components, args = parse_example_components(args)
+  multi_list, args = parse_multi_tests_list(args)
+  multi_to, args = parse_multi_tests_to(args)
   clean_up, args = parse_clean_up(args)
-  example_simple, args = parse_example_simple(args)
-  example_components, args = parse_example_components(args)
-  multi_tests_list, args = parse_multi_tests_list(args)
-  multi_tests_to, args = parse_multi_tests_to(args)
+  clean_up_only, args = parse_clean_up_only(args)
+  @show args
   if length(args) != 0
     error("Args $(join(args, ", ")) not recognized")
   end
   run_tests(
-    clean_up, example_simple, example_components, multi_tests_list, multi_tests_to
+    simple, components, multi_list, multi_to, clean_up, clean_up_only
   )
 end
 

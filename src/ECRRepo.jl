@@ -91,8 +91,30 @@ indicate it no longer exists.
 """
 function delete!(repo::ECRRepo)
   repo.exists || error("Repo does not exist")
+  delete_all_tags(repo)
   delete_script = get_delete_ecr_repo_script(repo.repositoryName)
-  run(`bash -c $delete_script`)
+  deleted_repo_json = readchomp(`bash -c $delete_script`)
+  deleted_repo = JSON3.read(deleted_repo_json, Dict{String, ECRRepo})["repository"]
+  if ismissing(deleted_repo) || deleted_repo != repo
+    error("Unable to delete repo $(repo.repositoryName)")
+  end
   repo.exists = false
+end
+
+function get_all_tags(repo::ECRRepo)::Vector{Pair{String, String}}
+  repo.exists || error("Repo does not exist")
+  tags_script = get_ecr_repo_tags_script(repo)
+  tags_json = readchomp(`bash -c $tags_script`)
+  as_vec = JSON3.read(tags_json, Dict{String, Vector{Dict{String, String}}})["tags"]
+  foldl(as_vec; init=Vector{Pair{String, String}}()) do acc, dt
+   [acc; collect(dt)]
+  end
+end
+
+function delete_all_tags(repo::ECRRepo)
+  all_tags = get_all_tags(repo)
+  tag_keys = map(first, all_tags)
+  delete_script = get_delete_ecr_repo_tags_script(repo, tag_keys)
+  deleted = readchomp(`bash -c $delete_script`)
 end
 

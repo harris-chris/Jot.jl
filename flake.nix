@@ -14,6 +14,7 @@
             awscli2
           ];
           shellHook = ''
+            command -v fish &> /dev/null && fish
             export AWS_PROFILE=personal
           '';
         };

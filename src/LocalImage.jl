@@ -10,8 +10,8 @@
         exists::Bool = true
     end
 
-Represents a docker image on the local machine, and stores associated metadata. Should not be 
-instantiated directly. If `exists` is `true`, then the image is assumed to exit and so should be 
+Represents a docker image on the local machine, and stores associated metadata. Should not be
+instantiated directly. If `exists` is `true`, then the image is assumed to exit and so should be
 visible from utilities such as `docker image ls`.
 """
 @with_kw mutable struct LocalImage <: LambdaComponent
@@ -23,7 +23,7 @@ visible from utilities such as `docker image ls`.
   Tag::String
   exists::Bool = true
 end
-StructTypes.StructType(::Type{LocalImage}) = StructTypes.Mutable()  
+StructTypes.StructType(::Type{LocalImage}) = StructTypes.Mutable()
 Base.:(==)(a::LocalImage, b::LocalImage) = a.ID[1:docker_hash_limit] == b.ID[1:docker_hash_limit]
 
 function get_image_full_name(image::LocalImage)::String
@@ -60,7 +60,7 @@ end
         jot_generated_only::Bool = true,
       )::Vector{LocalImage}
 
-Returns a vector of `LocalImage`s, representing all locally-stored docker images. 
+Returns a vector of `LocalImage`s, representing all locally-stored docker images.
 
 `args` are passed to the call to `docker image ls`, that is used to populate this vector.
 `jot_generated_only` specifies whether to filter for jot-generated images only.
@@ -76,7 +76,7 @@ end
 
 """
     delete!(
-      image::LocalImage; 
+      image::LocalImage;
       force::Bool=false,
     )
 
@@ -87,7 +87,7 @@ function delete!(image::LocalImage; force::Bool=false)
   image.exists || error("Image does not exist")
   args = force ? ["--force"] : []
   run(`docker image rm $(image.ID) $args`)
-  image.exists = false 
+  image.exists = false
 end
 
 function is_lambda(image::LocalImage)::Bool

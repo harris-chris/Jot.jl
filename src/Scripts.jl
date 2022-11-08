@@ -117,6 +117,20 @@ function get_lambda_function_tags_script(lambda_function::LambdaFunction)::Strin
   """
 end
 
+function get_ecr_repo_tags_script(ecr_repo::ECRRepo)::String
+  """
+  aws ecr list-tags-for-resource --resource-arn=$(ecr_repo.repositoryArn)
+  """
+end
+
+function get_delete_ecr_repo_tags_script(ecr_repo::ECRRepo, tag_keys::Vector{String})::String
+  """
+  aws ecr untag-resource \
+       --resource-arn $(ecr_repo.repositoryArn) \
+       --tag-keys $(join(tag_keys, " "))
+  """
+end
+
 function get_images_in_ecr_repo_script(ecr_repo::ECRRepo)::String
   """
   aws ecr list-images --repository-name=$(ecr_repo.repositoryName)
