@@ -98,10 +98,12 @@ function run_example_components_test(clean_up::Bool)
     )
 
     lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
+    if clean_up
+      clean_up_lambda_components(lambda_components)
+    end
   end
-  if clean_up
-    clean_up_lambda_components(lambda_components)
-  end
+  # Finally, run this in case clean-up has failed
+  clean_up_example_simple_test()
 end
 
 function clean_up_lambda_components(lambda_components::LambdaComponents)
@@ -110,7 +112,6 @@ function clean_up_lambda_components(lambda_components::LambdaComponents)
 
   @test isnothing(get_local_image("increment-vector"))
   @test isnothing(get_aws_role(lambda_components.lambda_function.Role))
-  @test isnothing(get_ecr_repo("increment-vector"))
   @test isnothing(get_remote_image("increment-vector"))
 end
 
@@ -150,33 +151,41 @@ function run_example_simple_test(clean_up::Bool)
   if clean_up
     clean_up_example_simple_test()
   end
+  # Finally, run this in case clean-up has failed
+  clean_up_example_simple_test()
 end
 
 function clean_up_example_simple_test()
   @testset "Clean up example simple test" begin
-    existing_lf = get_lambda_function("increment-vector")
-    if !isnothing(existing_lf)
-      delete!(existing_lf)
-      @test isnothing(get_lambda_function("increment-vector"))
+    while true
+      existing_ri = get_lambda_function("increment-vector")
+      if isnothing(existing_ri) break
+      else delete!(existing_ri) end
     end
+    @test isnothing(get_lambda_function("increment-vector"))
 
-    existing_ri = get_remote_image("increment-vector")
-    if !isnothing(existing_ri)
-      delete!(existing_ri)
-      @test isnothing(get_remote_image("increment-vector"))
+    while true
+      existing_ri = get_remote_image("increment-vector")
+      if isnothing(existing_ri) break
+      else delete!(existing_ri) end
     end
+    @test isnothing(get_remote_image("increment-vector"))
 
-    existing_ecr = get_ecr_repo("increment-vector")
-    if !isnothing(existing_ecr)
-      delete!(existing_ecr)
-      @test isnothing(get_ecr_repo("increment-vector"))
+    while true
+      existing_ecr = get_ecr_repo("increment-vector")
+      if isnothing(existing_ecr) break
+      else delete!(existing_ecr) end
     end
+    @test isnothing(get_ecr_repo("increment-vector"))
 
-    existing_li = get_local_image("increment-vector")
-    if !isnothing(existing_li)
-      delete!(existing_li)
-      @test isnothing(get_local_image("increment-vector"))
+    while true
+      @info "Starting to delete local images"
+      existing_li = get_local_image("increment-vector")
+      @show existing_li
+      if isnothing(existing_li) break
+      else delete!(existing_li) end
     end
+    @test isnothing(get_local_image("increment-vector"))
   end
 end
 
@@ -318,12 +327,10 @@ function run_multi_tests(
     clean_up::Bool
   )
   tests_data_all = get_multi_tests_data()
-  if isempty(test_list)
-    tests_data = tests_data_all
-  else
-    test_list_bl = [i in test_list for i in range(1, length(tests_data_all))]
-    tests_data = tests_data_all[test_list_bl]
-  end
+  test_list = if isempty(test_list)
+    test_list = [i for (i, _) in enumerate(tests_data_all)]
+  else test_list end
+  tests_data = tests_data_all[test_list]
 
   aws_role = test_aws_role()
 
