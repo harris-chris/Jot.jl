@@ -298,7 +298,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
       :map_log_gamma,
       Vector{Float64},
       Dict(
-        Symbol("dependencies") => ["SpecialFunctions", "PRAS"],
+        Symbol("dependencies") => ["SpecialFunctions"],
         Symbol("registry_urls") => ["https://github.com/NREL/JuliaRegistry.git"],
       )
     ),
@@ -318,7 +318,39 @@ function get_multi_tests_data()::Vector{SingleTestData}
     TestState(nothing, nothing, nothing, nothing, nothing),
   )
 
-  [ multi_test_1_data, multi_test_2_data, multi_test_3_data, multi_test_4_data ]
+  multi_test_5_arg = randstring(8)
+  multi_test_5_data = SingleTestData(
+    GetResponderArgs(
+      joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
+      :use_scratch_space,
+      String,
+      Dict(
+        Symbol("dependencies") => ["Scratch"],
+      )
+    ),
+    ResponderFunctionTestArgs(
+      multi_test_5_arg,
+      multi_test_5_arg,
+      1,
+    ),
+    CreateLocalImageArgs(
+      false, ExpectedLabels(
+        Jot.get_package_name_from_script_name("jot-test-5.jl"),
+        "use_scratch_space",
+        joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
+        Dict(jot_multi_test_tag_key=>"5"),
+      )
+    ),
+    TestState(nothing, nothing, nothing, nothing, nothing),
+  )
+
+  [
+    multi_test_1_data,
+    multi_test_2_data,
+    multi_test_3_data,
+    multi_test_4_data,
+    multi_test_5_data,
+  ]
 end
 
 function run_multi_tests(
