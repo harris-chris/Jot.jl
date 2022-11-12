@@ -330,7 +330,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
     ),
     ResponderFunctionTestArgs(
       multi_test_5_arg,
-      multi_test_5_arg,
+      "read: " * multi_test_5_arg,
       1,
     ),
     CreateLocalImageArgs(
