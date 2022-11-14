@@ -1,20 +1,32 @@
 using Sockets
 
-bootstrap_script = raw"""
-#!/bin/bash
-if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
-  LOCAL="127.0.0.1:9001"
-  echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-  exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
-else
-  echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-  # touch /tmp/working
-  # echo "CREATED TEMPORARY FILE"
-  # exec /usr/local/julia/bin/julia -e "using Jot; println(pwd())"
-  # echo "JULIA CREATED TEMP"
-  exec /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
-fi
-"""
+function get_bootstrap_script(
+    julia_depot_path::String,
+    temp_path::String,
+  )::String
+
+  bootstrap_shebang = raw"""
+  #!/bin/bash
+  """
+
+  bootstrap_env_vars = """
+  export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
+  """
+
+  bootstrap_body = raw"""
+  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+    LOCAL="127.0.0.1:9001"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
+    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+  else
+    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
+    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+  fi
+  """
+  bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
+  @debug bootstrap_script
+  bootstrap_script
+end
 
 function start_lambda_server(host::String, port::Int64)
   ROUTER = HTTP.Router()

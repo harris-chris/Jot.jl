@@ -1,15 +1,12 @@
-const runtime_path = "/var/runtime"
-const julia_depot_path = "/var/runtime/julia_depot"
-const temp_path = "/tmp"
-const jot_github_url = "https://github.com/harris-chris/Jot.jl#main"
-
 function dockerfile_add_julia_image(julia_base_version::String)::String
   """
   FROM julia:$julia_base_version
   """
 end
 
-function dockerfile_add_additional_registries(additional_registries::Vector{String})::String
+function dockerfile_add_additional_registries(
+    additional_registries::Vector{String}
+  )::String
   using_pkg_script = "using Pkg; "
   add_registries_script = begin
     str = ""
@@ -31,7 +28,11 @@ function dockerfile_add_utilities()::String
   """
 end
 
-function dockerfile_add_runtime_directories()::String
+function dockerfile_add_runtime_directories(
+    julia_depot_path::String,
+    temp_path::String,
+    runtime_path::String
+  )::String
   """
   RUN mkdir -p $julia_depot_path
   ENV JULIA_DEPOT_PATH=$julia_depot_path
@@ -48,7 +49,10 @@ function dockerfile_copy_build_dir()::String
   """
 end
 
-function dockerfile_add_responder(res::LocalPackageResponder)::String
+function dockerfile_add_responder(
+    runtime_path::String,
+    res::LocalPackageResponder,
+  )::String
   using_pkg_script = "using Pkg; "
   add_module_script = "Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); "
   instantiate_script = "Pkg.instantiate(); "
@@ -81,6 +85,7 @@ function dockerfile_add_aws_rie()::String
 end
 
 function dockerfile_add_bootstrap(
+    runtime_path::String,
     package_name::String,
     function_name::String,
     ::Type{IT}
@@ -89,8 +94,9 @@ function dockerfile_add_bootstrap(
   ENV PKG_NAME=$(package_name)
   ENV FUNC_FULL_NAME=$package_name.$function_name
   ENV FUNC_PARAM_TYPE=$IT
+  ENTRYPOINT ["$runtime_path/bootstrap"]
   RUN chmod 775 . -R
-  ENTRYPOINT ["/var/runtime/bootstrap"]
+  # RUN chmod 775 $runtime_path/bootstrap -R
   """
 end
 
