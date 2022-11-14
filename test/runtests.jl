@@ -20,8 +20,10 @@ const jot_multi_test_tag_key = "JOT_MULTI_TEST_NUM"
   responder
   local_image
   ecr_repo
-  package_compiler
   lambda_function
+  package_compiler_local
+  package_compiler_lambda
+  to_end
 end
 
 function reset_response_suffix(test_path::String)::String
@@ -58,6 +60,7 @@ function run_tests(
     example_simple::Bool,
     example_components::Bool,
     multi_tests_list::Union{Nothing, Vector{Int64}},
+    compile_tests_list::Union{Nothing, Vector{Int64}},
     multi_tests_to::MultiTo,
     clean_up::Bool,
     clean_up_only::Bool,
@@ -73,8 +76,9 @@ function run_tests(
     ENV["JOT_TEST_RUNNING"] = "true"
     example_simple && run_example_simple_test(clean_up)
     example_components && run_example_components_test(clean_up)
+    multi_tests_list = unique([multi_tests_list; compile_tests_list])
     !isnothing(multi_tests_list) && run_multi_tests(
-      multi_tests_list, multi_tests_to, clean_up
+      multi_tests_list, compile_tests_list, multi_tests_to, clean_up
     )
     ENV["JOT_TEST_RUNNING"] = "false"
   end
@@ -210,10 +214,17 @@ end
 mutable struct TestState
   responder::Union{Nothing, AbstractResponder}
   local_image::Union{Nothing, LocalImage}
+  compiled_local_image::Union{Nothing, LocalImage}
   ecr_repo::Union{Nothing, ECRRepo}
   remote_image::Union{Nothing, RemoteImage}
+  compiled_remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
+  compiled_lambda_function::Union{Nothing, LambdaFunction}
 end
+
+get_empty_test_state() = TestState(
+  nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+)
 
 mutable struct SingleTestData
   get_responder_args::GetResponderArgs
@@ -245,7 +256,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Dict(jot_multi_test_tag_key=>"1"),
       )
     ),
-    TestState(nothing, nothing, nothing, nothing, nothing),
+    get_empty_test_state(),
   )
 
   multi_test_2_data = SingleTestData(
@@ -268,7 +279,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Dict(jot_multi_test_tag_key=>"2"),
       )
     ),
-    TestState(nothing, nothing, nothing, nothing, nothing),
+    get_empty_test_state(),
   )
 
   multi_test_3_data = SingleTestData(
@@ -289,7 +300,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Dict(jot_multi_test_tag_key=>"3"),
       )
     ),
-    TestState(nothing, nothing, nothing, nothing, nothing),
+    get_empty_test_state(),
   )
 
   multi_test_4_data = SingleTestData(
@@ -315,7 +326,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Dict(jot_multi_test_tag_key=>"4"),
       )
     ),
-    TestState(nothing, nothing, nothing, nothing, nothing),
+    get_empty_test_state(),
   )
 
   multi_test_5_arg = randstring(8)
@@ -341,7 +352,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         Dict(jot_multi_test_tag_key=>"5"),
       )
     ),
-    TestState(nothing, nothing, nothing, nothing, nothing),
+    get_empty_test_state(),
   )
 
   [
@@ -355,6 +366,7 @@ end
 
 function run_multi_tests(
     test_list::Vector{Int64},
+    compile_list::Vector{Int64},
     multi_to::MultiTo,
     clean_up::Bool
   )
@@ -366,81 +378,94 @@ function run_multi_tests(
 
   aws_role = test_aws_role()
 
-  foreach(zip(test_list, tests_data)) do (i, test_data)
-    @testset "Multi-Tests Test $i" begin
-      @testset "Responder test" begin
-        test_data.test_state.responder = test_responder(
-          test_data.get_responder_args.responder_obj,
-          test_data.get_responder_args.responder_func,
-          test_data.get_responder_args.responder_param_type,
-          test_data.get_responder_args.kwargs,
-        )
-      end
-      if multi_to == responder
-        return
-      end
+  @testset "Multi-Tests" begin
+    foreach(zip(test_list, tests_data)) do (i, test_data)
+      @testset "Multi-Tests Test $i" begin
+        @testset "Responder test" begin
+          test_data.test_state.responder = test_responder(
+            test_data.get_responder_args.responder_obj,
+            test_data.get_responder_args.responder_func,
+            test_data.get_responder_args.responder_param_type,
+            test_data.get_responder_args.kwargs,
+          )
+        end
+        if multi_to == responder
+          return
+        end
 
-      if test_data.test_state.responder != nothing
-        @testset "Local image test" begin
-          test_data.test_state.local_image = test_local_image(
-            test_data.test_state.responder,
-            test_data.create_local_image_args,
+        if test_data.test_state.responder != nothing
+          @testset "Local image test" begin
+            test_data.test_state.local_image = test_local_image(
+              test_data.test_state.responder,
+              test_data.create_local_image_args,
+              test_data.responder_function_test_args,
+            )
+          end
+        else
+          @info "RESPONDER NOT FOUND, SKIPPING LOCAL IMAGE TEST"
+        end
+
+        if multi_to == local_image
+          return
+        end
+
+        if test_data.test_state.local_image != nothing
+          @testset "Remote image test" begin
+            (ecr_repo, remote_image) = test_ecr_repo(
+              test_data.test_state.responder,
+              test_data.test_state.local_image,
+              test_data.create_local_image_args.expected_labels,
+            )
+            test_data.test_state.ecr_repo = ecr_repo
+            test_data.test_state.remote_image = remote_image
+          end
+        else
+          @info "LOCAL IMAGE NOT FOUND, SKIPPING REMOTE IMAGE TEST"
+        end
+
+        if multi_to == ecr_repo
+          return
+        end
+
+        if test_data.test_state.remote_image != nothing
+          test_lambda_function(
+            test_data.test_state.ecr_repo,
+            test_data.test_state.remote_image,
+            aws_role,
             test_data.responder_function_test_args,
           )
+        else
+          @info "REMOTE IMAGE NOT FOUND, SKIPPING LAMBDA FUNCTION TEST"
         end
-      end
 
-      if multi_to == local_image
-        return
-      end
-
-      if test_data.test_state.local_image != nothing
-        @testset "Remote image test" begin
-          (ecr_repo, remote_image) = test_ecr_repo(
-            test_data.test_state.responder,
-            test_data.test_state.local_image,
-            test_data.create_local_image_args.expected_labels,
-          )
-          test_data.test_state.ecr_repo = ecr_repo
-          test_data.test_state.remote_image = remote_image
+        if multi_to == lambda_function
+          return
         end
-      end
 
-      if multi_to == ecr_repo
-        return
-      end
-
-      if test_data.test_state.remote_image != nothing
-        test_lambda_function(
-          test_data.test_state.ecr_repo,
-          test_data.test_state.remote_image,
-          aws_role,
-          test_data.responder_function_test_args,
-        )
-      end
-
-      if multi_to == lambda_function
-        return
+        @testset "Package compiler local test" begin
+          if !(i in compile_list)
+            @info "--compile NOT SET FOR TEST $i, SKIPPING PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.responder)
+            @info "RESPONDER NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          elseif isnothing(test_data.test_state.local_image)
+            @info "LOCAL IMAGE NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
+          else
+            test_data.test_state.compiled_local_image = test_compiled_local_image(
+              test_data.test_state.responder,
+              test_data.create_local_image_args,
+              test_data.responder_function_test_args,
+              test_data.test_state.local_image,
+            )
+          end
+        end
+        if multi_to == package_compiler_local
+          clean_up && quartet_clean_up()
+          return
+        end
       end
     end
-  end
-
-
-  # @testset "Package compiler" begin
-  #   if(all(test_list)) # Only run test if we are testing all the quartet
-  #     test_package_compile(;
-  #       compiled_image=local_images[1],
-  #       uncompiled_image=local_images[2],
-  #       compiled_test_data=test_data[1][1:2],
-  #       uncompiled_test_data=test_data[2][1:2],
-  #     )
-  #   end
-  # end
-  # if multi_to == package_compiler
-  #   clean_up && quartet_clean_up()
-  #   return
-  # end
   clean_up && clean_up_multi_tests()
+  end
 end
 
 function test_responder(
@@ -494,32 +519,48 @@ function test_local_image(
   local_image
 end
 
-function test_package_compile(;
-    uncompiled::LocalImage,
-    compiled::LocalImage,
-    uncompiled_data::Tuple{Any, Any},
-    compiled_data::Tuple{Any, Any},
-    repeat_num::Int64,
+function test_compiled_local_image(
+    res::AbstractResponder,
+    create_local_image_args::CreateLocalImageArgs,
+    responder_function_test_args::ResponderFunctionTestArgs,
+    uncompiled_local_image::LocalImage;
+    repeat_num::Int64 = 5,
+  )::LocalImage
+  compiled_local_image = create_local_image(
+    res;
+    aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
+    package_compile = true,
+    user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
-  @show "test_package_compile"
-  sleep(2)
   @show "running test on compiled"
-  total_run_time = 0
-  total_run_time = for _ = 1:repeat_num
-    _, this_run_time = run_test(compiled, compiled_data...; then_stop=true)
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, this_run_time = run_test(
+      compiled_local_image,
+      responder_function_test_args.good_arg,
+      responder_function_test_args.expected_response;
+      then_stop=true
+    )
+    @info "Test run $num with compiled local image took $this_run_time"
     total_run_time += this_run_time
   end
   average_compiled_run_time = total_run_time / repeat_num
-  @show "Average compiled run time was $average_compiled_run_time"
-  sleep(2)
-  total_run_time = 0
-  total_run_time = for _ = 1:repeat_num
-    _, this_run_time = run_test(uncompiled, uncompiled_data...; then_stop=true)
+  @info "Average compiled run time was $average_compiled_run_time"
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, this_run_time = run_test(
+      uncompiled_local_image,
+      responder_function_test_args.good_arg,
+      responder_function_test_args.expected_response;
+      then_stop=true
+    )
+    @info "Test run $num with uncompiled local image took $this_run_time"
     total_run_time += this_run_time
   end
   average_uncompiled_run_time = total_run_time / repeat_num
-  @show "Average uncompiled run time was $average_uncompiled_run_time"
-  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
+  @info "Average uncompiled run time was $average_uncompiled_run_time"
+  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
+  compiled_local_image
 end
 
 function test_ecr_repo(
@@ -638,28 +679,33 @@ function parse_example_components(args::Vector{String})::Tuple{Bool, Vector{Stri
   ("--example-components" in args, args[args.!="--example-components"])
 end
 
-function parse_multi_tests_list(
-    args::Vector{String}
+function parse_tests_list(
+    args::Vector{String},
+    kwarg::String,
   )::Tuple{Union{Nothing, Vector{Int64}}, Vector{String}}
-  multi_args = filter(x -> length(x) >= 7 && x[begin:7] == "--multi", args)
-  multi_tests_list = if length(multi_args) == 1
-    arg = multi_args[begin]
-    if length(arg) > 7
-      list_str = multi_args[end][9:end]
+  kwarg_len = length(kwarg)
+  test_args = filter(x -> length(x) >= kwarg_len && x[begin:kwarg_len] == kwarg, args)
+  test_list = if length(test_args) == 1
+    arg = test_args[begin]
+    if length(arg) > kwarg_len
+      list_str = test_args[end][kwarg_len + 2:end]
       if list_str[1] == '[' && list_str[end] == ']'
         eval(Meta.parse(list_str))
       else
-        error("Could not parse $list_str as list of integers, please use format [x,y,...]")
+        error("Could not parse {kwarg} argument $list_str as list of integers, "
+              * "please use format [x,y,...]")
       end
     else
       Vector{Int64}() # Means run all tests
     end
-  elseif length(multi_args) > 1
-    error("--multi has been passed as an argument more than once")
+  elseif length(test_args) > 1
+    error("$kwarg has been passed as an argument more than once")
   else
     nothing
   end
-  (multi_tests_list, filter(x -> !(length(x) >= 7 && x[begin:7] == "--multi"), args))
+  (test_list, filter(
+    x -> !(length(x) >= kwarg_len && x[begin:kwarg_len] == kwarg), args)
+  )
 end
 
 function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{String}}
@@ -675,7 +721,7 @@ function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{Strin
   elseif length(multi_args) > 1
     error("--multi has been passed as an argument more than once")
   else
-    lambda_function
+    to_end
   end
   (tests_to, filter(x -> !(length(x) >= 11 && x[begin:11] == "--multi-to="), args))
 end
@@ -694,7 +740,9 @@ else
   args = ARGS
   simple, args = parse_example_simple(args)
   components, args = parse_example_components(args)
-  multi_list, args = parse_multi_tests_list(args)
+  multi_list, args = parse_tests_list(args, "--multi")
+  compile_list, args = parse_tests_list(args, "--compile")
+  @show compile_list
   multi_to, args = parse_multi_tests_to(args)
   clean_up, args = parse_clean_up(args)
   clean_up_only, args = parse_clean_up_only(args)
@@ -703,7 +751,7 @@ else
     error("Args $(join(args, ", ")) not recognized")
   end
   run_tests(
-    simple, components, multi_list, multi_to, clean_up, clean_up_only
+    simple, components, multi_list, compile_list, multi_to, clean_up, clean_up_only
   )
 end
 
