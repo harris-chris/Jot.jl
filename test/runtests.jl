@@ -167,8 +167,6 @@ function run_example_simple_test(clean_up::Bool)
   if clean_up
     clean_up_example_simple_test()
   end
-  # Finally, run this in case clean-up has failed
-  clean_up_example_simple_test()
 end
 
 function clean_up_example_simple_test()
@@ -734,7 +732,6 @@ function show_help()::Nothing
   println("--full to run all possible tests")
 end
 
-
 function parse_example_simple(args::Vector{String})::Tuple{Bool, Vector{String}}
   ("--example-simple" in args, args[args.!="--example-simple"])
 end
@@ -792,7 +789,7 @@ function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{Strin
 end
 
 function parse_clean_up(args::Vector{String})::Tuple{Bool, Vector{String}}
-  ("--no-clean-up" in args ? false : true, args[args.!="--no-clean-up"])
+  (!("--no-clean-up" in args), args[args.!="--no-clean-up"])
 end
 
 function parse_clean_up_only(args::Vector{String})::Tuple{Bool, Vector{String}}

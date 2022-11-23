@@ -16,18 +16,18 @@ end
 
 function lambda_respond(response::String, endpoint::String, aws_request_id::String)
   HTTP.request(
-    "POST", 
-    "$(endpoint)$(aws_request_id)/response", 
-    [], 
+    "POST",
+    "$(endpoint)$(aws_request_id)/response",
+    [],
     response,
   )
 end
 
 function lambda_error(error::String, endpoint::String, aws_request_id::String)
   HTTP.request(
-    "POST", 
-    "$(endpoint)$(aws_request_id)/error", 
-    [("Lambda-Runtime-Function-Error-Type", "Unhandled")], 
+    "POST",
+    "$(endpoint)$(aws_request_id)/error",
+    [("Lambda-Runtime-Function-Error-Type", "Unhandled")],
     JSON3.write(error),
   )
 end
@@ -37,15 +37,19 @@ function start_runtime(host::String, func_name::String, param_type::String; sing
   start_runtime(host, eval(Meta.parse(func_name)), param_type)
 end
 
-function start_runtime(host::String, react_function::Function, ::Type{T}; single_shot=false) where {T}
+function start_runtime(
+    host::String, react_function::Function, ::Type{T}; single_shot=false
+  ) where {T}
   endpoint = get_endpoint(host)
-  println("Starting runtime at $endpoint")
+  println("$JOT_OBSERVATION Starting runtime at $endpoint")
 
   while true
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
     body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
+    println("$JOT_OBSERVATION $JOT_AWS_LAMBDA_REQUEST_ID : $request_id")
 
+    println("$JOT_OBSERVATION Received invocation message, parsing to JSON ...")
     body = try
       JSON3.read(body_raw, T)
     catch e
@@ -54,6 +58,7 @@ function start_runtime(host::String, react_function::Function, ::Type{T}; single
       continue
     end
 
+    println("$JOT_OBSERVATION ... invocation message parsed, calling responder function ...")
     reaction = try
       react_function(body)
     catch e
@@ -65,6 +70,7 @@ function start_runtime(host::String, react_function::Function, ::Type{T}; single
       end
       continue
     end
+    println("$JOT_OBSERVATION ... received response from responder function, writing to JSON ...")
 
     reaction_json = try
       JSON3.write(reaction)
@@ -73,7 +79,9 @@ function start_runtime(host::String, react_function::Function, ::Type{T}; single
       continue
     end
 
+    println("$JOT_OBSERVATION ... JSON created, posting response to AWS Lambda ...")
     lambda_respond(reaction_json, endpoint, request_id)
+    println("$JOT_OBSERVATION ... Response posted, invocation finished")
     single_shot && break
   end
 end

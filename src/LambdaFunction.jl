@@ -158,9 +158,9 @@ function invoke_function(
   end
   request_json = JSON3.write(request)
   outfile_path = tempname()
-  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn,
-                                                    request_json,
-                                                    outfile_path)
+  invoke_script = get_invoke_lambda_function_script(
+    lambda_function.FunctionArn, request_json, outfile_path, false
+  )
   status = readchomp(`bash -c $invoke_script`) |> JSON3.read
   response = open(outfile_path, "r") do f
     read(f, String) |> JSON3.read
@@ -170,5 +170,113 @@ function invoke_function(
   else
     response
   end
+end
+
+"""
+    invoke_function_with_log(
+        request::Any,
+        lambda_function::LambdaFunction;
+        check_state::Bool=false,
+      )::Tuple{Any, LambdaFunctionInvocationLog}
+
+As per invoke_function, but returns a Tuple of {Any, LambdaFunctionInvocationLog}, consisting of the result as well as log information about the invocation in the form of a LambdaFunctionInvocationLog.
+"""
+function invoke_function_with_log(
+    request::Any,
+    lambda_function::LambdaFunction;
+    check_state::Bool=false,
+  )::Tuple{Any, LambdaFunctionInvocationLog}
+  if check_state
+    while true
+      Jot.get_function_state(lambda_function) == Active && break
+    end
+  end
+  request_json = JSON3.write(request)
+  outfile_path = tempname()
+  invoke_script = get_invoke_lambda_function_script(
+    lambda_function.FunctionArn, request_json, outfile_path, true
+  )
+
+  status_pipe = Pipe()
+  debug_pipe = Pipe()
+  process = run(
+    pipeline(`bash -c $invoke_script`, stdout=status_pipe, stderr=debug_pipe)
+  )
+  close(status_pipe.in)
+  close(debug_pipe.in)
+
+  status = JSON3.read(String(read(status_pipe)))
+  debug = String(read(debug_pipe))
+
+  request_id = get_request_id_from_aws_debug_output(debug)
+  log_group_name = get_cloudwatch_log_group_name(lambda_function)
+  log_events = get_cloudwatch_log_events(log_group_name, request_id)
+
+  invocation_log = LambdaFunctionInvocationLog(
+    request_id,
+    log_group_name,
+    log_events,
+  )
+
+  response = open(outfile_path, "r") do f
+    read(f, String) |> JSON3.read
+  end
+  if haskey(status, "FunctionError")
+    throw(LambdaException("$response"))
+  else
+    (response, invocation_log)
+  end
+end
+
+function get_request_id_from_aws_debug_output(
+    debug_output::AbstractString,
+  )::String
+  request_id_idx = findlast("RequestId: ", debug_output)
+  request_id_start = last(request_id_idx) + 1
+  request_id_block = debug_output[request_id_start:end]
+  strip(split(request_id_block, " ")[begin])
+end
+
+function get_cloudwatch_log_group_name(
+    lambda_function::LambdaFunction
+  )::String
+  describe_log_groups_script = get_describe_log_groups_script()
+  log_groups_str = readchomp(`bash -c $describe_log_groups_script`)
+  log_groups = JSON3.read(log_groups_str, Dict{String, Vector{LogGroup}})["logGroups"]
+  @show lambda_function.FunctionArn
+  this_log_groups = filter(log_groups) do group
+    endswith(group.arn, lambda_function.FunctionName * ":*")
+  end
+  if length(this_log_groups) == 0
+    error("Could not find cloudwatch log group corresponding to Lambda function " *
+       "$lambda_function.FunctionName"
+    )
+  end
+  if length(this_log_groups) > 1
+    error("Found multiple cloudwatch log groups corresponding to Lambda function " *
+       "$lambda_function.FunctionName"
+    )
+  end
+  this_log_groups[1].logGroupName
+end
+
+function get_cloudwatch_log_events(
+    log_group_name::String,
+    request_id::String,
+  )::Vector{LogEvent}
+  get_log_streams = get_log_streams_script(log_group_name)
+  log_streams_str = readchomp(`bash -c $get_log_streams`)
+  log_streams = JSON3.read(
+    log_streams_str,
+    Dict{String, Vector{LogStream}}
+  )["logStreams"]
+  if length(log_streams) == 0
+    error("Could find no Cloudwatch log streams for $log_group_name")
+  end
+  this_log_stream = log_streams[begin]
+  log_stream_name = this_log_stream.logStreamName
+  log_events_script = get_log_events_script(log_group_name, log_stream_name)
+  log_events_str = readchomp(`bash -c $log_events_script`)
+  JSON3.read(log_events_str, Dict{String, Union{String, Vector{LogEvent}}})["events"]
 end
 

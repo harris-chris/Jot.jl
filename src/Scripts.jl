@@ -49,7 +49,6 @@ function start_lambda_server(host::String, port::Int64)
     return HTTP.Response(200, JSON3.write(answer))
   end
 
-
   HTTP.@register(ROUTER, "POST", "/*", post_respond)
   HTTP.@register(ROUTER, "GET", "/*", get_respond)
   @sync HTTP.serve(ROUTER, host, port, server=server)
@@ -91,9 +90,13 @@ function get_init_script(
   precomp = """
   import Pkg
   using Jot
+  @info "Running precompile ..."
   Pkg.precompile()
+  @info "... finished running precompile"
   """
+
   package_compile_script = """
+  @info "Running package compile script ..."
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="1.7.7"))
   using PackageCompiler
   @async Jot.start_lambda_server("127.0.0.1", 9001)
@@ -103,6 +106,7 @@ function get_init_script(
                   replace_default=true,
                   cpu_target="$cpu_target",
                  )
+  @info "... finished running package compile script"
   """
   package_compile ? precomp * package_compile_script : precomp
 end
@@ -224,6 +228,12 @@ function get_create_lambda_role_script(role_name)::String
   """
 end
 
+function get_attach_lambda_execution_policy_to_role_script(role_name)::String
+  """
+  aws iam attach-role-policy --role-name $(role_name) --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  """
+end
+
 function get_delete_lambda_role_script(role_name)::String
   """
   aws iam delete-role --role-name $(role_name)
@@ -270,12 +280,40 @@ function get_invoke_lambda_function_script(
     function_arn::String,
     request::String,
     outfile::String,
+    debug::Bool,
   )::String
+
   """
   aws lambda invoke \\
     --function-name=$(function_arn) \\
     --payload='$(request)' \\
     --cli-binary-format raw-in-base64-out \\
-    $outfile
+    $(if debug "--debug" else "" end) $outfile
+  """
+end
+
+function get_describe_log_groups_script()::String
+   """
+   aws logs describe-log-groups
+   """
+end
+
+function get_log_streams_script(log_group_name::String)::String
+   """
+   aws logs describe-log-streams \\
+       --log-group-name '$log_group_name' \\
+       --order-by LastEventTime \\
+       --descending
+   """
+end
+
+function get_log_events_script(
+    log_group_name::String,
+    log_stream_name::String,
+  )::String
+  """
+  aws logs get-log-events \\
+      --log-group-name '$log_group_name' \\
+      --log-stream-name '$log_stream_name'
   """
 end

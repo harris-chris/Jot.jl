@@ -28,10 +28,11 @@ export stop_container, is_container_running
 export create_ecr_repo, get_ecr_repo, push_to_ecr!
 export get_remote_image
 export create_aws_role
-export create_lambda_function, get_lambda_function, invoke_function
+export create_lambda_function, get_lambda_function
+export invoke_function, invoke_function_with_log
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
-export show_lambdas
+export show_lambdas, show_observations, JOT_OBSERVATION, JOT_AWS_LAMBDA_REQUEST_ID
 export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
 export get_all_containers, get_all_aws_roles
@@ -51,6 +52,7 @@ include("Responder.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
 include("RemoteImage.jl")
+include("LambdaFunctionInvocationLog.jl")
 include("Container.jl")
 include("LambdaFunction.jl")
 include("AWS.jl")
@@ -477,8 +479,9 @@ function run_test(
     function_argument::Any = "",
     expected_response::Any = nothing;
     check_function_state::Bool = false,
-  )::Tuple{Bool, Union{Missing, Float64}}
+  )::Tuple{Bool, Union{Missing, FunctionInvocationLog}}
   try
+
     time_taken = @elapsed actual = invoke_function(function_argument, func; check_state = check_function_state)
     passed = actual == expected_response
     passed && @info "Remote test passed in $time_taken seconds; result received matched expected $actual"
