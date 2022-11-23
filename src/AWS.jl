@@ -95,10 +95,15 @@ function create_aws_role(role_name::String)::AWSRole
     end
   else
     create_script = get_create_lambda_role_script(role_name)
-    role_json = readchomp(`bash -c $create_script`)
     @info "Creating role $role_name ..."
-    sleep(10);
+    role_json = readchomp(`bash -c $create_script`)
     @debug role_json
+    sleep(10);
+    attach_lambda_execution = get_attach_lambda_execution_policy_to_role_script(
+      role_name
+    )
+    @info "Attaching lambda role"
+    _ = readchomp(`bash -c $attach_lambda_execution`)
     JSON3.read(role_json, Dict{String, AWSRole})["Role"]
   end
 end
@@ -140,10 +145,10 @@ function get_ecr_uri_string(aws_config::AWSConfig, image_suffix::String)::String
   "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com/$image_suffix"
 end
 
-function create_lambda_execution_role(role_name)
-  create_script = get_create_lambda_role_script(role_name)
-  run(`bash -c $create_script`)
-end
+# function create_lambda_execution_role(role_name)
+#   create_script = get_create_lambda_role_script(role_name)
+#   run(`bash -c $create_script`)
+# end
 
 function aws_role_has_lambda_execution_permissions(role::AWSRole)::Bool
   lambda_execution_policy_statement in role.AssumeRolePolicyDocument.Statement

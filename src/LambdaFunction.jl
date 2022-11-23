@@ -158,9 +158,9 @@ function invoke_function(
   end
   request_json = JSON3.write(request)
   outfile_path = tempname()
-  invoke_script = get_invoke_lambda_function_script(lambda_function.FunctionArn,
-                                                    request_json,
-                                                    outfile_path)
+  invoke_script = get_invoke_lambda_function_script(
+    lambda_function.FunctionArn, request_json, outfile_path; debug=debug
+  )
   status = readchomp(`bash -c $invoke_script`) |> JSON3.read
   response = open(outfile_path, "r") do f
     read(f, String) |> JSON3.read
@@ -172,3 +172,57 @@ function invoke_function(
   end
 end
 
+"""
+    invoke_function_with_log(
+        request::Any,
+        lambda_function::LambdaFunction;
+        check_state::Bool=false,
+      )::Tuple{Any, FunctionInvocationLog}
+
+As per invoke_function, but returns a Tuple of {Any, LambdaInvocationLog}, consisting of the result as well as log information about the invocation.
+"""
+function invoke_function_with_log(
+    request::Any,
+    lambda_function::LambdaFunction;
+    check_state::Bool=false,
+  )::Tuple{Any, FunctionInvocationLog}
+  if check_state
+    while true
+      Jot.get_function_state(lambda_function) == Active && break
+    end
+  end
+  request_json = JSON3.write(request)
+  outfile_path = tempname()
+  invoke_script = get_invoke_lambda_function_script(
+    lambda_function.FunctionArn, request_json, outfile_path; debug=debug
+  )
+
+  status_pipe = Pipe()
+  debug_pipe = Pipe()
+  process = run(
+    pipeline(`bash -c $invoke_script`, stdout=status_pipe, stderr=debug_pipe)
+  )
+  close(status_pipe.in)
+  close(debug_pipe.in)
+
+  status = JSON3.read(String(read(status_pipe)))
+  debug = String(read(debug_pipe))
+
+  request_id_idx = findlast("RequestId: ", debug)
+  request_id_start = last(request_id_idx) + 1
+  request_id_block = debug[request_id_start:end]
+  request_id = strip(split(request_id_block, " ")[begin])
+  invocation_log = LambdaInvocationLog(
+    request_id,
+    Dict{Float64, String}()
+  )
+
+  response = open(outfile_path, "r") do f
+    read(f, String) |> JSON3.read
+  end
+  if haskey(status, "FunctionError")
+    throw(LambdaException("$response"))
+  else
+    (response, invocation_log)
+  end
+end

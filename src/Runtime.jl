@@ -16,18 +16,18 @@ end
 
 function lambda_respond(response::String, endpoint::String, aws_request_id::String)
   HTTP.request(
-    "POST", 
-    "$(endpoint)$(aws_request_id)/response", 
-    [], 
+    "POST",
+    "$(endpoint)$(aws_request_id)/response",
+    [],
     response,
   )
 end
 
 function lambda_error(error::String, endpoint::String, aws_request_id::String)
   HTTP.request(
-    "POST", 
-    "$(endpoint)$(aws_request_id)/error", 
-    [("Lambda-Runtime-Function-Error-Type", "Unhandled")], 
+    "POST",
+    "$(endpoint)$(aws_request_id)/error",
+    [("Lambda-Runtime-Function-Error-Type", "Unhandled")],
     JSON3.write(error),
   )
 end
@@ -37,8 +37,11 @@ function start_runtime(host::String, func_name::String, param_type::String; sing
   start_runtime(host, eval(Meta.parse(func_name)), param_type)
 end
 
-function start_runtime(host::String, react_function::Function, ::Type{T}; single_shot=false) where {T}
+function start_runtime(
+    host::String, react_function::Function, ::Type{T}; single_shot=false
+  ) where {T}
   endpoint = get_endpoint(host)
+  @info "info Starting runtime at $endpoint"
   println("Starting runtime at $endpoint")
 
   while true
@@ -46,6 +49,8 @@ function start_runtime(host::String, react_function::Function, ::Type{T}; single
     body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
 
+    @info "Parsing JSON"
+    @error "Err Parsing JSON"
     body = try
       JSON3.read(body_raw, T)
     catch e
@@ -54,6 +59,7 @@ function start_runtime(host::String, react_function::Function, ::Type{T}; single
       continue
     end
 
+    @info "Calling response function"
     reaction = try
       react_function(body)
     catch e

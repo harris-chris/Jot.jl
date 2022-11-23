@@ -477,8 +477,9 @@ function run_test(
     function_argument::Any = "",
     expected_response::Any = nothing;
     check_function_state::Bool = false,
-  )::Tuple{Bool, Union{Missing, Float64}}
+  )::Tuple{Bool, Union{Missing, FunctionInvocationLog}}
   try
+
     time_taken = @elapsed actual = invoke_function(function_argument, func; check_state = check_function_state)
     passed = actual == expected_response
     passed && @info "Remote test passed in $time_taken seconds; result received matched expected $actual"

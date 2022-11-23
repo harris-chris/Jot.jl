@@ -83,17 +83,18 @@ get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})
 invoke_function(
     request::Any,
     lambda_function::LambdaFunction;
-    check_state::Bool,
+    debug::Bool=false,
+    check_state::Bool=false,
   )
 is_container_running(con::Container)
 push_to_ecr!(image::LocalImage)
 run_image_locally(local_image::LocalImage; detached::Bool=true)
 run_test(
-  image::LocalImage,
-  function_argument::Any = "",
-  expected_response::Any = nothing;
-  then_stop::Bool = false,
-)
+    image::LocalImage,
+    function_argument::Any = "",
+    expected_response::Any = nothing;
+    then_stop::Bool = false,
+  )
 run_test(l::LambdaComponents; function_argument::Any = "", expected_response::Any = nothing;)
 send_local_request(request::Any)
 show_lambdas()
