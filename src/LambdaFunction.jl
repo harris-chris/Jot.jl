@@ -179,7 +179,7 @@ end
         check_state::Bool=false,
       )::Tuple{Any, LambdaFunctionInvocationLog}
 
-As per invoke_function, but returns a Tuple of {Any, LambdaFunctionInvocationLog}, consisting of the result as well as log information about the invocation.
+As per invoke_function, but returns a Tuple of {Any, LambdaFunctionInvocationLog}, consisting of the result as well as log information about the invocation in the form of a LambdaFunctionInvocationLog.
 """
 function invoke_function_with_log(
     request::Any,

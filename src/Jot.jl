@@ -32,7 +32,7 @@ export create_lambda_function, get_lambda_function
 export invoke_function, invoke_function_with_log
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
-export show_lambdas
+export show_lambdas, show_observations, JOT_OBSERVATION, JOT_AWS_LAMBDA_REQUEST_ID
 export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
 export get_all_containers, get_all_aws_roles
