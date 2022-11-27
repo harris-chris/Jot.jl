@@ -28,7 +28,8 @@ export stop_container, is_container_running
 export create_ecr_repo, get_ecr_repo, push_to_ecr!
 export get_remote_image
 export create_aws_role
-export create_lambda_function, get_lambda_function, invoke_function
+export create_lambda_function, get_lambda_function
+export invoke_function, invoke_function_with_log
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
 export show_lambdas
@@ -51,6 +52,7 @@ include("Responder.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
 include("RemoteImage.jl")
+include("LambdaFunctionInvocationLog.jl")
 include("Container.jl")
 include("LambdaFunction.jl")
 include("AWS.jl")

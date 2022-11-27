@@ -48,9 +48,8 @@ function start_runtime(
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
     body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
+    @info "$observation_label : $request_id_label : $request_id"
 
-    @info "Parsing JSON"
-    @error "Err Parsing JSON"
     body = try
       JSON3.read(body_raw, T)
     catch e

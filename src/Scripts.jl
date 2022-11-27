@@ -279,8 +279,8 @@ end
 function get_invoke_lambda_function_script(
     function_arn::String,
     request::String,
-    outfile::String;
-    debug::Bool=false,
+    outfile::String,
+    debug::Bool,
   )::String
 
   """
@@ -288,6 +288,32 @@ function get_invoke_lambda_function_script(
     --function-name=$(function_arn) \\
     --payload='$(request)' \\
     --cli-binary-format raw-in-base64-out \\
-    $(debug && "--debug") $outfile
+    $(if debug "--debug" else "" end) $outfile
+  """
+end
+
+function get_describe_log_groups_script()::String
+   """
+   aws logs describe-log-groups
+   """
+end
+
+function get_log_streams_script(log_group_name::String)::String
+   """
+   aws logs describe-log-streams \\
+       --log-group-name '$log_group_name' \\
+       --order-by LastEventTime \\
+       --descending
+   """
+end
+
+function get_log_events_script(
+    log_group_name::String,
+    log_stream_name::String,
+  )::String
+  """
+  aws logs get-log-events \\
+      --log-group-name '$log_group_name' \\
+      --log-stream-name '$log_stream_name'
   """
 end
