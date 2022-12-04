@@ -304,7 +304,7 @@ end
 function get_cloudwatch_log_stream_events(
     log_group_name::AbstractString,
     log_stream_name::AbstractString;
-    attempts::Int64 = 5,
+    attempts::Int64 = 50,
   )::Tuple{LogEvent, LogEvent, LogEvent, Vector{LogEvent}, Vector{LogEvent}}
   log_events_script = get_log_events_script(log_group_name, log_stream_name)
   log_events_str = readchomp(`bash -c $log_events_script`)
@@ -320,7 +320,7 @@ function get_cloudwatch_log_stream_events(
     attempts == 0 && error(
       "Could not find any REPORT event in $log_stream_name of $log_group_name"
     )
-    @info "trying again"
+    sleep(0.1)
     get_cloudwatch_log_stream_events(log_group_name, log_stream_name; attempts = attempts - 1)
   else
     this_invocation_events = if length(report_idx_events) == 1

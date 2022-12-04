@@ -233,9 +233,24 @@ function get_create_lambda_role_script(role_name)::String
   """
 end
 
-function get_attach_lambda_execution_policy_to_role_script(role_name)::String
+function get_attach_lambda_execution_policy_to_role_script(role_name::String)::String
   """
   aws iam attach-role-policy --role-name $(role_name) --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  """
+end
+
+function get_list_attached_role_policies_script(role_name::String)::String
+  """
+  aws iam list-attached-role-policies --role-name $(role_name)
+  """
+end
+
+function get_detach_role_policy_script(
+    role_name::String,
+    policy_arn::String,
+  )::String
+  """
+  aws iam detach-role-policy --role-name $(role_name) --policy-arn $(policy_arn)
   """
 end
 
