@@ -179,7 +179,7 @@ end
         check_state::Bool=false,
       )::Tuple{Any, LambdaFunctionInvocationLog}
 
-As per invoke_function, but returns a Tuple of {Any, LambdaFunctionInvocationLog}, consisting of the result as well as log information about the invocation in the form of a LambdaFunctionInvocationLog.
+As per invoke_function, but returns a tuple of `{Any, LambdaFunctionInvocationLog}`, consisting of the result as well as log information about the invocation in the form of a `LambdaFunctionInvocationLog`.
 """
 function invoke_function_with_log(
     request::Any,
@@ -210,11 +210,16 @@ function invoke_function_with_log(
 
   request_id = get_request_id_from_aws_debug_output(debug)
   log_group_name = get_cloudwatch_log_group_name(lambda_function)
-  log_events = get_cloudwatch_log_events(log_group_name, request_id)
+  (start_event, end_event, report_event, log_events) = get_cloudwatch_log_events(
+    log_group_name, request_id
+  )
 
   invocation_log = LambdaFunctionInvocationLog(
     request_id,
     log_group_name,
+    start_event,
+    end_event,
+    report_event,
     log_events,
   )
 
@@ -245,7 +250,7 @@ function get_cloudwatch_log_group_name(
   log_groups = JSON3.read(log_groups_str, Dict{String, Vector{LogGroup}})["logGroups"]
   @show lambda_function.FunctionArn
   this_log_groups = filter(log_groups) do group
-    endswith(group.arn, lambda_function.FunctionName * ":*")
+    endswith(group.arn, "log-group:/aws/lambda/$(lambda_function.FunctionName):*")
   end
   if length(this_log_groups) == 0
     error("Could not find cloudwatch log group corresponding to Lambda function " *
@@ -260,10 +265,27 @@ function get_cloudwatch_log_group_name(
   this_log_groups[1].logGroupName
 end
 
+function get_target_event(
+    event_f::Function,
+    event_name::AbstractString,
+    events::Vector{LogEvent},
+    log_stream_name::AbstractString,
+    log_group_name::AbstractString,
+  )::Union{Nothing, LogEvent}
+  target_events = filter(event_f, events)
+  length(target_events) == 0 && error(
+    "Found multiple $event_name events in log stream $log_stream_name of log $log_group_name"
+  )
+  length(target_events) > 1 && error(
+    "Found no $event_name event in log stream $log_stream_name of log $log_group_name"
+  )
+  target_events[1]
+end
+
 function get_cloudwatch_log_events(
     log_group_name::String,
     request_id::String,
-  )::Vector{LogEvent}
+  )::Tuple{LogEvent, LogEvent, LogEvent, Vector{LogEvent}}
   get_log_streams = get_log_streams_script(log_group_name)
   log_streams_str = readchomp(`bash -c $get_log_streams`)
   log_streams = JSON3.read(
@@ -275,8 +297,64 @@ function get_cloudwatch_log_events(
   end
   this_log_stream = log_streams[begin]
   log_stream_name = this_log_stream.logStreamName
+  get_cloudwatch_log_stream_events(log_group_name, log_stream_name)
+end
+
+function get_cloudwatch_log_stream_events(
+    log_group_name::AbstractString,
+    log_stream_name::AbstractString;
+    attempts::Int64 = 50,
+  )::Tuple{LogEvent, LogEvent, LogEvent, Vector{LogEvent}}
+  attempts == 0 && error(
+    "Could not find any REPORT event in $log_stream_name of $log_group_name"
+  )
+
   log_events_script = get_log_events_script(log_group_name, log_stream_name)
   log_events_str = readchomp(`bash -c $log_events_script`)
-  JSON3.read(log_events_str, Dict{String, Union{String, Vector{LogEvent}}})["events"]
+  all_events = JSON3.read(
+    log_events_str, Dict{String, Union{String, Vector{LogEvent}}}
+  )["events"]
+
+  report_idx_events = filter(collect(enumerate(all_events))) do (i, event)
+    startswith(event.message, "REPORT RequestId:")
+  end
+
+  this_invocation_events = if length(report_idx_events) == 1
+    all_events
+  elseif length(report_idx_events) > 1
+    penultimate_report_idx = report_idx_events[end - 1] |> first
+    all_events[penultimate_report_idx + 1:end]
+  else
+    []
+  end
+
+  start_event_idx = findfirst(is_start_event, this_invocation_events)
+  start_event = if isnothing(start_event_idx)
+    nothing
+  else
+    this_invocation_events[start_event_idx]
+  end
+
+  end_events = filter(is_end_event, this_invocation_events)
+  end_event = length(end_events) == 0 ? nothing : end_events[begin]
+  report_events = filter(is_report_event, this_invocation_events)
+  report_event = length(report_events) == 0 ? nothing : report_events[begin]
+
+  log_events = filter(this_invocation_events) do event
+    !is_start_event(event) &&
+    !is_end_event(event) &&
+    !is_report_event(event)
+  end
+
+  if (
+      isnothing(end_event) ||
+      isnothing(report_event) ||
+      length(log_events) == 0
+    )
+    sleep(0.1)
+    get_cloudwatch_log_stream_events(log_group_name, log_stream_name; attempts = attempts - 1)
+  else
+    (start_event, end_event, report_event, log_events)
+  end
 end
 

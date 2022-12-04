@@ -60,6 +60,7 @@ get_all_ecr_repos(jot_generated_only::Bool = true)
 get_all_lambda_functions(jot_generated_only::Bool = true)
 get_all_local_images(; args::Vector{String} = Vector{String}(), jot_generated_only::Bool = true)
 get_all_remote_images(jot_generated_only::Bool = true)
+get_invocation_run_time(log::LambdaFunctionInvocationLog)
 get_lambda_function(function_name::String)
 get_lambda_function(repo::ECRRepo)
 get_local_image(repository::String)
@@ -83,21 +84,32 @@ get_user_labels(l::Union{LocalImage, ECRRepo, RemoteImage, LambdaFunction})
 invoke_function(
     request::Any,
     lambda_function::LambdaFunction;
-    debug::Bool=false,
+    check_state::Bool=false,
+  )
+invoke_function_with_log(
+    request::Any,
+    lambda_function::LambdaFunction;
     check_state::Bool=false,
   )
 is_container_running(con::Container)
 push_to_ecr!(image::LocalImage)
 run_image_locally(local_image::LocalImage; detached::Bool=true)
-run_test(
+function run_local_image_test(
     image::LocalImage,
     function_argument::Any = "",
     expected_response::Any = nothing;
     then_stop::Bool = false,
-  )
+  )::Tuple{Bool, Float64}
+function run_lambda_function_test(
+    func::LambdaFunction,
+    function_argument::Any = "",
+    expected_response::Any = nothing;
+    check_function_state::Bool = false,
+  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 run_test(l::LambdaComponents; function_argument::Any = "", expected_response::Any = nothing;)
 send_local_request(request::Any)
 show_lambdas()
+show_observations(log::LambdaFunctionInvocationLog)
 stop_container(con::Container)
 with_remote_image!(l::LambdaComponents)
 with_lambda_function!(l::LambdaComponents)

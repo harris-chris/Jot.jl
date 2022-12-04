@@ -5,22 +5,27 @@ function get_bootstrap_script(
     temp_path::String,
   )::String
 
-  bootstrap_shebang = raw"""
+  @debug JOT_OBSERVATION
+
+  bootstrap_shebang = """
   #!/bin/bash
+  echo "$(JOT_OBSERVATION) Bootstrap started"
   """
 
   bootstrap_env_vars = """
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
-  bootstrap_body = raw"""
-  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+  bootstrap_body = """
+  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL"
+    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)"
   else
-    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
-    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+    echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
+    echo "$JOT_OBSERVATION Starting Julia ..."
+    exec /usr/local/julia/bin/julia -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
+    echo "$JOT_OBSERVATION ... Julia started"
   fi
   """
   bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
@@ -228,9 +233,24 @@ function get_create_lambda_role_script(role_name)::String
   """
 end
 
-function get_attach_lambda_execution_policy_to_role_script(role_name)::String
+function get_attach_lambda_execution_policy_to_role_script(role_name::String)::String
   """
   aws iam attach-role-policy --role-name $(role_name) --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  """
+end
+
+function get_list_attached_role_policies_script(role_name::String)::String
+  """
+  aws iam list-attached-role-policies --role-name $(role_name)
+  """
+end
+
+function get_detach_role_policy_script(
+    role_name::String,
+    policy_arn::String,
+  )::String
+  """
+  aws iam detach-role-policy --role-name $(role_name) --policy-arn $(policy_arn)
   """
 end
 

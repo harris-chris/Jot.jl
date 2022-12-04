@@ -145,7 +145,7 @@ end
         l::LambdaComponents;
         function_argument::Any = "",
         expected_response::Any = nothing;
-      )::Tuple{Bool, Float64}
+      )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog, Float64}}
 
 Tests the passed `LambdaComponents` instance.
 
@@ -160,11 +160,11 @@ function run_test(
     l::LambdaComponents,
     function_argument::Any = "",
     expected_response::Any = nothing,
-  )::Tuple{Bool, Union{Missing, Float64}}
+  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog, Float64}}
   if !isnothing(l.lambda_function)
-    run_test(l.lambda_function, function_argument, expected_response)
+    run_lambda_function_test(l.lambda_function, function_argument, expected_response)
   elseif !isnothing(l.local_image)
-    run_test(l.local_image, function_argument, expected_response)
+    run_local_image_test(l.local_image, function_argument, expected_response)
   else
     error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
   end

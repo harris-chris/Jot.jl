@@ -23,6 +23,11 @@ function get_aws_config()::AWSConfig
            )
 end
 
+@with_kw struct AWSRoleAttachedPolicy
+  PolicyName::String
+  PolicyArn::String
+end
+
 @with_kw mutable struct AWSRolePolicyStatement
   Effect::Union{Missing, String} = missing
   Principal::Union{Missing, Dict{String, Any}} = missing
@@ -116,10 +121,22 @@ be usable.
 """
 function delete!(role::AWSRole)
   role.exists || error("Role does not exist")
+  attached_policies = get_attached_policies(role)
+  foreach(attached_policies) do policy
+    detach_script = get_detach_role_policy_script(role.RoleName, policy.PolicyArn)
+    _ = readchomp(`bash -c $detach_script`)
+  end
   delete_script = get_delete_lambda_role_script(role.RoleName)
   @info "Deleting " * role.RoleName
   run(`bash -c $delete_script`)
   role.exists = false
+end
+
+function get_attached_policies(role::AWSRole)::Vector{AWSRoleAttachedPolicy}
+  get_policies_script = get_list_attached_role_policies_script(role.RoleName)
+  policies_json = readchomp(`bash -c $get_policies_script`)
+  policies = JSON3.read(policies_json, Dict{String, Vector{AWSRoleAttachedPolicy}})
+  policies["AttachedPolicies"]
 end
 
 function get_role_arn_string(

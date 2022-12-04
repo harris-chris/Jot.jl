@@ -41,7 +41,7 @@ function start_runtime(
     host::String, react_function::Function, ::Type{T}; single_shot=false
   ) where {T}
   endpoint = get_endpoint(host)
-  println("$JOT_OBSERVATION Starting runtime at $endpoint")
+  println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
 
   while true
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)

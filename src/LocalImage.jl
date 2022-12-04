@@ -87,6 +87,7 @@ function delete!(image::LocalImage; force::Bool=false)
   image.exists || error("Image does not exist")
   args = force ? ["--force"] : []
   run(`docker image rm $(image.ID) $args`)
+  @info "Deleting image $(image.ID)"
   image.exists = false
 end
 

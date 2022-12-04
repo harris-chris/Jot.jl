@@ -76,8 +76,8 @@ function run_tests(
     if any([example_simple, example_components, !isnothing(multi_tests_list)])
       error("--clean-up-only passed but tests also passed")
     else
-      clean_up_multi_tests()
       clean_up_example_simple_test()
+      clean_up_multi_tests()
     end
   else
     ENV["JOT_TEST_RUNNING"] = "true"
@@ -162,7 +162,9 @@ function run_example_simple_test(clean_up::Bool)
 
     # ... and test it to see if it's working OK
     @info "Testing lambda function"
-    @test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+    @test run_lambda_function_test(
+      increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true
+    ) |> first
   end
   if clean_up
     clean_up_example_simple_test()
@@ -533,9 +535,9 @@ function test_local_image(
   # Check containers have stopped
   @test length(get_all_containers(local_image)) == 0
   # Run local test of container, without value
-  @test run_test(local_image) |> first
+  @test run_local_image_test(local_image) |> first
   # Run local test of container, with expected response
-  @test run_test(
+  @test run_local_image_test(
     local_image,
     responder_function_test_args.good_arg,
     responder_function_test_args.expected_response;
@@ -545,16 +547,16 @@ function test_local_image(
   local_image
 end
 
-function compare_test_times(
-    compiled::Union{LocalImage, RemoteImage, LambdaFunction},
-    uncompiled::Union{LocalImage, RemoteImage, LambdaFunction},
+function compare_local_image_test_times(
+    compiled::LocalImage,
+    uncompiled::LocalImage,
     test_arg::Any,
     expected_response::Any,
     repeat_num::Int64,
   )::Tuple{Float64, Float64}
   total_run_time = 0.0
   for num = 1:repeat_num
-    _, this_run_time = run_test(compiled, test_arg, expected_response)
+    _, this_run_time = run_local_image_test(compiled, test_arg, expected_response)
     @info "Test run $num with compiled local image took $this_run_time"
     total_run_time += this_run_time
   end
@@ -562,7 +564,35 @@ function compare_test_times(
   @info "Average compiled run time was $average_compiled_run_time"
   total_run_time = 0.0
   for num = 1:repeat_num
-    _, this_run_time = run_test(uncompiled, test_arg, expected_response)
+    _, this_run_time = run_local_image_test(uncompiled, test_arg, expected_response)
+    @info "Test run $num with uncompiled local image took $this_run_time"
+    total_run_time += this_run_time
+  end
+  average_uncompiled_run_time = total_run_time / repeat_num
+  @info "Average uncompiled run time was $average_uncompiled_run_time"
+  return (average_compiled_run_time, average_uncompiled_run_time)
+end
+
+function compare_lambda_function_test_times(
+    compiled::LambdaFunction,
+    uncompiled::LambdaFunction,
+    test_arg::Any,
+    expected_response::Any,
+    repeat_num::Int64,
+  )::Tuple{Float64, Float64}
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, test_log = run_lambda_function_test(compiled, test_arg, expected_response)
+    this_run_time = get_invocation_run_time(test_log)
+    @info "Test run $num with compiled local image took $this_run_time"
+    total_run_time += this_run_time
+  end
+  average_compiled_run_time = total_run_time / repeat_num
+  @info "Average compiled run time was $average_compiled_run_time"
+  total_run_time = 0.0
+  for num = 1:repeat_num
+    _, test_log = run_lambda_function_test(uncompiled, test_arg, expected_response)
+    this_run_time = get_invocation_run_time(test_log)
     @info "Test run $num with uncompiled local image took $this_run_time"
     total_run_time += this_run_time
   end
@@ -584,7 +614,7 @@ function test_compiled_local_image(
     package_compile = true,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(
     compiled_local_image,
     uncompiled_local_image,
     responder_function_test_args.good_arg,
@@ -637,14 +667,14 @@ function test_lambda_function(
   @test lambda_function in Jot.get_all_lambda_functions()
   if !skip_test
     # Invoke it
-    (result, time_taken) = run_test(
+    (result, log) = run_lambda_function_test(
       lambda_function,
       responder_function_test_args.good_arg,
       responder_function_test_args.expected_response;
       check_function_state=true
     )
     @test result
-    @info "Lambda function ran in $time_taken"
+    @info "Lambda function ran in $(get_invocation_run_time(log))"
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
       remote_image;
@@ -670,14 +700,13 @@ function test_compiled_lambda_function(
   compiled_lambda_function = create_lambda_function(
     ecr_repo; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
   )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_lambda_function_test_times(
     compiled_lambda_function,
     uncompiled_lambda_function,
     responder_function_test_args.good_arg,
     responder_function_test_args.expected_response,
     repeat_num,
   )
-  @test average_compiled_run_time < (average_uncompiled_run_time * 0.8)
   compiled_lambda_function
 end
 

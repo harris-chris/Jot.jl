@@ -16,7 +16,7 @@ Amazon Web Services does not provide native support for Julia, so functions must
 
 More examples can be found in the [examples](https://harris-chris.github.io/Jot.jl/stable/) page, but this can be as simple as:
 
-1\. From the JULIA REPL, create a simple script to use as a lambda function... 
+1\. From the JULIA REPL, create a simple script to use as a lambda function...
 ```
 open("increment_vector.jl", "w") do f
   write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
@@ -36,15 +36,17 @@ local_image = create_local_image(increment_responder; image_suffix="increment-ve
 ```
 remote_image = push_to_ecr!(local_image)
 ```
- 
-5\. Create a lambda function from this remote_image... 
+
+5\. Create a lambda function from this remote_image...
 ```
 increment_vector_lambda = create_lambda_function(remote_image)
 ```
 
 6\. ... and test it to see if it's working OK
 ```
-@test run_test(increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true) |> first
+@test run_lambda_function_test(
+  increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true
+) |> first
 ```
 
 ## Documentation
