@@ -7,10 +7,12 @@ println("$JOT_OBSERVATION")
 
 f = get_lambda_function("jottest1")
 (res, log) = invoke_function_with_log(Dict("double"=>2), f)
-@info "debug events"
-@show log.cloudwatch_log_debug_events
+@info "request_id"
+@show log.RequestId
 @info "user events"
-@show log.cloudwatch_log_user_events
+foreach(log.cloudwatch_log_user_events) do event
+  println(event)
+end
 println("Function run time was $(get_invocation_run_time(log))")
 show_observations(log)
 

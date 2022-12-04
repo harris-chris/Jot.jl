@@ -95,9 +95,10 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
       println("    + $from_last_elapsed_time ms")
       println("    |")
     end
-    println("Time elapsed: $total_elapsed_time ms")
+    println("Total time elapsed: $total_elapsed_time ms")
     message_body = chopprefix(event.message, "$JOT_OBSERVATION")
-    println("Observation: $message_body")
+    println(strip("Observation: $message_body"))
+    last_event_unix = event.timestamp
   end
 end
 

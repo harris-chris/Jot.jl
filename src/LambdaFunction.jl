@@ -298,47 +298,63 @@ function get_cloudwatch_log_events(
   end
   this_log_stream = log_streams[begin]
   log_stream_name = this_log_stream.logStreamName
+  get_cloudwatch_log_stream_events(log_group_name, log_stream_name)
+end
+
+function get_cloudwatch_log_stream_events(
+    log_group_name::AbstractString,
+    log_stream_name::AbstractString;
+    attempts::Int64 = 5,
+  )::Tuple{LogEvent, LogEvent, LogEvent, Vector{LogEvent}, Vector{LogEvent}}
   log_events_script = get_log_events_script(log_group_name, log_stream_name)
   log_events_str = readchomp(`bash -c $log_events_script`)
   all_events = JSON3.read(
     log_events_str, Dict{String, Union{String, Vector{LogEvent}}}
   )["events"]
+
   report_idx_events = filter(collect(enumerate(all_events))) do (i, event)
     startswith(event.message, "REPORT RequestId:")
   end
-  this_invocation_events = if length(report_idx_events) == 1
-    all_events
-  elseif length(report_idx_events) > 1
-    penultimate_report_idx = report_idx_events[end - 1] |> first
-    all_events[penultimate_report_idx + 1:end]
+
+  if length(report_idx_events) == 0
+    attempts == 0 && error(
+      "Could not find any REPORT event in $log_stream_name of $log_group_name"
+    )
+    @info "trying again"
+    get_cloudwatch_log_stream_events(log_group_name, log_stream_name; attempts = attempts - 1)
   else
-    error("Could not find any REPORT event in $log_stream_name of $log_group_name")
+    this_invocation_events = if length(report_idx_events) == 1
+      all_events
+    else
+      penultimate_report_idx = report_idx_events[end - 1] |> first
+      all_events[penultimate_report_idx + 1:end]
+    end
+
+    start_event_idx = findfirst(is_start_event, this_invocation_events)
+    start_event = if isnothing(start_event_idx)
+      nothing
+    else
+      this_invocation_events[start_event_idx]
+    end
+
+    end_event = get_target_event(
+      is_end_event, "END", this_invocation_events, log_stream_name, log_group_name,
+    )
+
+    report_event = get_target_event(
+      is_report_event, "REPORT", this_invocation_events, log_stream_name, log_group_name,
+    )
+
+    debug_events = filter(is_debug_event, this_invocation_events)
+
+    user_events = filter(this_invocation_events) do event
+      !is_start_event(event) &&
+      !is_debug_event(event) &&
+      !is_end_event(event) &&
+      !is_report_event(event)
+    end
+
+    (start_event, end_event, report_event, debug_events, user_events)
   end
-
-  start_event_idx = findfirst(is_start_event, this_invocation_events)
-  start_event = if isnothing(start_event_idx)
-    nothing
-  else
-    this_invocation_events[start_event_idx]
-  end
-
-  end_event = get_target_event(
-    is_end_event, "END", this_invocation_events, log_stream_name, log_group_name,
-  )
-
-  report_event = get_target_event(
-    is_report_event, "REPORT", this_invocation_events, log_stream_name, log_group_name,
-  )
-
-  debug_events = filter(is_debug_event, this_invocation_events)
-
-  user_events = filter(this_invocation_events) do event
-    !is_start_event(event) &&
-    !is_debug_event(event) &&
-    !is_end_event(event) &&
-    !is_report_event(event)
-  end
-
-  (start_event, end_event, report_event, debug_events, user_events)
 end
 

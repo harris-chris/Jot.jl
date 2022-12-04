@@ -674,7 +674,7 @@ function test_lambda_function(
       check_function_state=true
     )
     @test result
-    @info "Lambda function ran in $time_taken"
+    @info "Lambda function ran in $(get_invocation_run_time(log))"
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
       remote_image;
