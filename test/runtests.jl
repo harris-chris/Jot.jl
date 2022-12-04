@@ -76,8 +76,8 @@ function run_tests(
     if any([example_simple, example_components, !isnothing(multi_tests_list)])
       error("--clean-up-only passed but tests also passed")
     else
-      clean_up_multi_tests()
       clean_up_example_simple_test()
+      clean_up_multi_tests()
     end
   else
     ENV["JOT_TEST_RUNNING"] = "true"
@@ -113,7 +113,7 @@ function run_example_components_test(clean_up::Bool)
       increment_responder; image_suffix="increment-vector"
     )
 
-    lambda_components |> with_remote_image! |> with_lambda_function! |> run_lambda_function_test
+    lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
     if clean_up
       clean_up_lambda_components(lambda_components)
     end

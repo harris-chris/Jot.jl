@@ -316,44 +316,44 @@ function get_cloudwatch_log_stream_events(
     startswith(event.message, "REPORT RequestId:")
   end
 
-  if length(report_idx_events) == 0
+  this_invocation_events = if length(report_idx_events) == 1
+    all_events
+  else
+    penultimate_report_idx = report_idx_events[end - 1] |> first
+    all_events[penultimate_report_idx + 1:end]
+  end
+
+  start_event_idx = findfirst(is_start_event, this_invocation_events)
+  start_event = if isnothing(start_event_idx)
+    nothing
+  else
+    this_invocation_events[start_event_idx]
+  end
+
+  end_event = get_target_event(
+    is_end_event, "END", this_invocation_events, log_stream_name, log_group_name,
+  )
+
+  report_event = get_target_event(
+    is_report_event, "REPORT", this_invocation_events, log_stream_name, log_group_name,
+  )
+
+  debug_events = filter(is_debug_event, this_invocation_events)
+
+  user_events = filter(this_invocation_events) do event
+    !is_start_event(event) &&
+    !is_debug_event(event) &&
+    !is_end_event(event) &&
+    !is_report_event(event)
+  end
+
+  if length(report_idx_events) == 0 || length(user_events) == 0
     attempts == 0 && error(
       "Could not find any REPORT event in $log_stream_name of $log_group_name"
     )
     sleep(0.1)
     get_cloudwatch_log_stream_events(log_group_name, log_stream_name; attempts = attempts - 1)
   else
-    this_invocation_events = if length(report_idx_events) == 1
-      all_events
-    else
-      penultimate_report_idx = report_idx_events[end - 1] |> first
-      all_events[penultimate_report_idx + 1:end]
-    end
-
-    start_event_idx = findfirst(is_start_event, this_invocation_events)
-    start_event = if isnothing(start_event_idx)
-      nothing
-    else
-      this_invocation_events[start_event_idx]
-    end
-
-    end_event = get_target_event(
-      is_end_event, "END", this_invocation_events, log_stream_name, log_group_name,
-    )
-
-    report_event = get_target_event(
-      is_report_event, "REPORT", this_invocation_events, log_stream_name, log_group_name,
-    )
-
-    debug_events = filter(is_debug_event, this_invocation_events)
-
-    user_events = filter(this_invocation_events) do event
-      !is_start_event(event) &&
-      !is_debug_event(event) &&
-      !is_end_event(event) &&
-      !is_report_event(event)
-    end
-
     (start_event, end_event, report_event, debug_events, user_events)
   end
 end

@@ -84,13 +84,18 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
   length(observations) == 0 && error(
     "No user events labelled with $JOT_OBSERVATION found"
   )
-  if observations[1] != log_events[1].timestamp
-    println("First log event")
+  first_observ_is_first_event = observations[1].timestamp == log_events[1].timestamp
+  have_prior_observation = if !first_observ_is_first_event
+    println("Log starts")
+    true
+  else
+    false
   end
+
   foreach(observations) do event
     total_elapsed_time = event.timestamp - start_time_unix
     from_last_elapsed_time = event.timestamp - last_event_unix
-    if from_last_elapsed_time != 0
+    if have_prior_observation
       println("    |")
       println("    + $from_last_elapsed_time ms")
       println("    |")
@@ -99,6 +104,10 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
     message_body = chopprefix(event.message, "$JOT_OBSERVATION")
     println(strip("Observation: $message_body"))
     last_event_unix = event.timestamp
+    have_prior_observation = true
+  end
+  if observations[end].timestamp != log_events[end].timestamp
+    println("Log starts")
   end
 end
 
