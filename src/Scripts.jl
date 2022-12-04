@@ -5,8 +5,11 @@ function get_bootstrap_script(
     temp_path::String,
   )::String
 
-  bootstrap_shebang = raw"""
+  @debug JOT_OBSERVATION
+
+  bootstrap_shebang = """
   #!/bin/bash
+  echo "$(JOT_OBSERVATION) Bootstrap started"
   """
 
   bootstrap_env_vars = """
@@ -19,8 +22,10 @@ function get_bootstrap_script(
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
     exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
   else
-    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API, running Julia"
+    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API"
+    echo "$JOT_OBSERVATION Starting Julia ..."
     exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+    echo "$JOT_OBSERVATION ... Julia started"
   fi
   """
   bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body

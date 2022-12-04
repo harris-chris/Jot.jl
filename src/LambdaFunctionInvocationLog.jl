@@ -9,10 +9,23 @@ struct LogEvent
   ingestionTime::Int64
 end
 
+"""
+    struct LambdaFunctionInvocationLog
+      RequestId::String
+      cloudwatch_log_group_name::String
+      cloudwatch_log_end_event::LogEvent
+      cloudwatch_log_report_event::LogEvent
+      cloudwatch_log_debug_events::Vector{LogEvent}
+    end
+
+The log output from a Lambda function invocation, obtained via `invoke_function_with_log`.
+"""
 struct LambdaFunctionInvocationLog
   RequestId::String
   cloudwatch_log_group_name::String
-  cloudwatch_log_events::Vector{LogEvent}
+  cloudwatch_log_end_event::LogEvent
+  cloudwatch_log_report_event::LogEvent
+  cloudwatch_log_debug_events::Vector{LogEvent}
 end
 
 struct LogGroup
@@ -42,12 +55,12 @@ function unix_epoch_time_to_datetime(epoch_time::Int64)::DateTime
 end
 
 function show_observations(log::LambdaFunctionInvocationLog)::Nothing
-  start_time_unix = log.cloudwatch_log_events[1].timestamp
+  start_time_unix = log.cloudwatch_log_debug_events[1].timestamp
   last_event_unix = start_time_unix
-  observations = filter(log.cloudwatch_log_events) do event
+  observations = filter(log.cloudwatch_log_debug_events) do event
     startswith("$JOT_OBSERVATION", event.message)
   end
-  if observations[1] != log.cloudwatch_events[1].timestamp
+  if observations[1] != log.cloudwatch_log_debug_events[1].timestamp
     println("First log event")
   end
   foreach(observation) do event
@@ -62,5 +75,22 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
     message_body = chopprefix(event.message, "$JOT_OBSERVATION")
     println("Observation: $message_body")
   end
+end
+
+function get_invocation_run_time(log::LambdaFunctionInvocationLog)::Float64
+  get_invocation_run_time(log.cloudwatch_log_report_event)
+end
+
+function get_invocation_run_time(report_event::LogEvent)::Float64
+  lines = split(report_event.message, '\t')
+  @show lines
+  duration_lines = filter(lines) do line
+    startswith(line, "Duration:")
+  end
+  length(duration_lines) == 0 && error("Found no duration lines in event $report_event")
+  length(duration_lines) > 1 && error("Found multiple duration lines in event $report_event")
+  duration_line = duration_lines[1]
+  duration_str = chopsuffix(chopprefix(duration_line, "Duration: "), " ms")
+  parse(Float64, duration_str)
 end
 

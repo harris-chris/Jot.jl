@@ -210,12 +210,16 @@ function invoke_function_with_log(
 
   request_id = get_request_id_from_aws_debug_output(debug)
   log_group_name = get_cloudwatch_log_group_name(lambda_function)
-  log_events = get_cloudwatch_log_events(log_group_name, request_id)
+  (end_event, report_event, debug_events) = get_cloudwatch_log_events(
+    log_group_name, request_id
+  )
 
   invocation_log = LambdaFunctionInvocationLog(
     request_id,
     log_group_name,
-    log_events,
+    end_event,
+    report_event,
+    debug_events,
   )
 
   response = open(outfile_path, "r") do f
@@ -260,10 +264,28 @@ function get_cloudwatch_log_group_name(
   this_log_groups[1].logGroupName
 end
 
+function get_target_event(
+    event_name::AbstractString,
+    events::Vector{LogEvent},
+    log_stream_name::AbstractString,
+    log_group_name::AbstractString,
+  )::LogEvent
+  target_events = filter(events) do event
+    startswith(event.message, "$event_name RequestId:")
+  end
+  length(target_events) == 0 && error(
+    "Found multiple $event_name events in log stream $log_stream_name of log $log_group_name"
+  )
+  length(target_events) > 1 && error(
+    "Found no $event_name event in log stream $log_stream_name of log $log_group_name"
+  )
+  target_events[1]
+end
+
 function get_cloudwatch_log_events(
     log_group_name::String,
     request_id::String,
-  )::Vector{LogEvent}
+  )::Tuple{LogEvent, LogEvent, Vector{LogEvent}}
   get_log_streams = get_log_streams_script(log_group_name)
   log_streams_str = readchomp(`bash -c $get_log_streams`)
   log_streams = JSON3.read(
@@ -277,6 +299,29 @@ function get_cloudwatch_log_events(
   log_stream_name = this_log_stream.logStreamName
   log_events_script = get_log_events_script(log_group_name, log_stream_name)
   log_events_str = readchomp(`bash -c $log_events_script`)
-  JSON3.read(log_events_str, Dict{String, Union{String, Vector{LogEvent}}})["events"]
+  all_events = JSON3.read(
+    log_events_str, Dict{String, Union{String, Vector{LogEvent}}}
+  )["events"]
+  report_idx_events = filter(collect(enumerate(all_events))) do (i, event)
+    startswith(event.message, "REPORT RequestId:")
+  end
+  this_invocation_events = if length(report_idx_events) == 1
+    all_events
+  elseif length(report_idx_events) > 1
+    penultimate_report_idx = report_idx_events[end - 1] |> first
+    all_events[penultimate_report_idx + 1:end]
+  else
+    error("Could not find any REPORT event in $log_stream_name of $log_group_name")
+  end
+  end_event = get_target_event(
+    "END", this_invocation_events, log_stream_name, log_group_name,
+  )
+  report_event = get_target_event(
+    "REPORT", this_invocation_events, log_stream_name, log_group_name,
+  )
+  debug_events = filter(this_invocation_events) do event
+    startswith(event.message, "DEBUG:")
+  end
+  (end_event, report_event, debug_events)
 end
 

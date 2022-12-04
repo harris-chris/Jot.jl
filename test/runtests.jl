@@ -554,7 +554,8 @@ function compare_test_times(
   )::Tuple{Float64, Float64}
   total_run_time = 0.0
   for num = 1:repeat_num
-    _, this_run_time = run_test(compiled, test_arg, expected_response)
+    _, test_log = run_test(compiled, test_arg, expected_response)
+    this_run_time = get_invocation_run_time(test_log)
     @info "Test run $num with compiled local image took $this_run_time"
     total_run_time += this_run_time
   end
@@ -562,7 +563,8 @@ function compare_test_times(
   @info "Average compiled run time was $average_compiled_run_time"
   total_run_time = 0.0
   for num = 1:repeat_num
-    _, this_run_time = run_test(uncompiled, test_arg, expected_response)
+    _, test_log = run_test(uncompiled, test_arg, expected_response)
+    this_run_time = get_invocation_run_time(test_log)
     @info "Test run $num with uncompiled local image took $this_run_time"
     total_run_time += this_run_time
   end
@@ -637,7 +639,7 @@ function test_lambda_function(
   @test lambda_function in Jot.get_all_lambda_functions()
   if !skip_test
     # Invoke it
-    (result, time_taken) = run_test(
+    (result, log) = run_test(
       lambda_function,
       responder_function_test_args.good_arg,
       responder_function_test_args.expected_response;

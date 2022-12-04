@@ -30,6 +30,7 @@ export get_remote_image
 export create_aws_role
 export create_lambda_function, get_lambda_function
 export invoke_function, invoke_function_with_log
+export get_invocation_run_time
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
 export show_lambdas, show_observations, JOT_OBSERVATION, JOT_AWS_LAMBDA_REQUEST_ID
@@ -479,12 +480,14 @@ function run_test(
     function_argument::Any = "",
     expected_response::Any = nothing;
     check_function_state::Bool = false,
-  )::Tuple{Bool, Union{Missing, FunctionInvocationLog}}
+  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
   try
-
-    time_taken = @elapsed actual = invoke_function(function_argument, func; check_state = check_function_state)
-    passed = actual == expected_response
-    passed && @info "Remote test passed in $time_taken seconds; result received matched expected $actual"
+    actual_response, log = invoke_function_with_log(
+        function_argument, func; check_state = check_function_state
+    )
+    passed = actual_response == expected_response
+    time_taken = get_invocation_run_time(log)
+    passed && @info "Remote test passed in $time_taken ms; result received matched expected $actual"
     !passed && @info "Remote test failed; actual: $actual was not equal to expected: $expected_response"
     (passed, time_taken)
   catch e
