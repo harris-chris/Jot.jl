@@ -179,7 +179,7 @@ end
         check_state::Bool=false,
       )::Tuple{Any, LambdaFunctionInvocationLog}
 
-As per invoke_function, but returns a Tuple of {Any, LambdaFunctionInvocationLog}, consisting of the result as well as log information about the invocation in the form of a LambdaFunctionInvocationLog.
+As per invoke_function, but returns a tuple of `{Any, LambdaFunctionInvocationLog}`, consisting of the result as well as log information about the invocation in the form of a `LambdaFunctionInvocationLog`.
 """
 function invoke_function_with_log(
     request::Any,
@@ -210,16 +210,18 @@ function invoke_function_with_log(
 
   request_id = get_request_id_from_aws_debug_output(debug)
   log_group_name = get_cloudwatch_log_group_name(lambda_function)
-  (end_event, report_event, debug_events) = get_cloudwatch_log_events(
+  (start_e, end_e, report_e, debug_es, user_es) = get_cloudwatch_log_events(
     log_group_name, request_id
   )
 
   invocation_log = LambdaFunctionInvocationLog(
     request_id,
     log_group_name,
-    end_event,
-    report_event,
-    debug_events,
+    start_e,
+    end_e,
+    report_e,
+    debug_es,
+    user_es,
   )
 
   response = open(outfile_path, "r") do f
@@ -265,14 +267,13 @@ function get_cloudwatch_log_group_name(
 end
 
 function get_target_event(
+    event_f::Function,
     event_name::AbstractString,
     events::Vector{LogEvent},
     log_stream_name::AbstractString,
     log_group_name::AbstractString,
   )::LogEvent
-  target_events = filter(events) do event
-    startswith(event.message, "$event_name RequestId:")
-  end
+  target_events = filter(event_f, events)
   length(target_events) == 0 && error(
     "Found multiple $event_name events in log stream $log_stream_name of log $log_group_name"
   )
@@ -285,7 +286,7 @@ end
 function get_cloudwatch_log_events(
     log_group_name::String,
     request_id::String,
-  )::Tuple{LogEvent, LogEvent, Vector{LogEvent}}
+  )::Tuple{LogEvent, LogEvent, LogEvent, Vector{LogEvent}, Vector{LogEvent}}
   get_log_streams = get_log_streams_script(log_group_name)
   log_streams_str = readchomp(`bash -c $get_log_streams`)
   log_streams = JSON3.read(
@@ -313,15 +314,31 @@ function get_cloudwatch_log_events(
   else
     error("Could not find any REPORT event in $log_stream_name of $log_group_name")
   end
-  end_event = get_target_event(
-    "END", this_invocation_events, log_stream_name, log_group_name,
-  )
-  report_event = get_target_event(
-    "REPORT", this_invocation_events, log_stream_name, log_group_name,
-  )
-  debug_events = filter(this_invocation_events) do event
-    startswith(event.message, "DEBUG:")
+
+  start_event_idx = findfirst(is_start_event, this_invocation_events)
+  start_event = if isnothing(start_event_idx)
+    nothing
+  else
+    this_invocation_events[start_event_idx]
   end
-  (end_event, report_event, debug_events)
+
+  end_event = get_target_event(
+    is_end_event, "END", this_invocation_events, log_stream_name, log_group_name,
+  )
+
+  report_event = get_target_event(
+    is_report_event, "REPORT", this_invocation_events, log_stream_name, log_group_name,
+  )
+
+  debug_events = filter(is_debug_event, this_invocation_events)
+
+  user_events = filter(this_invocation_events) do event
+    !is_start_event(event) &&
+    !is_debug_event(event) &&
+    !is_end_event(event) &&
+    !is_report_event(event)
+  end
+
+  (start_event, end_event, report_event, debug_events, user_events)
 end
 

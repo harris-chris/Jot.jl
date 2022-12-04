@@ -89,12 +89,18 @@ invoke_function(
 is_container_running(con::Container)
 push_to_ecr!(image::LocalImage)
 run_image_locally(local_image::LocalImage; detached::Bool=true)
-run_test(
+function run_local_image_test(
     image::LocalImage,
     function_argument::Any = "",
     expected_response::Any = nothing;
     then_stop::Bool = false,
-  )
+  )::Tuple{Bool, Float64}
+function run_lambda_function_test(
+    func::LambdaFunction,
+    function_argument::Any = "",
+    expected_response::Any = nothing;
+    check_function_state::Bool = false,
+  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 run_test(l::LambdaComponents; function_argument::Any = "", expected_response::Any = nothing;)
 send_local_request(request::Any)
 show_lambdas()

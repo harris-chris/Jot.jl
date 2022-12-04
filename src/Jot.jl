@@ -23,7 +23,7 @@ export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
 export run_image_locally, create_local_image, get_local_image
 export send_local_request
-export run_test
+export run_local_image_test, run_lambda_function_test
 export stop_container, is_container_running
 export create_ecr_repo, get_ecr_repo, push_to_ecr!
 export get_remote_image
@@ -422,7 +422,7 @@ function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
 end
 
 """
-    run_test(
+    function run_local_image_test(
       image::LocalImage,
       function_argument::Any = "",
       expected_response::Any = nothing;
@@ -440,7 +440,7 @@ The test will use an already-running docker container, if one exists. If this is
 test. If the `run_test` function finds no docker container already running, it will start one, and
 then shut it down afterwards. This is true regardless of the value of `then_stop`.
 """
-function run_test(
+function run_local_image_test(
     image::LocalImage,
     function_argument::Any = "",
     expected_response::Any = nothing;
@@ -463,19 +463,19 @@ function run_test(
 end
 
 """
-    run_test(
-      func::LambdaFunction,
-      function_argument::Any = "",
-      expected_response::Any = nothing;
-    )::Tuple{Bool, Float64}
+  function run_lambda_function_test(
+    func::LambdaFunction,
+    function_argument::Any = "",
+    expected_response::Any = nothing;
+    check_function_state::Bool = false,
+  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 
 Runs a test of the given Lambda Function, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
 that any kind of response is received - this response may be an error JSON and the test will still
-pass, establishing only that the function can be contacted. Returns a tuple of (test result, time)
-where time is the time taken for a response to be received, in seconds.
+pass, establishing only that the function can be contacted. Returns a tuple of `{Any, LambdaFunctionInvocationLog}`.
 """
-function run_test(
+function run_lambda_function_test(
     func::LambdaFunction,
     function_argument::Any = "",
     expected_response::Any = nothing;
@@ -487,9 +487,9 @@ function run_test(
     )
     passed = actual_response == expected_response
     time_taken = get_invocation_run_time(log)
-    passed && @info "Remote test passed in $time_taken ms; result received matched expected $actual"
-    !passed && @info "Remote test failed; actual: $actual was not equal to expected: $expected_response"
-    (passed, time_taken)
+    passed && @info "Remote test passed in $time_taken ms; result received matched expected $actual_response"
+    !passed && @info "Remote test failed; actual: $actual_response was not equal to expected: $expected_response"
+    (passed, log)
   catch e
     if isa(e, LambdaException) && isnothing(expected_response)
       @info "Error response received from lambda function; test passed"

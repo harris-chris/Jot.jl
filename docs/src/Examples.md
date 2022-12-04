@@ -44,7 +44,7 @@ ex5_responder = get_responder(IntVectorResponder, :response_func, Vector{Int64})
 ```
 ex6_responder = get_responder("/path/to/project", :response_func, String)
 ex6_local_image = create_local_image("ex6", ex6_responder)
-run_test(ex6_local_image, "test", "test Responded")
+run_local_image_test(ex6_local_image, "test", "test Responded")
 ```
 
 ### To see if a local docker image has the same function as a remote image...

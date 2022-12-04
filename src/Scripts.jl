@@ -16,15 +16,15 @@ function get_bootstrap_script(
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
-  bootstrap_body = raw"""
-  if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+  bootstrap_body = """
+  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on $LOCAL"
-    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using $PKG_NAME; start_runtime(\\\"$LOCAL\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL"
+    exec ./aws-lambda-rie /usr/local/julia/bin/julia -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)"
   else
-    echo "AWS_LAMBDA_RUNTIME_API = $AWS_LAMBDA_RUNTIME_API"
+    echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
     echo "$JOT_OBSERVATION Starting Julia ..."
-    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using $PKG_NAME; start_runtime(\\\"$AWS_LAMBDA_RUNTIME_API\\\", $FUNC_FULL_NAME, $FUNC_PARAM_TYPE)"
+    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)"
     echo "$JOT_OBSERVATION ... Julia started"
   fi
   """
