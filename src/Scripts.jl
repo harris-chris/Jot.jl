@@ -24,7 +24,7 @@ function get_bootstrap_script(
   else
     echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
     echo "$JOT_OBSERVATION Starting Julia ..."
-    exec /usr/local/julia/bin/julia -e "println(DEPOT_PATH); using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)"
+    exec /usr/local/julia/bin/julia -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
     echo "$JOT_OBSERVATION ... Julia started"
   fi
   """

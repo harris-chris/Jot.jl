@@ -3,6 +3,15 @@
   JOT_AWS_LAMBDA_REQUEST_ID
 end
 
+"""
+    struct LogEvent
+      timestamp::Int64
+      message::String
+      ingestionTime::Int64
+    end
+
+A single item of log output from AWS Cloudwatch, returned within a LambdaFunctionInvocationLog.
+"""
 struct LogEvent
   timestamp::Int64
   message::String
@@ -25,6 +34,18 @@ function is_debug_event(event::LogEvent)::Bool
   startswith(event.message, "DEBUG:")
 end
 
+function is_observation_event(event::LogEvent)::Bool
+  startswith(event.message, "$JOT_OBSERVATION")
+end
+
+function is_defined_event(event::LogEvent)::Bool
+  is_start_event(event) ||
+  is_end_event(event) ||
+  is_report_event(event) ||
+  is_debug_event(event) ||
+  is_observation_event(event)
+end
+
 """
     struct LambdaFunctionInvocationLog
       RequestId::String
@@ -32,8 +53,7 @@ end
       cloudwatch_log_start_event::Union{Nothing, LogEvent}
       cloudwatch_log_end_event::LogEvent
       cloudwatch_log_report_event::LogEvent
-      cloudwatch_log_debug_events::Vector{LogEvent}
-      cloudwatch_log_user_events::Vector{LogEvent}
+      cloudwatch_log_events::Vector{LogEvent}
     end
 
 The log output from a Lambda function invocation, obtained via `invoke_function_with_log`.
@@ -44,8 +64,7 @@ struct LambdaFunctionInvocationLog
   cloudwatch_log_start_event::Union{Nothing, LogEvent}
   cloudwatch_log_end_event::LogEvent
   cloudwatch_log_report_event::LogEvent
-  cloudwatch_log_debug_events::Vector{LogEvent}
-  cloudwatch_log_user_events::Vector{LogEvent}
+  cloudwatch_log_events::Vector{LogEvent}
 end
 
 struct LogGroup
@@ -74,28 +93,51 @@ function unix_epoch_time_to_datetime(epoch_time::Int64)::DateTime
   datetime_seconds + Dates.Millisecond(milliseconds)
 end
 
+"""
+    show_observations(
+        log::LambdaFunctionInvocationLog,
+      )::Nothing
+
+Presents a visual breakdown of the time spent for a given Lambda invocation. Only Jot observation points will be shown here.
+"""
 function show_observations(log::LambdaFunctionInvocationLog)::Nothing
-  log_events = log.cloudwatch_log_user_events
+  show_log_events(log.cloudwatch_log_events, is_observation_event)
+end
+
+"""
+    show_observations(
+        log::LambdaFunctionInvocationLog,
+      )::Nothing
+
+Presents a visual breakdown of the time spent for a given Lambda function invocation. All logged events will be shown here.
+"""
+function show_log_events(log::LambdaFunctionInvocationLog)::Nothing
+  show_log_events(log.cloudwatch_log_events, x -> true)
+end
+
+function show_log_events(
+    log_events::Vector{LogEvent},
+    should_event_be_shown::Function,
+  )::Nothing
+  log_events = log.cloudwatch_log_events
   start_time_unix = log_events[1].timestamp
   last_event_unix = start_time_unix
-  observations = filter(log_events) do event
-    startswith(event.message, "$JOT_OBSERVATION")
-  end
-  length(observations) == 0 && error(
-    "No user events labelled with $JOT_OBSERVATION found"
+  valid_events = filter(should_event_be_shown, log_events)
+  length(valid_events) == 0 && error(
+    "No valid log events found within all log events"
   )
-  first_observ_is_first_event = observations[1].timestamp == log_events[1].timestamp
-  have_prior_observation = if !first_observ_is_first_event
+  first_valid_event_is_first_event = valid_events[1].timestamp == log_events[1].timestamp
+  have_prior_log_event = if !first_valid_event_is_first_event
     println("Log starts")
     true
   else
     false
   end
 
-  foreach(observations) do event
+  foreach(valid_events) do event
     total_elapsed_time = event.timestamp - start_time_unix
     from_last_elapsed_time = event.timestamp - last_event_unix
-    if have_prior_observation
+    if have_prior_log_event
       println("    |")
       println("    + $from_last_elapsed_time ms")
       println("    |")
@@ -104,13 +146,24 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
     message_body = chopprefix(event.message, "$JOT_OBSERVATION")
     println(strip("Observation: $message_body"))
     last_event_unix = event.timestamp
-    have_prior_observation = true
+    have_prior_log_event = true
   end
-  if observations[end].timestamp != log_events[end].timestamp
-    println("Log starts")
+  if valid_events[end].timestamp != log_events[end].timestamp
+    from_last_elapsed_time = log_events[end].timestamp - valid_events[end].timestamp
+    println("    |")
+    println("    + $from_last_elapsed_time ms")
+    println("    |")
+    println("Log ends")
   end
 end
 
+"""
+    get_invocation_run_time(
+        log::LambdaFunctionInvocationLog,
+      )::Float64
+
+Returns the total run time for a given lambda function invocation, expressed in milliseconds.
+"""
 function get_invocation_run_time(log::LambdaFunctionInvocationLog)::Float64
   get_invocation_run_time(log.cloudwatch_log_report_event)
 end

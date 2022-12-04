@@ -614,7 +614,7 @@ function test_compiled_local_image(
     package_compile = true,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(
     compiled_local_image,
     uncompiled_local_image,
     responder_function_test_args.good_arg,
@@ -700,7 +700,7 @@ function test_compiled_lambda_function(
   compiled_lambda_function = create_lambda_function(
     ecr_repo; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
   )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_test_times(
+  (average_compiled_run_time, average_uncompiled_run_time) = compare_lambda_function_test_times(
     compiled_lambda_function,
     uncompiled_lambda_function,
     responder_function_test_args.good_arg,
