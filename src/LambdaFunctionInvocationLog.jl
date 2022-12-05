@@ -26,6 +26,10 @@ function is_end_event(event::LogEvent)::Bool
   startswith(event.message, "END RequestId:")
 end
 
+function is_precompile_event(event::LogEvent)::Bool
+  startswith(event.message, "precompile(")
+end
+
 function is_report_event(event::LogEvent)::Bool
   startswith(event.message, "REPORT RequestId:")
 end
@@ -101,7 +105,7 @@ end
 Presents a visual breakdown of the time spent for a given Lambda invocation. Only Jot observation points will be shown here.
 """
 function show_observations(log::LambdaFunctionInvocationLog)::Nothing
-  show_log_events(log.cloudwatch_log_events, is_observation_event)
+  show_log_events(log.cloudwatch_log_events, is_observation_event, "Jot observation")
 end
 
 """
@@ -112,48 +116,65 @@ end
 Presents a visual breakdown of the time spent for a given Lambda function invocation. All logged events will be shown here.
 """
 function show_log_events(log::LambdaFunctionInvocationLog)::Nothing
-  show_log_events(log.cloudwatch_log_events, x -> true)
+  show_log_events(log.cloudwatch_log_events, x -> true, "Any log event")
+end
+
+"""
+    get_invocation_precompile_time(
+        log::LambdaFunctionInvocationLog,
+      )::Float64
+
+Returns the total time that Julia spent precompiling functions during a given invocation, in milliseconds.
+"""
+function get_invocation_precompile_time(log::LambdaFunctionInvocationLog)::Float64
+  last_time = log.cloudwatch_log_events[begin].timestamp
+  foldl(log.cloudwatch_log_events; init=0.0) do total_time_taken, event
+    this_time_taken = is_precompile_event(event) ? event.timestamp - last_time : 0.0
+    last_time = event.timestamp
+    total_time_taken + this_time_taken
+  end
 end
 
 function show_log_events(
     log_events::Vector{LogEvent},
     should_event_be_shown::Function,
+    event_type::AbstractString,
   )::Nothing
-  log_events = log.cloudwatch_log_events
   start_time_unix = log_events[1].timestamp
   last_event_unix = start_time_unix
   valid_events = filter(should_event_be_shown, log_events)
-  length(valid_events) == 0 && error(
-    "No valid log events found within all log events"
-  )
-  first_valid_event_is_first_event = valid_events[1].timestamp == log_events[1].timestamp
-  have_prior_log_event = if !first_valid_event_is_first_event
-    println("Log starts")
-    true
+  if length(valid_events) == 0
+    println("No log events of type $event_type found within all log events")
   else
-    false
-  end
+    first_valid_event_is_first_event = valid_events[1].timestamp == log_events[1].timestamp
+    have_prior_log_event = if !first_valid_event_is_first_event
+      println("Log starts")
+      true
+    else
+      false
+    end
 
-  foreach(valid_events) do event
-    total_elapsed_time = event.timestamp - start_time_unix
-    from_last_elapsed_time = event.timestamp - last_event_unix
-    if have_prior_log_event
+    foreach(valid_events) do event
+      total_elapsed_time = event.timestamp - start_time_unix
+      from_last_elapsed_time = event.timestamp - last_event_unix
+      if have_prior_log_event
+        println("    |")
+        println("    + $from_last_elapsed_time ms")
+        println("    |")
+      end
+      println("Total time elapsed: $total_elapsed_time ms")
+      message_body = chopprefix(event.message, "$JOT_OBSERVATION")
+      println(strip("Observation: $message_body"))
+      last_event_unix = event.timestamp
+      have_prior_log_event = true
+    end
+    if valid_events[end].timestamp != log_events[end].timestamp
+      from_last_elapsed_time = log_events[end].timestamp - valid_events[end].timestamp
       println("    |")
       println("    + $from_last_elapsed_time ms")
       println("    |")
+      println("Log ends")
     end
-    println("Total time elapsed: $total_elapsed_time ms")
-    message_body = chopprefix(event.message, "$JOT_OBSERVATION")
-    println(strip("Observation: $message_body"))
-    last_event_unix = event.timestamp
-    have_prior_log_event = true
-  end
-  if valid_events[end].timestamp != log_events[end].timestamp
-    from_last_elapsed_time = log_events[end].timestamp - valid_events[end].timestamp
-    println("    |")
-    println("    + $from_last_elapsed_time ms")
-    println("    |")
-    println("Log ends")
   end
 end
 
