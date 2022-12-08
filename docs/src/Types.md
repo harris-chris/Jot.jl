@@ -4,6 +4,7 @@
 AbstractResponder
 AWSConfig
 Container
+InvocationTimeBreakdown
 LambdaFunction
 LambdaFunctionInvocationLog
 LocalImage

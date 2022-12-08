@@ -3,6 +3,10 @@
   JOT_AWS_LAMBDA_REQUEST_ID
 end
 
+const BOOTSTRAP_STARTED_JOT_OBSERVATION = "$JOT_OBSERVATION Bootstrap started ..."
+const STARTING_JULIA_JOT_OBSERVATION = "$JOT_OBSERVATION Starting Julia ..."
+const JULIA_STARTED_JOT_OBSERVATION = "$JOT_OBSERVATION ... Julia started"
+
 """
     struct LogEvent
       timestamp::Int64
@@ -90,6 +94,31 @@ struct LogStream
   storedBytes::Int64
 end
 
+"""
+    struct InvocationTimeBreakdown
+      total::Float64
+      ex_responder_function_time::Union{Nothing, Float64}
+      precompile_time::Union{Nothing, Float64}
+      responder_function_time::Float64
+    end
+
+A simple time breakdown of a single AWS Lambda invocation. `total` should be close to or the same as the sum of alll other attributes in the struct.
+
+`ex_responder_function_time` means all of the time spent outside of the responder function.
+
+`precompile_time` is the time that Julia has spent pre-compiling functions, as they are used for the first time.
+
+`responder_function_time` means all the time spent within the responder function, excluding any precompile time within the function.
+
+If an attribute is `nothing`, this means that this process did not run at all. For example, if an AWS Lambda function is already available, it may not need to start Julia and therefore the `ex_responder_function_time` will be `nothing`.
+"""
+struct InvocationTimeBreakdown
+  total::Float64
+  ex_responder_function_time::Union{Nothing, Float64}
+  precompile_time::Union{Nothing, Float64}
+  responder_function_time::Float64
+end
+
 function unix_epoch_time_to_datetime(epoch_time::Int64)::DateTime
   epoch_time_seconds = floor(Int64, epoch_time/1000)
   milliseconds = epoch_time - (epoch_time_seconds * 1000)
@@ -109,7 +138,7 @@ function show_observations(log::LambdaFunctionInvocationLog)::Nothing
 end
 
 """
-    show_observations(
+    show_log_events(
         log::LambdaFunctionInvocationLog,
       )::Nothing
 
@@ -126,13 +155,60 @@ end
 
 Returns the total time that Julia spent precompiling functions during a given invocation, in milliseconds.
 """
-function get_invocation_precompile_time(log::LambdaFunctionInvocationLog)::Float64
-  last_time = log.cloudwatch_log_events[begin].timestamp
-  foldl(log.cloudwatch_log_events; init=0.0) do total_time_taken, event
-    this_time_taken = is_precompile_event(event) ? event.timestamp - last_time : 0.0
-    last_time = event.timestamp
-    total_time_taken + this_time_taken
+function get_invocation_time_breakdown(
+    log::LambdaFunctionInvocationLog
+  )::InvocationTimeBreakdown
+  log_events = log.cloudwatch_log_events
+  starting_julia_idx = findfirst(log_events) do event
+    event.message == "$STARTING_JULIA_JOT_OBSERVATION"
   end
+  pre_responder_function_time = if isnothing(starting_julia_idx)
+    nothing
+  else
+    log_events[starting_julia_idx].timestamp - log_events[begin].timestamp
+  end
+
+  julia_started_idx = findfirst(log_events) do event
+    event.message == "$JULIA_STARTED_JOT_OBSERVATION"
+  end
+
+  starting_julia_idx = isnothing(starting_julia_idx) ? 1 : starting_julia_idx
+  julia_started_idx = isnothing(julia_started_idx) ? length(log_events) : julia_started_idx
+
+  last_event_timestamp = log_events[starting_julia_idx].timestamp
+  (precompile_time, responder_function_time) = foldl(
+    log_events[starting_julia_idx+1:julia_started_idx]; init = (0.0, 0.0)
+  ) do acc, event
+    this_time = event.timestamp - last_event_timestamp
+    last_event_timestamp = event.timestamp
+    if is_precompile_event(event)
+      (first(acc) + this_time, last(acc))
+    else
+      (first(acc), last(acc) + this_time)
+    end
+  end
+
+  post_responder_function_time = (
+    log_events[end].timestamp - log_events[julia_started_idx].timestamp
+  )
+  ex_responder_function_time = if (
+    !isnothing(pre_responder_function_time) && !isnothing(post_responder_function_time)
+  )
+    pre_responder_function_time + post_responder_function_time
+  elseif !isnothing(pre_responder_function_time)
+    pre_responder_function_time
+  elseif !isnothing(post_responder_function_time)
+    post_responder_function_time
+  else
+    nothing
+  end
+
+  InvocationTimeBreakdown(
+    get_invocation_run_time(log),
+    ex_responder_function_time,
+    precompile_time,
+    responder_function_time,
+  )
 end
 
 function show_log_events(

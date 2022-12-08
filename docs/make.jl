@@ -12,6 +12,7 @@ makedocs(
       "Examples" => "Examples.md",
       "Managing Lambdas" => "Managing_lambdas.md",
       "Labels" => "Labels.md",
+      "Debugging Performance" => "Debugging_Performance.md",
     ],
     "API" => [
       "Functions" => "Functions.md",

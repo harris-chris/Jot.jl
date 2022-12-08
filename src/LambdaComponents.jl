@@ -144,7 +144,7 @@ end
     run_test(
         l::LambdaComponents;
         function_argument::Any = "",
-        expected_response::Any = nothing;
+        expected_response::Any = nothing,
       )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog, Float64}}
 
 Tests the passed `LambdaComponents` instance.

@@ -5,11 +5,9 @@ function get_bootstrap_script(
     temp_path::String,
   )::String
 
-  @debug JOT_OBSERVATION
-
   bootstrap_shebang = """
   #!/bin/bash
-  echo "$(JOT_OBSERVATION) Bootstrap started"
+  echo "$BOOTSTRAP_STARTED_JOT_OBSERVATION"
   """
 
   bootstrap_env_vars = """
@@ -24,9 +22,9 @@ function get_bootstrap_script(
     echo "... AWS_LAMBDA_RUNTIME_API started"
   else
     echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
-    echo "$JOT_OBSERVATION Starting Julia ..."
+    echo "$STARTING_JULIA_JOT_OBSERVATION"
     exec /usr/local/julia/bin/julia --trace-compile=stderr -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
-    echo "$JOT_OBSERVATION ... Julia started"
+    echo "$JULIA_STARTED_JOT_OBSERVATION"
   fi
   """
   bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body

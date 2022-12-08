@@ -18,6 +18,7 @@ import Base.delete!
 export AWSConfig, LambdaException
 export get_responder, AbstractResponder, LocalPackageResponder
 export LocalImage, Container, RemoteImage, ECRRepo, AWSRole, LambdaFunction
+export LambdaFunctionInvocationLog, LogEvent, InvocationTimeBreakdown
 export get_aws_role, get_user_labels
 export LambdaFunctionState, pending, active
 export get_dockerfile, build_definition
@@ -30,10 +31,11 @@ export get_remote_image
 export create_aws_role
 export create_lambda_function, get_lambda_function
 export invoke_function, invoke_function_with_log
-export get_invocation_run_time, get_total_precompile_time
+export get_invocation_time_breakdown
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
-export show_lambdas, show_observations, get_invocation_precompile_time
+export show_lambdas
+export show_observations, show_log_events, get_invocation_time_breakdown
 export JOT_OBSERVATION, JOT_AWS_LAMBDA_REQUEST_ID
 export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
