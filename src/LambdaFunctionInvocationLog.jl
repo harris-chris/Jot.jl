@@ -131,7 +131,7 @@ end
         log::LambdaFunctionInvocationLog,
       )::Nothing
 
-Presents a visual breakdown of the time spent for a given Lambda invocation. Only Jot observation points will be shown here.
+Presents a visual breakdown of the time spent for a given Lambda invocation. Only Jot observation points will be shown here. See the 'Debugging Performance' page for more details of this.
 """
 function show_observations(log::LambdaFunctionInvocationLog)::Nothing
   show_log_events(log.cloudwatch_log_events, is_observation_event, "Jot observation")
@@ -149,11 +149,11 @@ function show_log_events(log::LambdaFunctionInvocationLog)::Nothing
 end
 
 """
-    get_invocation_precompile_time(
+    get_invocation_time_breakdown(
         log::LambdaFunctionInvocationLog,
-      )::Float64
+      )::InvocationTimeBreakdown
 
-Returns the total time that Julia spent precompiling functions during a given invocation, in milliseconds.
+Returns an `InvocationTimeBreakdown` object, which stores how/where the total run-time was spent for a given invocation, in milliseconds.
 """
 function get_invocation_time_breakdown(
     log::LambdaFunctionInvocationLog
