@@ -22,7 +22,7 @@ create_local_image(
     aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
-    julia_base_version::String = "1.6.7",
+    julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),

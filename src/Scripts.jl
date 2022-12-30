@@ -1,8 +1,11 @@
 using Sockets
 
+const SYSIMAGE_NAME = "CompiledSysImage.so"
+
 function get_bootstrap_script(
     julia_depot_path::String,
     temp_path::String,
+    package_compile::Bool,
   )::String
 
   bootstrap_shebang = """
@@ -14,11 +17,21 @@ function get_bootstrap_script(
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
+  julia_args = if package_compile
+    ["--trace-compile=stderr", "--sysimage=\"$SYSIMAGE_NAME\""]
+  else
+    ["--trace-compile=stderr"]
+  end
+
+  run_julia_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
+    join(julia_args, " ") *
+    " -e"
+
   bootstrap_body = """
   if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL ..."
-    exec ./aws-lambda-rie /usr/local/julia/bin/julia --trace-compile=stderr -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
+    $run_julia_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
     echo "... AWS_LAMBDA_RUNTIME_API started"
   else
     echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
@@ -101,15 +114,15 @@ function get_init_script(
 
   package_compile_script = """
   @info "Running package compile script ..."
-  Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="1.7.7"))
+  Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
   using PackageCompiler
   @async Jot.start_lambda_server("127.0.0.1", 9001)
   create_sysimage(
-                  :Jot,
-                  precompile_execution_file="precompile.jl",
-                  replace_default=true,
-                  cpu_target="$cpu_target",
-                 )
+    :Jot,
+    precompile_execution_file="precompile.jl",
+    sysimage_path="$SYSIMAGE_NAME",
+    cpu_target="$cpu_target",
+  )
   @info "... finished running package compile script"
   """
   package_compile ? precomp * package_compile_script : precomp
@@ -118,23 +131,29 @@ end
 function get_precompile_jl(
     package_name::String,
   )::String
-  """
+  precompile_jl = """
   using Jot
   using $package_name
+  using HTTP
   using Pkg
 
   try
     Pkg.test("$package_name")
   catch e
-    if isa(e, LoadError)
-      rethrow(e)
-    end
+    isa(e, LoadError) && rethrow(e)
   end
 
   rf(i::Int64) = i + 1
 
-  Jot.start_runtime("127.0.0.1:9001", rf, Int64; single_shot=true)
+  # This will error because we haven't started AWS RIE
+  try
+    Jot.start_runtime("127.0.0.1:9001", rf, Int64; single_shot=true)
+  catch e
+    isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
+  end
   """
+  @debug precompile_jl
+  precompile_jl
 end
 
 function get_lambda_function_tags_script(lambda_function::LambdaFunction)::String

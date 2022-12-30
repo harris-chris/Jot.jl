@@ -35,7 +35,8 @@ export get_invocation_time_breakdown
 export create_lambda_components, with_remote_image!, with_lambda_function!
 export delete!
 export show_lambdas
-export show_observations, show_log_events, get_invocation_time_breakdown
+export show_observations, show_log_events
+export get_invocation_time_breakdown, get_invocation_run_time
 export JOT_OBSERVATION, JOT_AWS_LAMBDA_REQUEST_ID
 export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
@@ -167,7 +168,7 @@ function add_scripts_to_build_dir(
     responder::AbstractResponder,
   )
   add_to_build(content, fname) = write_to_build_dir(content, responder.build_dir, fname)
-  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path)
+  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, package_compile)
   bootstrap_script |> x -> add_to_build(x, "bootstrap")
   init_script = get_init_script(package_compile, julia_cpu_target)
   add_to_build(init_script, "init.jl")
@@ -229,7 +230,7 @@ end
         aws_config::Union{Nothing, AWSConfig} = nothing,
         image_tag::String = "latest",
         no_cache::Bool = false,
-        julia_base_version::String = "1.6.7",
+        julia_base_version::String = "1.8.4",
         julia_cpu_target::String = "x86-64",
         package_compile::Bool = false,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
@@ -267,7 +268,7 @@ function create_local_image(
     aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
-    julia_base_version::String = "1.6.7",
+    julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),

@@ -44,6 +44,7 @@ function start_runtime(
   println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
 
   while true
+    @info "$(endpoint)next"
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
     body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
