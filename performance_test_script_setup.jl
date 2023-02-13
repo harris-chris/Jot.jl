@@ -30,10 +30,44 @@ function get_or_create_lambda_function(name_prefix::String, compile::Bool)::Lamb
   name_suffix = compile ? "compiled" : "uncompiled"
   lambda_opt = get_lambda_function("$name_prefix-$name_suffix")
   if isnothing(lambda_opt)
-    local_image = get_or_create_local_image(compile)
+    local_image = get_or_create_local_image(name_prefix, compile)
     remote_image = push_to_ecr!(local_image)
     create_lambda_function(remote_image)
   else
     lambda_opt
   end
 end
+
+function get_local_image_run_time(
+    image::LocalImage,
+    test_arg::Any,
+    expected_response::Any,
+  )::Float64
+  redirect_stdio(stdout=devnull, stderr=devnull) do
+    run_local_image_test(
+      image, test_arg, expected_response
+    ) |> last
+  end
+end
+
+function get_lambda_function_test_log(
+    func::LambdaFunction,
+    test_arg::Any,
+    expected_response::Any,
+  )::LambdaFunctionInvocationLog
+  redirect_stdio(stdout=devnull, stderr=devnull) do
+    run_lambda_function_test(
+      func, test_arg, expected_response
+    ) |> last
+  end
+end
+
+function was_lambda_function_started_from_cold(
+    log::LambdaFunctionInvocationLog,
+  )::Bool
+  from_cold_events = filter(log.cloudwatch_log_events) do ev
+    occursin("Bootstrap started ...", ev.message, )
+  end
+  length(from_cold_events) > 1
+end
+

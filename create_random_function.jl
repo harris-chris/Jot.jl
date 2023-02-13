@@ -4,7 +4,7 @@ using Random
 this_random_string = randstring(8) |> lowercase
 
 open("append_string.jl", "w") do f
-  write(f, "append_string(s::String) = s * $this_random_string")
+  write(f, "append_string(s::String) = s * \"$this_random_string\"")
 end
 
 responder = get_responder("./append_string.jl", :append_string, String)
