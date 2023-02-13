@@ -4,4 +4,6 @@ test/JotTest2/response_suffix
 docs/build/*
 feature_branch_notes.md
 test*.jl
+timing_notes.md
+**/increment_vector.jl
 
