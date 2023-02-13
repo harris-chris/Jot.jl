@@ -2,10 +2,15 @@ using Sockets
 
 const SYSIMAGE_NAME = "CompiledSysImage.so"
 
+function nest_quotes(original::AbstractString)::String
+  replace(original, "\"" => "\\\"")
+end
+
 function get_bootstrap_script(
-    julia_depot_path::String,
-    temp_path::String,
-    package_compile::Bool,
+    responder::LocalPackageResponder,
+    julia_depot_path::AbstractString,
+    temp_path::AbstractString,
+    julia_args::Vector{<:AbstractString},
   )::String
 
   bootstrap_shebang = """
@@ -17,143 +22,97 @@ function get_bootstrap_script(
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
-  julia_args = if package_compile
-    ["--trace-compile=stderr", "--sysimage=\"$SYSIMAGE_NAME\""]
-  else
-    ["--trace-compile=stderr"]
-  end
-
-  run_julia_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
-    join(julia_args, " ") *
-    " -e"
-
-  bootstrap_body = """
-  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
-    LOCAL="127.0.0.1:9001"
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL ..."
-    $run_julia_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
-    echo "... AWS_LAMBDA_RUNTIME_API started"
-  else
-    echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
-    echo "$STARTING_JULIA_JOT_OBSERVATION"
-    exec /usr/local/julia/bin/julia --trace-compile=stderr -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
-    echo "$JULIA_STARTED_JOT_OBSERVATION"
-  fi
-  """
+  bootstrap_body = get_bootstrap_body(responder, julia_args)
   bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
   @debug bootstrap_script
   bootstrap_script
 end
 
-function start_lambda_server(host::String, port::Int64)
-  ROUTER = HTTP.Router()
-  server = Sockets.listen(Sockets.InetAddr(parse(IPAddr, host), port))
-
-  function get_respond(req::HTTP.Request)
-    println("received get request")
-    return HTTP.Response(
-                         200,
-                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"];
-                         body=JSON3.write(3),
-                        )
-  end
-
-  function post_respond(req::HTTP.Request)
-    answer = JSON3.read(IOBuffer(HTTP.payload(req)), Int64)
-    println(answer)
-    println("Closing server")
-    close(server)
-    return HTTP.Response(200, JSON3.write(answer))
-  end
-
-  HTTP.@register(ROUTER, "POST", "/*", post_respond)
-  HTTP.@register(ROUTER, "GET", "/*", get_respond)
-  @sync HTTP.serve(ROUTER, host, port, server=server)
-end
-
-function get_lambda_dummy_server_jl()::String
-  """
-  using HTTP
-  using JSON3
-
-  function get_respond(req::HTTP.Request)
-    println("received get request")
-    return HTTP.Response(
-                         200,
-                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"];
-                         body=JSON3.write(3),
-                        )
-  end
-
-  function post_respond(req::HTTP.Request)
-    answer = JSON3.read(IOBuffer(HTTP.payload(req)), Int64)
-    println(answer)
-    return HTTP.Response(200, JSON3.write(answer))
-    exit(86)
-  end
-
-  const ROUTER = HTTP.Router()
-
-  HTTP.@register(ROUTER, "POST", "/*", post_respond)
-  HTTP.@register(ROUTER, "GET", "/*", get_respond)
-  HTTP.serve(ROUTER, "127.0.0.1", 9001)
-  """
-end
-
-function get_init_script(
-    package_compile::Bool,
-    cpu_target::String,
+function get_create_julia_environment_script(
+    responder_package_path::AbstractString,
+    create_dir::AbstractString;
+    jot_branch::AbstractString = "main",
   )::String
-  precomp = """
-  import Pkg
-  using Jot
-  @info "Running precompile ..."
-  Pkg.precompile()
-  @info "... finished running precompile"
   """
-
-  package_compile_script = """
-  @info "Running package compile script ..."
-  Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
-  using PackageCompiler
-  @async Jot.start_lambda_server("127.0.0.1", 9001)
-  create_sysimage(
-    :Jot,
-    precompile_execution_file="precompile.jl",
-    sysimage_path="$SYSIMAGE_NAME",
-    cpu_target="$cpu_target",
-  )
-  @info "... finished running package compile script"
-  """
-  package_compile ? precomp * package_compile_script : precomp
-end
-
-function get_precompile_jl(
-    package_name::String,
-  )::String
-  precompile_jl = """
-  using Jot
-  using $package_name
-  using HTTP
   using Pkg
-
-  try
-    Pkg.test("$package_name")
-  catch e
-    isa(e, LoadError) && rethrow(e)
-  end
-
-  rf(i::Int64) = i + 1
-
-  # This will error because we haven't started AWS RIE
-  try
-    Jot.start_runtime("127.0.0.1:9001", rf, Int64; single_shot=true)
-  catch e
-    isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
+  cd(\"$create_dir\") do
+    Pkg.activate(\".\")
+    Pkg.add(url=\"$jot_github_url\", rev=\"$jot_branch\")
+    Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
+    Pkg.precompile()
   end
   """
-  @debug precompile_jl
-  precompile_jl
+end
+
+function get_bootstrap_body(
+    responder::LocalPackageResponder,
+    julia_args::Vector{<:AbstractString};
+    timeout::Union{Nothing, Int64} = nothing,
+  )::String
+
+  response_function_name = String(responder.response_function)
+  response_param_type = responder.response_function_param_type
+  responder_package_path = joinpath(responder.build_dir, responder.package_name)
+
+  julia_start_runtime_command =
+    "start_runtime(" *
+    join([
+      "\\\"\$LAMBDA_ENDPOINT\\\"",
+      "$(responder.package_name).$response_function_name",
+      "$response_param_type",
+    ], ", ") *
+    ")"
+
+  julia_exec_statements = [
+    "using Jot",
+    "using $(responder.package_name)",
+    julia_start_runtime_command,
+  ]
+  julia_exec = join(julia_exec_statements, "; ")
+
+  run_julia_rie_cmd =
+    "exec " *
+    (isnothing(timeout) ? "" : "timeout $(timeout)s ") *
+    "./aws-lambda-rie julia " *
+    join(julia_args, " ") *
+    " -e \"$julia_exec\""
+
+  run_julia_lambda_cmd =
+    "exec " *
+    (isnothing(timeout) ? "" : "timeout $(timeout)s ") *
+    "julia " *
+    join(julia_args, " ") *
+    " -e \"$julia_exec\""
+
+  """
+  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
+    LAMBDA_ENDPOINT="127.0.0.1:9001"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LAMBDA_ENDPOINT ..."
+    $run_julia_rie_cmd 2>&1
+    echo "... AWS_LAMBDA_RUNTIME_API started"
+  else
+    LAMBDA_ENDPOINT=\$AWS_LAMBDA_RUNTIME_API
+    echo "LAMBDA_ENDPOINT = \$AWS_LAMBDA_RUNTIME_API"
+    echo "$STARTING_JULIA_JOT_OBSERVATION"
+    $run_julia_lambda_cmd 2>&1
+    echo "$JULIA_STARTED_JOT_OBSERVATION"
+  fi
+  """
+end
+
+function get_invoke_package_compile_script(
+    responder::LocalPackageResponder,
+  )::String
+  """
+  using Jot
+  using $(responder.package_name)
+  create_sysimage(
+    [:Jot, :$(responder.package_name)],
+    precompile_statements_file=\"$PRECOMP_STATEMENTS_FNAME\",
+    sysimage_path=\"$SYSIMAGE_FNAME\",
+    cpu_target=\"x86-64\",
+  )
+  """
 end
 
 function get_lambda_function_tags_script(lambda_function::LambdaFunction)::String
@@ -170,7 +129,7 @@ end
 
 function get_delete_ecr_repo_tags_script(
     ecr_repo::ECRRepo,
-    tag_keys::Vector{String}
+    tag_keys::Vector{<:AbstractString}
   )::String
   """
   aws ecr untag-resource \\
@@ -193,7 +152,7 @@ function get_delete_remote_image_script(remote_image::RemoteImage)::String
   """
 end
 
-function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
+function get_ecr_login_script(aws_config::AWSConfig, image_suffix::AbstractString)
   image_full_name = get_image_full_name(aws_config, image_suffix)
   """
   aws ecr get-login-password --region $(aws_config.region) \\
@@ -204,11 +163,15 @@ function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
   """
 end
 
-get_docker_push_script(image_full_name_plus_tag::String) = """
+get_docker_push_script(image_full_name_plus_tag::AbstractString) = """
 docker push $image_full_name_plus_tag
 """
 
-function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
+function get_create_ecr_repo_script(
+    image_suffix::AbstractString,
+    aws_region::AbstractString,
+    labels::Labels
+  )::String
   tags_json = to_json(labels)
   """
   aws ecr create-repository \\
@@ -251,7 +214,9 @@ function get_create_lambda_role_script(role_name)::String
   """
 end
 
-function get_attach_lambda_execution_policy_to_role_script(role_name::String)::String
+function get_attach_lambda_execution_policy_to_role_script(
+    role_name::AbstractString,
+  )::String
   """
   aws iam attach-role-policy --role-name $(role_name) --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
   """
@@ -346,8 +311,8 @@ function get_log_streams_script(log_group_name::String)::String
 end
 
 function get_log_events_script(
-    log_group_name::String,
-    log_stream_name::String,
+    log_group_name::AbstractString,
+    log_stream_name::AbstractString,
   )::String
   """
   aws logs get-log-events \\

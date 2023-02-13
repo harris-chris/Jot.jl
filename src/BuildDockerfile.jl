@@ -54,25 +54,43 @@ function dockerfile_add_responder(
     res::LocalPackageResponder,
   )::String
   using_pkg_script = "using Pkg; "
-  add_module_script = "Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); "
+  add_module_script = "Pkg.develop(PackageSpec(path=\\\"$runtime_path/$(res.package_name)\\\")); "
   instantiate_script = "Pkg.instantiate(); "
   """
   RUN julia -e \"$using_pkg_script$add_module_script$instantiate_script\"
   """
 end
 
+function dockerfile_add_environment(
+    responder::LocalPackageResponder,
+  )::String
+  test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
+  jot_branch = if isnothing(test_running) || test_running == "false"
+    "main"
+  else
+    readchomp(`git branch --show-current`)
+  end
+  responder_package_path = "./$(responder.package_name)"
+  create_env_script = get_create_julia_environment_script(
+    responder_package_path, "."; jot_branch
+  )
+  create_env_statement = replace(create_env_script, "\n" => "; ") |> nest_quotes
+  """
+  RUN julia -e \"$create_env_statement\"
+  """
+end
+
 function dockerfile_add_jot()::String
   test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
-  jot_url = if isnothing(test_running) || test_running == "false"
-    jot_github_url
+  jot_branch = if isnothing(test_running) || test_running == "false"
+    "main"
   else
-    this_branch = readchomp(`git branch --show-current`)
-    jot_github_url * "#$this_branch"
+    readchomp(`git branch --show-current`)
   end
-  @debug jot_url
+  @debug jot_branch
 
   """
-  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_url\\\")"
+  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_github_url\\\", rev=\\\"$jot_branch\\\")"
   """
 end
 
@@ -100,10 +118,20 @@ function dockerfile_add_bootstrap(
   """
 end
 
-function dockerfile_add_precompile(package_compile::Bool)::String
-  run_init = """
+function dockerfile_add_precompile()::String
+  """
   RUN julia init.jl
   """
+end
+
+function dockerfile_run_package_compile_script(pc::Bool)::String
+  if pc
+    """
+    RUN julia --project=. compile_package.jl
+    """
+  else
+    ""
+  end
 end
 
 

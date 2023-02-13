@@ -9,7 +9,6 @@ using Pkg
 using PrettyTables
 using IsURL
 using Random
-using Setfield
 using StructTypes
 using TOML
 import Base.delete!
@@ -42,18 +41,23 @@ export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
 export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
+export FunctionTestData
+export create_environment!
+export nest_quotes, create_sysimage
+export FunctionTestData
 
 # CONSTANTS
 const docker_hash_limit = 12
 const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/runtime/julia_depot"
 const temp_path = "/tmp"
-const jot_github_url = "https://github.com/harris-chris/Jot.jl#main"
+const jot_github_url = "https://github.com/harris-chris/Jot.jl"
 const writable_depot_folders = ["logs", "scratchspaces"]
 
 abstract type LambdaComponent end
 
 include("Responder.jl")
+include("PackageCompile.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
 include("RemoteImage.jl")
@@ -151,39 +155,73 @@ function create_build_directory()::String
   build_dir
 end
 
-function write_to_build_dir(
+function add_aws_rie!(responder::LocalPackageResponder)::Nothing
+  cd(responder.build_dir) do
+    if !("aws-lambda-rie" in readdir())
+      run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
+      run(`chmod +x ./aws-lambda-rie`)
+    end
+  end
+  nothing
+end
+
+function create_environment!(
+    responder::LocalPackageResponder,
+  )::String
+  responder_package_path = "./$(responder.package_name)"
+  create_env_multiline = get_create_julia_environment_script(
+    responder_package_path, responder.build_dir
+  )
+  create_env_script = replace(create_env_multiline, "\n" => "; ")
+  @show create_env_script
+  @show Pkg.status()
+  eval(Meta.parse(create_env_script))
+  @info "Temporary environment created"
+  responder.build_dir
+end
+
+function write_to_build_dir!(
     content::String,
     build_dir::String,
     filename::String,
-  )
+  )::Nothing
   full_fpath = joinpath(build_dir, filename)
   open(full_fpath, "w") do f
     write(f, content)
   end
+  nothing
 end
 
 function add_scripts_to_build_dir(
+    responder::AbstractResponder,
     package_compile::Bool,
     julia_cpu_target::String,
-    responder::AbstractResponder,
+    function_test_data::Union{Nothing, FunctionTestData},
   )
-  add_to_build(content, fname) = write_to_build_dir(content, responder.build_dir, fname)
-  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, package_compile)
-  bootstrap_script |> x -> add_to_build(x, "bootstrap")
-  init_script = get_init_script(package_compile, julia_cpu_target)
-  add_to_build(init_script, "init.jl")
+  add_to_build!(content, fname) = write_to_build_dir!(
+    content, responder.build_dir, fname
+  )
+  julia_args = [
+    "--project=.",
+    ]
   if package_compile
-    get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl")
+    julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
+    package_compile_script = get_invoke_package_compile_script(responder)
+    add_to_build!(package_compile_script, "compile_package.jl")
   end
+  bootstrap_script = get_bootstrap_script(
+    responder, julia_depot_path, temp_path, julia_args
+  )
+  add_to_build!(bootstrap_script, "bootstrap")
 end
 
 """
     get_dockerfile(
         responder::AbstractResponder,
-        julia_base_version::String,
-        package_compile::Bool;
+        julia_base_version::String;
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
+        package_compile::Bool,
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -191,10 +229,10 @@ create a local docker image.
 """
 function get_dockerfile(
     responder::AbstractResponder,
-    julia_base_version::String,
-    package_compile::Bool;
+    julia_base_version::String;
     user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
     dockerfile_update::Function = x -> x,
+    package_compile::Bool,
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
   if length(overlapped_keys) > 0
@@ -208,17 +246,19 @@ function get_dockerfile(
     dockerfile_add_runtime_directories(julia_depot_path, temp_path, runtime_path),
     dockerfile_add_additional_registries(responder.registry_urls),
     dockerfile_copy_build_dir(),
-    dockerfile_add_responder(runtime_path, responder),
+    dockerfile_add_environment(responder),
+    # dockerfile_add_responder(runtime_path, responder),
     dockerfile_add_labels(combined_labels),
-    dockerfile_add_jot(),
-    dockerfile_add_aws_rie(),
+    # dockerfile_add_jot(),
+    # dockerfile_add_aws_rie(),
+    dockerfile_run_package_compile_script(package_compile),
     dockerfile_add_bootstrap(
       runtime_path,
       responder.package_name,
       String(responder.response_function),
       responder.response_function_param_type
     ),
-    dockerfile_add_precompile(package_compile),
+    # dockerfile_add_precompile(),
   ]; init = "")
   dockerfile_update(generated_dockerfile)
 end
@@ -232,6 +272,7 @@ end
         no_cache::Bool = false,
         julia_base_version::String = "1.8.4",
         julia_cpu_target::String = "x86-64",
+        function_test_data::Union{Nothing, FunctionTestData} = nothing,
         package_compile::Bool = false,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
         dockerfile_update::Function = x -> x,
@@ -241,8 +282,14 @@ end
 Creates a locally-stored docker image containing the specified responder. This can be tested
 tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
-`package_compile` indicates whether `PackageCompiler.jl` should be used to compile the image -
-this is not necessarily for testing/exploration but is highly recommended for production use.
+If `function_test_data` is passed, then this test data will be used to precompile both
+Jot and the responder code before adding it to the docker image. This will reduce AWS
+Lambda cold start times, but for production use, `package_compile` should be set to
+`true`.
+
+`package_compile` determines whether the code is compiled use `PackageCompiler.jl`,
+on the docker container. For production use this is highly recommended, although it
+adds 2-3 minutes to the total function build time.
 
 Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
 if nothing locally has changed, but the image is querying a remote object (say, a github repo)
@@ -270,21 +317,38 @@ function create_local_image(
     no_cache::Bool = false,
     julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
+    function_test_data::Union{Nothing, FunctionTestData} = nothing,
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
-  # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
-  add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
-  dockerfile = get_dockerfile(responder,
-                              julia_base_version,
-                              package_compile;
-                              user_defined_labels,
-                              dockerfile_update
-                             )
+
+  add_aws_rie!(responder)
+  create_environment!(responder)
+  if !isnothing(function_test_data)
+    create_precompile_statements_file!(responder, function_test_data)
+  end
+
+  if package_compile && isnothing(function_test_data)
+    error("If running with package_compile, please provide function_test_data")
+  end
+
+  add_scripts_to_build_dir(
+    responder,
+    package_compile,
+    julia_cpu_target,
+    function_test_data
+  )
+  dockerfile = get_dockerfile(
+    responder,
+    julia_base_version;
+    user_defined_labels,
+    dockerfile_update,
+    package_compile
+  )
   @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
@@ -426,12 +490,12 @@ function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
 end
 
 """
-    function run_local_image_test(
-      image::LocalImage,
-      function_argument::Any = "",
-      expected_response::Any = nothing;
-      then_stop::Bool = false,
-    )::Tuple{Bool, Float64}
+    run_local_image_test(
+        image::LocalImage,
+        function_argument::Any = "",
+        expected_response::Any = nothing;
+        then_stop::Bool = false,
+      )::Tuple{Bool, Float64}
 
 Runs a test of the given local docker image, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
@@ -467,12 +531,12 @@ function run_local_image_test(
 end
 
 """
-  function run_lambda_function_test(
-    func::LambdaFunction,
-    function_argument::Any = "",
-    expected_response::Any = nothing;
-    check_function_state::Bool = false,
-  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
+    run_lambda_function_test(
+        func::LambdaFunction,
+        function_argument::Any = "",
+        expected_response::Any = nothing;
+        check_function_state::Bool = false,
+      )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 
 Runs a test of the given Lambda Function, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
@@ -656,13 +720,16 @@ function run_image_locally(local_image::LocalImage; detached::Bool=true)::Contai
 end
 
 """
-    send_local_request(request::Any)
+    send_local_request(request::Any; local_port::Int64 = 9000)
 
 Make a function call to a locally-running docker container and returns the value. A container can
 be initiated by eg `run_image_locally`.
 """
-function send_local_request(request::Any)
-  endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
+function send_local_request(
+    request::Any;
+    local_port::Int64 = 9000,
+  )
+  endpoint = "http://localhost:$local_port/2015-03-31/functions/function/invocations"
   http = HTTP.post(
                    endpoint,
                    [],

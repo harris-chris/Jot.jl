@@ -24,6 +24,7 @@ create_local_image(
     no_cache::Bool = false,
     julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
+    function_test_data::Union{Nothing, FunctionTestData} = nothing,
     package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
@@ -35,10 +36,10 @@ delete!(func::LambdaFunction)
 delete!(image::LocalImage; force::Bool=false)
 get_dockerfile(
     responder::AbstractResponder,
-    julia_base_version::String,
-    package_compile::Bool;
+    julia_base_version::String;
     user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
     dockerfile_update::Function = x -> x,
+    package_compile::Bool,
   )
 get_ecr_repo(image::LocalImage)
 get_ecr_repo(repo_name::String)
@@ -111,7 +112,7 @@ run_test(
     function_argument::Any = "",
     expected_response::Any = nothing,
   )
-send_local_request(request::Any)
+send_local_request(request::Any; local_port::Int64 = 9000)
 show_lambdas()
 show_log_events(log::LambdaFunctionInvocationLog)
 show_observations(log::LambdaFunctionInvocationLog)

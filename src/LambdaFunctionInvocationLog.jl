@@ -102,7 +102,7 @@ end
       responder_function_time::Float64
     end
 
-A simple time breakdown of a single AWS Lambda invocation. `total` should be close to or the same as the sum of alll other attributes in the struct.
+A simple time breakdown of a single AWS Lambda invocation. `total` should be close to or the same as the sum of all other attributes in the struct.
 
 `ex_responder_function_time` means all of the time spent outside of the responder function.
 
@@ -203,8 +203,10 @@ function get_invocation_time_breakdown(
     nothing
   end
 
+  aws_run_time = get_invocation_run_time(log)
+  combined = ex_responder_function_time + precompile_time + responder_function_time
   InvocationTimeBreakdown(
-    get_invocation_run_time(log),
+    aws_run_time,
     ex_responder_function_time,
     precompile_time,
     responder_function_time,
@@ -268,12 +270,12 @@ end
 function get_invocation_run_time(report_event::LogEvent)::Float64
   lines = split(report_event.message, '\t')
   duration_lines = filter(lines) do line
-    startswith(line, "Duration:")
+    startswith(line, "Billed Duration:")
   end
   length(duration_lines) == 0 && error("Found no duration lines in event $report_event")
   length(duration_lines) > 1 && error("Found multiple duration lines in event $report_event")
   duration_line = duration_lines[1]
-  duration_str = chopsuffix(chopprefix(duration_line, "Duration: "), " ms")
+  duration_str = chopsuffix(chopprefix(duration_line, "Billed Duration: "), " ms")
   parse(Float64, duration_str)
 end
 
