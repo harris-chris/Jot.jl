@@ -205,7 +205,6 @@ function get_invocation_time_breakdown(
 
   aws_run_time = get_invocation_run_time(log)
   combined = ex_responder_function_time + precompile_time + responder_function_time
-  @info "Combined sub-time is $combined, total from AWS is $aws_run_time"
   InvocationTimeBreakdown(
     aws_run_time,
     ex_responder_function_time,

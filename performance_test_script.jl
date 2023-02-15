@@ -22,6 +22,7 @@ if was_lambda_function_started_from_cold(uncompiled_first_run_log)
 else
   @info "First run of uncompiled function was from warm and took $first_run_run_time ms"
 end
+@info get_lambda_request_id(uncompiled_first_run_log)
 
 compiled_first_run_log = get_lambda_function_test_log(
     lambda_function_compiled, test_arg, expected_response
@@ -32,6 +33,7 @@ if was_lambda_function_started_from_cold(compiled_first_run_log)
 else
   @info "First run of compiled function was from warm and took $first_run_run_time ms"
 end
+@info get_lambda_request_id(compiled_first_run_log)
 
 # Show time breakdown of the initial compiled function run
 @info uppercase("\nshowing the time breakdown of the initial compiled function run:")
@@ -70,13 +72,15 @@ average_compiled_run_time = total_run_time / repeat_num
 @info "Average function run time for compiled local image was $average_compiled_run_time"
 
 # Get the average run times for the uncompiled lambda function:
-sleep(15)
+# sleep(10)
 @info uppercase("\ngetting the average run times for the uncompiled lambda function:")
 total_run_time = 0.0
 for num = 1:repeat_num
+  @info "running function"
   test_log = get_lambda_function_test_log(
     lambda_function_uncompiled, test_arg, expected_response
   )
+  @info get_lambda_request_id(test_log)
   run_time = get_invocation_run_time(test_log)
   @show run_time
   global total_run_time += run_time
@@ -93,6 +97,7 @@ for num = 1:repeat_num
   test_log = get_lambda_function_test_log(
     lambda_function_compiled, test_arg, expected_response
   )
+  @info get_lambda_request_id(test_log)
   run_time = get_invocation_run_time(test_log)
   @show run_time
   global total_run_time += run_time

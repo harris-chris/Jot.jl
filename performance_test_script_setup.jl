@@ -62,6 +62,13 @@ function get_lambda_function_test_log(
   end
 end
 
+function get_lambda_request_id(log::LambdaFunctionInvocationLog)::String
+  request_id_msgs = filter(
+    x -> occursin("JOT_AWS_LAMBDA_REQUEST_ID", x.message), log.cloudwatch_log_events
+  )
+  request_id_msgs[begin].message
+end
+
 function was_lambda_function_started_from_cold(
     log::LambdaFunctionInvocationLog,
   )::Bool

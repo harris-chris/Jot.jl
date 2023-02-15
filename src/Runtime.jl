@@ -47,6 +47,8 @@ function start_runtime(
     @info "$(endpoint)next"
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
     body_raw = String(http.body)
+    println("HTTP headers")
+    println(http.headers)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
     println("$JOT_OBSERVATION $JOT_AWS_LAMBDA_REQUEST_ID : $request_id")
 
