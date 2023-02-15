@@ -49,6 +49,8 @@ function start_runtime(
     body_raw = String(http.body)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
     println("$JOT_OBSERVATION $JOT_AWS_LAMBDA_REQUEST_ID : $request_id")
+    println("Headers:")
+    println(http.headers)
 
     println("$JOT_OBSERVATION Received invocation message, parsing to JSON ...")
     body = try
