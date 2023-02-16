@@ -40,10 +40,12 @@ end
 function start_runtime(
     host::String, react_function::Function, ::Type{T}; single_shot=false
   ) where {T}
-  endpoint = get_endpoint(host)
-  println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
   tmp_contents = readdir("/tmp")
   println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")
+  depot_contents = readdir("/var/runtime/julia_depot")
+  println("$JOT_OBSERVATION Contents of var/runtime/julia_depot before starting loop $depot_contents")
+  endpoint = get_endpoint(host)
+  println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
 
   while true
     @info "$(endpoint)next"
@@ -87,9 +89,13 @@ function start_runtime(
     println("$JOT_OBSERVATION ... JSON created, posting response to AWS Lambda ...")
     lambda_respond(reaction_json, endpoint, request_id)
     println("$JOT_OBSERVATION ... Response posted, invocation finished")
+    tmp_contents = readdir("/tmp")
+    println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")
+    depot_contents = readdir("/var/runtime/julia_depot")
+    println("$JOT_OBSERVATION Contents of var/runtime/julia_depot before starting loop $depot_contents")
     single_shot && break
   end
   tmp_contents = readdir("/tmp")
-  println("$JOT_OBSERVATION Contents of tmp at end of loop $tmp_contents")
+  println("$JOT_OBSERVATION Contents of tmp at very end of loop $tmp_contents")
 end
 

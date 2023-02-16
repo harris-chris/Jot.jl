@@ -63,16 +63,15 @@ end
 
 function dockerfile_add_jot()::String
   test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
-  jot_url = if isnothing(test_running) || test_running == "false"
-    jot_github_url * "#main"
+  jot_branch = if isnothing(test_running) || test_running == "false"
+    "main"
   else
-    this_branch = readchomp(`git branch --show-current`)
-    jot_github_url * "#$this_branch"
+    readchomp(`git branch --show-current`)
   end
-  @debug jot_url
+  @debug jot_branch
 
   """
-  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_url\\\")"
+  RUN julia -e "using Pkg; Pkg.add([\\\"HTTP\\\", \\\"JSON3\\\"]); Pkg.add(url=\\\"$jot_github_url\\\", rev=\\\"$jot_branch\\\")"
   """
 end
 
