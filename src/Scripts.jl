@@ -23,7 +23,11 @@ function get_bootstrap_script(
     ["--trace-compile=stderr"]
   end
 
-  run_julia_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
+  run_julia_rie_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
+    join(julia_args, " ") *
+    " -e"
+
+  run_julia_lambda_cmd = "exec /usr/local/julia/bin/julia " *
     join(julia_args, " ") *
     " -e"
 
@@ -36,12 +40,12 @@ function get_bootstrap_script(
   if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL ..."
-    $run_julia_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
+    $run_julia_rie_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
     echo "... AWS_LAMBDA_RUNTIME_API started"
   else
     echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
     echo "$STARTING_JULIA_JOT_OBSERVATION"
-    exec /usr/local/julia/bin/julia --trace-compile=stderr -e "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
+    $run_julia_lambda_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
     echo "$JULIA_STARTED_JOT_OBSERVATION"
   fi
   """
