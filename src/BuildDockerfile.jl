@@ -64,7 +64,7 @@ end
 function dockerfile_add_jot()::String
   test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
   jot_url = if isnothing(test_running) || test_running == "false"
-    jot_github_url
+    jot_github_url * "#main"
   else
     this_branch = readchomp(`git branch --show-current`)
     jot_github_url * "#$this_branch"

@@ -48,7 +48,7 @@ const docker_hash_limit = 12
 const runtime_path = "/var/runtime"
 const julia_depot_path = "/var/runtime/julia_depot"
 const temp_path = "/tmp"
-const jot_github_url = "https://github.com/harris-chris/Jot.jl#main"
+const jot_github_url = "https://github.com/harris-chris/Jot.jl"
 const writable_depot_folders = ["logs", "scratchspaces"]
 
 abstract type LambdaComponent end
