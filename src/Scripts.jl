@@ -28,10 +28,10 @@ function get_bootstrap_script(
     " -e"
 
   bootstrap_body = """
-  echo "TMP CONTENTS AT BOOTSTRAP"
-  echo \$(ls /tmp)
-  echo "JULIA DEPOT PATH CONTENTS AT BOOTSTRAP"
-  echo \$(ls $julia_depot_path)
+  echo "JOT_OBSERVATION TMP CONTENTS AT BOOTSTRAP"
+  echo "JOT_OBSERVATION \$(ls /tmp)"
+  echo "JOT_OBSERVATION JULIA DEPOT PATH CONTENTS AT BOOTSTRAP"
+  echo "JOT_OBSERVATION \$(ls $julia_depot_path)"
 
   if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
