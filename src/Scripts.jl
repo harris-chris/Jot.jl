@@ -28,6 +28,8 @@ function get_bootstrap_script(
     " -e"
 
   bootstrap_body = """
+  echo "TMP CONTENTS AT BOOTSTRAP"
+  echo \$(ls /tmp)
   if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LOCAL="127.0.0.1:9001"
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL ..."

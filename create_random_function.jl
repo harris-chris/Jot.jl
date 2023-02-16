@@ -22,5 +22,7 @@ lf = create_lambda_function(remote_image)
 test_log = get_lambda_function_test_log(
   lf, "test", "test-$this_random_string"
 )
+
 show_observations(test_log)
+
 

@@ -87,5 +87,7 @@ function start_runtime(
     println("$JOT_OBSERVATION ... Response posted, invocation finished")
     single_shot && break
   end
+  tmp_contents = readdir("/tmp")
+  println("$JOT_OBSERVATION Contents of tmp $tmp_contents")
 end
 
