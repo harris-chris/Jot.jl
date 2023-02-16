@@ -42,6 +42,8 @@ function start_runtime(
   ) where {T}
   endpoint = get_endpoint(host)
   println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
+  tmp_contents = readdir("/tmp")
+  println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")
 
   while true
     @info "$(endpoint)next"
@@ -88,6 +90,6 @@ function start_runtime(
     single_shot && break
   end
   tmp_contents = readdir("/tmp")
-  println("$JOT_OBSERVATION Contents of tmp $tmp_contents")
+  println("$JOT_OBSERVATION Contents of tmp at end of loop $tmp_contents")
 end
 
