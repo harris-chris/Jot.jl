@@ -108,7 +108,8 @@ function start_runtime(
     tmp_contents = readdir("/tmp")
     println("$JOT_OBSERVATION Contents of tmp at end of loop $tmp_contents")
     depot_contents = readdir("/var/runtime/julia_depot")
-    println("$JOT_OBSERVATION Contents of var/runtime/julia_depot at end of loop $depot_contents")
+    depot_contents = readchomp(`ls -a /var/runtime/julia_depot`)
+    println("$JOT_OBSERVATION ls method Contents of var/runtime/julia_depot at end of loop $depot_contents")
     depot_size = readchomp(`du -h /var/runtime/julia_depot`)
     println("$JOT_OBSERVATION Size of var/runtime/julia_depot at end of loop $depot_size")
     single_shot && break
