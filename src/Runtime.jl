@@ -14,6 +14,19 @@ function get_endpoint(host::String)::String
   "http://$host/2018-06-01/runtime/invocation/"
 end
 
+function get_filesize(dirpath::String)
+  total = 0
+  for (root,dirs,files) in walkdir(dirpath)
+    total += filesize(root)
+    for f in files
+      file = joinpath(root,f)
+      size = filesize(file)
+      total += size
+    end
+  end
+  return total
+end
+
 function lambda_respond(response::String, endpoint::String, aws_request_id::String)
   HTTP.request(
     "POST",
@@ -44,6 +57,9 @@ function start_runtime(
   println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")
   depot_contents = readdir("/var/runtime/julia_depot")
   println("$JOT_OBSERVATION Contents of var/runtime/julia_depot before starting loop $depot_contents")
+  depot_size = readchomp(`du -h /var/runtime/julia_depot`)
+  println("$JOT_OBSERVATION Size of var/runtime/julia_depot before starting loop $depot_size")
+
   endpoint = get_endpoint(host)
   println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
 
@@ -93,6 +109,8 @@ function start_runtime(
     println("$JOT_OBSERVATION Contents of tmp at end of loop $tmp_contents")
     depot_contents = readdir("/var/runtime/julia_depot")
     println("$JOT_OBSERVATION Contents of var/runtime/julia_depot at end of loop $depot_contents")
+    depot_size = readchomp(`du -h /var/runtime/julia_depot`)
+    println("$JOT_OBSERVATION Size of var/runtime/julia_depot at end of loop $depot_size")
     single_shot && break
   end
   tmp_contents = readdir("/tmp")
