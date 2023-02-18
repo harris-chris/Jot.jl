@@ -30,9 +30,7 @@ function get_all_remote_images(jot_generated_only::Bool = true)::Vector{RemoteIm
 end
 
 function get_remote_images(repo::ECRRepo)::Vector{RemoteImage}
-  @debug repo
   get_images_script = get_images_in_ecr_repo_script(repo)
-  @debug get_images_script
   images_json = readchomp(`bash -c $get_images_script`)
   images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
   map(images) do img
@@ -60,10 +58,7 @@ If multiple valid images exist, this will return the first only. If none exists,
 """
 function get_remote_image(local_image::LocalImage)::Union{Nothing, RemoteImage}
   all_remote_images = get_all_remote_images()
-  @debug local_image.Digest
-  @debug all_remote_images
   index = findfirst(remote_image -> matches(local_image, remote_image), all_remote_images)
-  @debug index
   isnothing(index) ? nothing : all_remote_images[index]
 end
 

@@ -23,6 +23,6 @@ test_log = get_lambda_function_test_log(
   lf, "test", "test-$this_random_string"
 )
 
-count_precompile_statements(test_log)
+@info "Number of precompiles: $(count_precompile_statements(test_log))"
 
 
