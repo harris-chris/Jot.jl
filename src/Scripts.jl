@@ -134,15 +134,16 @@ function get_init_script(
     sysimage_path="$(julia_depot_path)/$(SYSIMAGE_NAME)",
     cpu_target="$cpu_target",
   )
-  sysimage_generated = SYSIMAGE_NAME in readdir("julia_depot_path")
+  sysimage_generated = "$SYSIMAGE_NAME" in readdir("$julia_depot_path")
   if sysimage_generated
-    @info "Sysimage generated at $julia_depot_path/$SYSIMAGE_NAME"
+    @info "Sysimage generated at $(julia_depot_path)/$(SYSIMAGE_NAME)"
   else
-    @info "Sysimage not found at $julia_depot_path/$SYSIMAGE_NAME"
+    @info "Sysimage not found at $(julia_depot_path)/$(SYSIMAGE_NAME)"
   end
   @info "... finished running package compile script"
   """
-  package_compile ? precomp * package_compile_script : precomp
+  init_script = package_compile ? precomp * package_compile_script : precomp
+  @show init_script
 end
 
 function get_precompile_jl(
