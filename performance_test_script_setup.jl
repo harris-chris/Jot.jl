@@ -1,3 +1,6 @@
+test_arg = [1, 2]
+expected_response = [2, 3]
+
 function setup_images_and_functions(
   )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
   name_prefix = "increment-vector"
@@ -32,7 +35,14 @@ function get_or_create_lambda_function(name_prefix::String, compile::Bool)::Lamb
   if isnothing(lambda_opt)
     local_image = get_or_create_local_image(name_prefix, compile)
     remote_image = push_to_ecr!(local_image)
-    create_lambda_function(remote_image)
+    lf = create_lambda_function(remote_image)
+    # The first run of a new function seems to take unusually long, so we just get this
+    # out the way and discard the results as it's unrepresentative
+    _ = get_lambda_function_test_log(
+        lf, test_arg, expected_response
+    )
+    sleep(15)
+    lf
   else
     lambda_opt
   end
@@ -77,4 +87,14 @@ function was_lambda_function_started_from_cold(
   end
   length(from_cold_events) > 1
 end
+
+function count_precompile_statements(
+    log::LambdaFunctionInvocationLog,
+  )::Int64
+  precompile_events = filter(log.cloudwatch_log_events) do ev
+    startswith(ev.message, "precompile(")
+  end
+  length(precompile_events)
+end
+
 

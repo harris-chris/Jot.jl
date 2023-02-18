@@ -8,36 +8,32 @@ local_image_compiled,
 lambda_function_compiled) = setup_images_and_functions()
 
 repeat_num = 5
-test_arg = [1, 2]
-expected_response = [2, 3]
 
-# Checking the initial run times of lambda functions
-@info uppercase("\nchecking the initial run times of lambda functions:")
-uncompiled_first_run_log = get_lambda_function_test_log(
+# Do a run of the uncompiled function
+uncompiled_log = get_lambda_function_test_log(
     lambda_function_uncompiled, test_arg, expected_response
 )
-first_run_run_time = get_invocation_run_time(uncompiled_first_run_log)
-if was_lambda_function_started_from_cold(uncompiled_first_run_log)
-  @info "First run of uncompiled function was from cold and took $first_run_run_time ms"
-else
-  @info "First run of uncompiled function was from warm and took $first_run_run_time ms"
-end
-@info get_lambda_request_id(uncompiled_first_run_log)
 
-compiled_first_run_log = get_lambda_function_test_log(
+# Show time breakdown of the uncompiled function run
+@info uppercase("\nshowing the time breakdown of the initial uncompiled function run:")
+uncompiled_run_time_breakdown = get_invocation_time_breakdown(uncompiled_log)
+precompile_time = uncompiled_run_time_breakdown.precompile_time
+pct_text = if precompile_time != 0.0
+  precompile_pct = precompile_time / uncompiled_run_time_breakdown.total
+  "($precompile_pct of total run time of $(uncompiled_run_time_breakdown.total))"
+else
+  ""
+end
+@info "Uncompiled function spent $precompile_time ms precompiling $pct_text"
+@info "Uncompiled function had $(count_precompile_statements(uncompiled_log)) precompiles"
+# Do a run of the compiled function
+compiled_log = get_lambda_function_test_log(
     lambda_function_compiled, test_arg, expected_response
 )
-first_run_run_time = get_invocation_run_time(compiled_first_run_log)
-if was_lambda_function_started_from_cold(compiled_first_run_log)
-  @info "First run of compiled function was from cold and took $first_run_run_time ms"
-else
-  @info "First run of compiled function was from warm and took $first_run_run_time ms"
-end
-@info get_lambda_request_id(compiled_first_run_log)
 
-# Show time breakdown of the initial compiled function run
+# Show time breakdown of the compiled function run
 @info uppercase("\nshowing the time breakdown of the initial compiled function run:")
-compiled_run_time_breakdown = get_invocation_time_breakdown(compiled_first_run_log)
+compiled_run_time_breakdown = get_invocation_time_breakdown(compiled_log)
 precompile_time = compiled_run_time_breakdown.precompile_time
 pct_text = if precompile_time != 0.0
   precompile_pct = precompile_time / compiled_run_time_breakdown.total
@@ -46,6 +42,9 @@ else
   ""
 end
 @info "Compiled function spent $precompile_time ms precompiling $pct_text"
+@info "Compiled function had $(count_precompile_statements(compiled_log)) precompiles"
+
+sleep(15)
 
 # Get the average run times for the uncompiled local image:
 @info uppercase("\ngetting the average run times for the uncompiled local image:")
@@ -72,7 +71,6 @@ average_compiled_run_time = total_run_time / repeat_num
 @info "Average function run time for compiled local image was $average_compiled_run_time"
 
 # Get the average run times for the uncompiled lambda function:
-# sleep(10)
 @info uppercase("\ngetting the average run times for the uncompiled lambda function:")
 total_run_time = 0.0
 for num = 1:repeat_num

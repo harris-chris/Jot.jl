@@ -12,7 +12,7 @@ responder = get_responder("./append_string.jl", :append_string, String)
 local_image = create_local_image(
   responder;
   image_suffix="append-string-$this_random_string",
-  package_compile=false,
+  package_compile=true,
 )
 remote_image = push_to_ecr!(local_image)
 lf = create_lambda_function(remote_image)
@@ -23,6 +23,6 @@ test_log = get_lambda_function_test_log(
   lf, "test", "test-$this_random_string"
 )
 
-show_observations(test_log)
+count_precompile_statements(test_log)
 
 

@@ -18,7 +18,7 @@ function get_bootstrap_script(
   """
 
   julia_args = if package_compile
-    ["--trace-compile=stderr", "--sysimage=\"$SYSIMAGE_NAME\""]
+    ["--trace-compile=stderr", "--sysimage=\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
   else
     ["--trace-compile=stderr"]
   end
@@ -112,6 +112,7 @@ end
 function get_init_script(
     package_compile::Bool,
     cpu_target::String,
+    julia_depot_path::String,
   )::String
   precomp = """
   import Pkg
@@ -126,10 +127,11 @@ function get_init_script(
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
   using PackageCompiler
   @async Jot.start_lambda_server("127.0.0.1", 9001)
+  sleep(5)
   create_sysimage(
     :Jot,
     precompile_execution_file="precompile.jl",
-    sysimage_path="$SYSIMAGE_NAME",
+    sysimage_path="$(julia_depot_path)/$(SYSIMAGE_NAME)",
     cpu_target="$cpu_target",
   )
   @info "... finished running package compile script"

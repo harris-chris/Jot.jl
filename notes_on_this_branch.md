@@ -1,3 +1,7 @@
+Some potential problems:
+- Packagecompiler seems to be writing the package compile file to `/tmp`, it's actually writing it to $SYSIMAGE_PATH, not sure where that's coming from
+- The package-compile script is starting Jot async but it looks like Jot may not be up and running before the relevant bits of the package-compile script
+
 There are a couple of scripts here that are useful for observing performance:
 
 - `performance_test_script.jl` creates a couple of new lambda functions (one compiled using package-compiler, one not) and runs them repeatedly to compare performance. It can be run directly with `julia performance_test_script.jl`

@@ -170,7 +170,7 @@ function add_scripts_to_build_dir(
   add_to_build(content, fname) = write_to_build_dir(content, responder.build_dir, fname)
   bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, package_compile)
   bootstrap_script |> x -> add_to_build(x, "bootstrap")
-  init_script = get_init_script(package_compile, julia_cpu_target)
+  init_script = get_init_script(package_compile, julia_cpu_target, julia_depot_path)
   add_to_build(init_script, "init.jl")
   if package_compile
     get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl")
