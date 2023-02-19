@@ -80,6 +80,32 @@ function start_lambda_server(host::String, port::Int64)
   @sync HTTP.serve(ROUTER, host, port, server=server)
 end
 
+function start_test_server(host::String, port::Int64, test_argument::Any)
+  ROUTER = HTTP.Router()
+  server = Sockets.listen(Sockets.InetAddr(parse(IPAddr, host), port))
+
+  function get_respond(req::HTTP.Request)
+    println("received get request")
+    return HTTP.Response(
+                         200,
+                         ["Lambda-Runtime-Aws-Request-Id" => "dummy-request-id"];
+                         body=JSON3.write(test_argument),
+                        )
+  end
+
+  # function post_respond(req::HTTP.Request)
+  #   answer = JSON3.read(IOBuffer(HTTP.payload(req)), Int64)
+  #   println(answer)
+  #   println("Closing server")
+  #   close(server)
+  #   return HTTP.Response(200, JSON3.write(answer))
+  # end
+
+  # HTTP.@register(ROUTER, "POST", "/*", post_respond)
+  HTTP.@register(ROUTER, "GET", "/*", get_respond)
+  @async HTTP.serve(ROUTER, host, port, server=server)
+end
+
 function get_lambda_dummy_server_jl()::String
   """
   using HTTP
@@ -127,7 +153,7 @@ function get_init_script(
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
   using PackageCompiler
   # TODO: check intelligently for when it has started
-  @async Jot.start_lambda_server("127.0.0.1", 9001)
+  @async Jot.start_test_server("127.0.0.1", 9001, function_test_data.test_argument)
   sleep(5)
   create_sysimage(
     :Jot,
@@ -174,9 +200,7 @@ function get_precompile_jl(
     @async Jot.start_runtime(
       "127.0.0.1:9001", $package_name, argument_type; single_shot=true
     )
-    sleep(5)
-    actual_response = send_local_request("$test_argument", 9001)
-    assert(function_test_data.expected_response == actual_response)
+    sleep(10)
   catch e
     # isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
     rethrow(e)

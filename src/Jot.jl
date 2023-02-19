@@ -54,8 +54,8 @@ const writable_depot_folders = ["logs", "scratchspaces"]
 
 abstract type LambdaComponent end
 
-include("FunctionTestData.jl")
 include("Responder.jl")
+include("PackageCompile.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
 include("RemoteImage.jl")
@@ -281,6 +281,12 @@ function create_local_image(
   # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
+
+  # if !isnothing(function_test_data)
+  #   sysimage_path = create_sysimage(responder, function_test_data)
+  #   add_sysimage_to_build_dir(sysimage_path)
+  # end
+
   add_scripts_to_build_dir(function_test_data, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
                               julia_base_version;
