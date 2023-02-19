@@ -99,8 +99,8 @@ function dockerfile_add_bootstrap(
   """
 end
 
-function dockerfile_add_precompile(package_compile::Bool)::String
-  run_init = """
+function dockerfile_add_precompile()::String
+  """
   RUN julia init.jl
   """
 end

@@ -9,10 +9,11 @@ open("append_string.jl", "w") do f
 end
 
 responder = get_responder("./append_string.jl", :append_string, String)
+function_test_data = FunctionTestData("test-", "test-$this_random_string")
 local_image = create_local_image(
   responder;
   image_suffix="append-string-$this_random_string",
-  package_compile=true,
+  function_test_data=function_test_data,
 )
 remote_image = push_to_ecr!(local_image)
 lf = create_lambda_function(remote_image)

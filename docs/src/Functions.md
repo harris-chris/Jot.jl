@@ -111,7 +111,7 @@ run_test(
     function_argument::Any = "",
     expected_response::Any = nothing,
   )
-send_local_request(request::Any)
+send_local_request(request::Any; local_port::Int64 = 9000)
 show_lambdas()
 show_log_events(log::LambdaFunctionInvocationLog)
 show_observations(log::LambdaFunctionInvocationLog)

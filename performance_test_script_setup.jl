@@ -8,15 +8,15 @@ function setup_images_and_functions(
   )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
   this_rand_string = this_random_string = randstring(8) |> lowercase
   name_prefix = "performance-test-$this_rand_string"
-  responder = create_test_responder(this_rand_string)
+  responder, function_test_data = create_test_responder(this_rand_string)
   uncompiled_name, uncompiled_local_image = create_test_local_image(
-    name_prefix, responder, false
+    name_prefix, responder, nothing
   )
   uncompiled_lambda = create_test_lambda_function(
     uncompiled_name, uncompiled_local_image
   )
   compiled_name, compiled_local_image = create_test_local_image(
-    name_prefix, responder, true
+    name_prefix, responder, function_tests_data
   )
   compiled_lambda = create_test_lambda_function(
     compiled_name, compiled_local_image
@@ -24,24 +24,30 @@ function setup_images_and_functions(
   (uncompiled_local_image, uncompiled_lambda, compiled_local_image, compiled_lambda)
 end
 
-function create_test_responder(rand_string::String)::LocalPackageResponder
+function create_test_responder(
+    rand_string::String,
+  )::Tuple{LocalPackageResponder, FunctionTestData}
   open("responder_script.jl", "w") do f
     write(f, "respond(v::Vector{Int}) = map(x -> x + 1, v)")
   end
-  get_responder("./responder_script.jl", :respond, Vector{Int})
+  responder = get_responder("./responder_script.jl", :respond, Vector{Int})
+  test_argument = [1, 2]
+  expected_response = [2, 3]
+  function_test_data = FunctionTestData(test_argument, expected_response)
+  (responder, function_test_data)
 end
 
 function create_test_local_image(
     name_prefix::String,
     responder::LocalPackageResponder,
-    compile::Bool,
+    function_test_data::Union{Nothing, FunctionTestData},
   )::Tuple{String, LocalImage}
   name_suffix = compile ? "compiled" : "uncompiled"
   name = "$name_prefix-$name_suffix"
   li = create_local_image(
     responder;
     image_suffix=name,
-    package_compile=compile,
+    function_test_data=function_test_data,
   )
   (name, li)
 end

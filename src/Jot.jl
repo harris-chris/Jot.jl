@@ -42,6 +42,7 @@ export get_labels, get_lambda_name
 export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_lambda_functions
 export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
+export FunctionTestData
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -53,6 +54,7 @@ const writable_depot_folders = ["logs", "scratchspaces"]
 
 abstract type LambdaComponent end
 
+include("FunctionTestData.jl")
 include("Responder.jl")
 include("LocalImage.jl")
 include("ECRRepo.jl")
@@ -151,29 +153,31 @@ function create_build_directory()::String
   build_dir
 end
 
-function write_to_build_dir(
+function write_to_build_dir!(
     content::String,
     build_dir::String,
     filename::String,
-  )
+  )::Nothing
   full_fpath = joinpath(build_dir, filename)
   open(full_fpath, "w") do f
     write(f, content)
   end
+  nothing
 end
 
 function add_scripts_to_build_dir(
-    package_compile::Bool,
+    function_test_data::Union{Nothing, FunctionTestData},
     julia_cpu_target::String,
     responder::AbstractResponder,
   )
-  add_to_build(content, fname) = write_to_build_dir(content, responder.build_dir, fname)
-  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, package_compile)
-  bootstrap_script |> x -> add_to_build(x, "bootstrap")
-  init_script = get_init_script(package_compile, julia_cpu_target, julia_depot_path)
-  add_to_build(init_script, "init.jl")
-  if package_compile
-    get_precompile_jl(responder.package_name) |> x -> add_to_build(x, "precompile.jl")
+  add_to_build!(content, fname) = write_to_build_dir!(content, responder.build_dir, fname)
+  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, function_test_data)
+  add_to_build!(bootstrap_script, "bootstrap")
+  init_script = get_init_script(function_test_data, julia_cpu_target, julia_depot_path)
+  add_to_build!(init_script, "init.jl")
+  if !isnothing(function_test_data)
+    precompile_script = get_precompile_jl(responder, function_test_data)
+    add_to_build!(precompile_script, "precompile.jl")
   end
 end
 
@@ -181,7 +185,6 @@ end
     get_dockerfile(
         responder::AbstractResponder,
         julia_base_version::String,
-        package_compile::Bool;
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
       )::String
@@ -191,8 +194,7 @@ create a local docker image.
 """
 function get_dockerfile(
     responder::AbstractResponder,
-    julia_base_version::String,
-    package_compile::Bool;
+    julia_base_version::String;
     user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
     dockerfile_update::Function = x -> x,
   )::String
@@ -218,7 +220,7 @@ function get_dockerfile(
       String(responder.response_function),
       responder.response_function_param_type
     ),
-    dockerfile_add_precompile(package_compile),
+    dockerfile_add_precompile(),
   ]; init = "")
   dockerfile_update(generated_dockerfile)
 end
@@ -232,7 +234,7 @@ end
         no_cache::Bool = false,
         julia_base_version::String = "1.8.4",
         julia_cpu_target::String = "x86-64",
-        package_compile::Bool = false,
+        function_test_data::Union{Nothing, FunctionTestData} = nothing,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
         dockerfile_update::Function = x -> x,
         build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
@@ -241,8 +243,9 @@ end
 Creates a locally-stored docker image containing the specified responder. This can be tested
 tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
-`package_compile` indicates whether `PackageCompiler.jl` should be used to compile the image -
-this is not necessarily for testing/exploration but is highly recommended for production use.
+If `function_test_data` is passed, then this test data will be used to compile the image using
+`PackageCompiler.jl` - this is not necessary for testing/exploration but is highly recommended
+for production use.
 
 Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
 if nothing locally has changed, but the image is querying a remote object (say, a github repo)
@@ -270,7 +273,7 @@ function create_local_image(
     no_cache::Bool = false,
     julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
-    package_compile::Bool = false,
+    function_test_data::Union{Nothing, FunctionTestData} = nothing,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
@@ -278,10 +281,9 @@ function create_local_image(
   # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
-  add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
+  add_scripts_to_build_dir(function_test_data, julia_cpu_target, responder)
   dockerfile = get_dockerfile(responder,
-                              julia_base_version,
-                              package_compile;
+                              julia_base_version;
                               user_defined_labels,
                               dockerfile_update
                              )
@@ -656,13 +658,16 @@ function run_image_locally(local_image::LocalImage; detached::Bool=true)::Contai
 end
 
 """
-    send_local_request(request::Any)
+    send_local_request(request::Any; local_port::Int64 = 9000)
 
 Make a function call to a locally-running docker container and returns the value. A container can
 be initiated by eg `run_image_locally`.
 """
-function send_local_request(request::Any)
-  endpoint = "http://localhost:9000/2015-03-31/functions/function/invocations"
+function send_local_request(
+    request::Any;
+    local_port::Int64 = 9000,
+  )
+  endpoint = "http://localhost:$local_port/2015-03-31/functions/function/invocations"
   http = HTTP.post(
                    endpoint,
                    [],

@@ -5,7 +5,7 @@ const SYSIMAGE_NAME = "CompiledSysImage.so"
 function get_bootstrap_script(
     julia_depot_path::String,
     temp_path::String,
-    package_compile::Bool,
+    function_test_data::Union{Nothing, FunctionTestData},
   )::String
 
   bootstrap_shebang = """
@@ -17,10 +17,10 @@ function get_bootstrap_script(
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
-  julia_args = if package_compile
-    ["--trace-compile=stderr", "-J\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
-  else
+  julia_args = if isnothing(function_test_data)
     ["--trace-compile=stderr"]
+  else
+    ["--trace-compile=stderr", "-J\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
   end
 
   run_julia_rie_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
@@ -110,7 +110,7 @@ function get_lambda_dummy_server_jl()::String
 end
 
 function get_init_script(
-    package_compile::Bool,
+    function_test_data::Union{Nothing, FunctionTestData},
     cpu_target::String,
     julia_depot_path::String,
   )::String
@@ -126,6 +126,7 @@ function get_init_script(
   @info "Running package compile script ..."
   Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
   using PackageCompiler
+  # TODO: check intelligently for when it has started
   @async Jot.start_lambda_server("127.0.0.1", 9001)
   sleep(5)
   create_sysimage(
@@ -142,13 +143,21 @@ function get_init_script(
   end
   @info "... finished running package compile script"
   """
-  init_script = package_compile ? precomp * package_compile_script : precomp
+  init_script = if isnothing(function_test_data)
+    precomp
+  else
+    precomp * package_compile_script
+  end
   @show init_script
 end
 
 function get_precompile_jl(
-    package_name::String,
+    responder::AbstractResponder,
+    function_test_data::FunctionTestData,
   )::String
+  package_name = responder.package_name
+  argument_type = responder.response_function_param_type
+  test_argument = function_test_data.test_argument
   precompile_jl = """
   using Jot
   using $package_name
@@ -161,13 +170,16 @@ function get_precompile_jl(
     isa(e, LoadError) && rethrow(e)
   end
 
-  rf(i::Int64) = i + 1
-
-  # This will error because we haven't started AWS RIE
   try
-    Jot.start_runtime("127.0.0.1:9001", rf, Int64; single_shot=true)
+    @async Jot.start_runtime(
+      "127.0.0.1:9001", $package_name, argument_type; single_shot=true
+    )
+    sleep(5)
+    actual_response = send_local_request("$test_argument", 9001)
+    assert(function_test_data.expected_response == actual_response)
   catch e
-    isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
+    # isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
+    rethrow(e)
   end
   """
   @debug precompile_jl
