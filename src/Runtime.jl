@@ -38,7 +38,9 @@ function start_runtime(host::String, func_name::String, param_type::String; sing
 end
 
 function start_runtime(
-    host::String, react_function::Function, ::Type{T}; single_shot=false
+    host::String,
+    react_function::Function, ::Type{T};
+    single_shot=false,
   ) where {T}
   tmp_contents = readdir("/tmp")
   # println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")

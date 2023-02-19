@@ -18,14 +18,16 @@ uncompiled_log = get_lambda_function_test_log(
 @info uppercase("\nshowing the time breakdown of the initial uncompiled function run:")
 uncompiled_run_time_breakdown = get_invocation_time_breakdown(uncompiled_log)
 precompile_time = uncompiled_run_time_breakdown.precompile_time
+request_id = get_lambda_request_id(uncompiled_log)
 pct_text = if precompile_time != 0.0
   precompile_pct = precompile_time / uncompiled_run_time_breakdown.total
   "($precompile_pct of total run time of $(uncompiled_run_time_breakdown.total))"
 else
   ""
 end
-@info "Uncompiled function spent $precompile_time ms precompiling $pct_text"
-@info "Uncompiled function had $(count_precompile_statements(uncompiled_log)) precompiles"
+@info "Uncompiled function with request id $request_id spent $precompile_time ms precompiling $pct_text"
+@info "Uncompiled function with request id $request_id had $(count_precompile_statements(uncompiled_log)) precompiles"
+
 # Do a run of the compiled function
 compiled_log = get_lambda_function_test_log(
     lambda_function_compiled, test_arg, expected_response
@@ -35,14 +37,15 @@ compiled_log = get_lambda_function_test_log(
 @info uppercase("\nshowing the time breakdown of the initial compiled function run:")
 compiled_run_time_breakdown = get_invocation_time_breakdown(compiled_log)
 precompile_time = compiled_run_time_breakdown.precompile_time
+request_id = get_lambda_request_id(compiled_log)
 pct_text = if precompile_time != 0.0
   precompile_pct = precompile_time / compiled_run_time_breakdown.total
   "($precompile_pct of total run time of $(compiled_run_time_breakdown.total))"
 else
   ""
 end
-@info "Compiled function spent $precompile_time ms precompiling $pct_text"
-@info "Compiled function had $(count_precompile_statements(compiled_log)) precompiles"
+@info "Compiled function with request id $request_id spent $precompile_time ms precompiling $pct_text"
+@info "Compiled function with request id $request_id had $(count_precompile_statements(compiled_log)) precompiles"
 
 sleep(15)
 
@@ -78,9 +81,8 @@ for num = 1:repeat_num
   test_log = get_lambda_function_test_log(
     lambda_function_uncompiled, test_arg, expected_response
   )
-  @info get_lambda_request_id(test_log)
   run_time = get_invocation_run_time(test_log)
-  @show run_time
+  @info "Request id: $(get_lambda_request_id(test_log)) took $run_time"
   global total_run_time += run_time
   sleep(10)
 end
@@ -95,9 +97,8 @@ for num = 1:repeat_num
   test_log = get_lambda_function_test_log(
     lambda_function_compiled, test_arg, expected_response
   )
-  @info get_lambda_request_id(test_log)
   run_time = get_invocation_run_time(test_log)
-  @show run_time
+  @info "Request id: $(get_lambda_request_id(test_log)) took $run_time"
   global total_run_time += run_time
   sleep(10)
 end

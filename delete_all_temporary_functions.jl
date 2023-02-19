@@ -12,3 +12,8 @@ for remote_image in all_remote_images
   delete!(remote_image)
 end
 
+all_local_images = get_all_local_images()
+for local_image in all_local_images
+  @info "Deleting local image $(local_image.Tag)"
+  delete!(local_image)
+end

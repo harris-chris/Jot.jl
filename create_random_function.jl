@@ -24,5 +24,6 @@ test_log = get_lambda_function_test_log(
 )
 
 @info "Number of precompiles: $(count_precompile_statements(test_log))"
+@info "Total run time: $(get_invocation_run_time(test_log))"
 
 

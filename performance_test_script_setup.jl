@@ -1,51 +1,65 @@
+using Jot
+using Random
+
 test_arg = [1, 2]
 expected_response = [2, 3]
 
 function setup_images_and_functions(
   )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
-  name_prefix = "increment-vector"
-  uncompiled_image = get_or_create_local_image(name_prefix, false)
-  uncompiled_lambda = get_or_create_lambda_function(name_prefix, false)
-  compiled_image = get_or_create_local_image(name_prefix, true)
-  compiled_lambda = get_or_create_lambda_function(name_prefix, true)
-  (uncompiled_image, uncompiled_lambda, compiled_image, compiled_lambda)
+  this_rand_string = this_random_string = randstring(8) |> lowercase
+  name_prefix = "performance-test-$this_rand_string"
+  responder = create_test_responder(this_rand_string)
+  uncompiled_name, uncompiled_local_image = create_test_local_image(
+    name_prefix, responder, false
+  )
+  uncompiled_lambda = create_test_lambda_function(
+    uncompiled_name, uncompiled_local_image
+  )
+  compiled_name, compiled_local_image = create_test_local_image(
+    name_prefix, responder, true
+  )
+  compiled_lambda = create_test_lambda_function(
+    compiled_name, compiled_local_image
+  )
+  (uncompiled_local_image, uncompiled_lambda, compiled_local_image, compiled_lambda)
 end
 
-function get_or_create_local_image(name_prefix::String, compile::Bool)::LocalImage
-  name_suffix = compile ? "compiled" : "uncompiled"
-  image_opt = get_local_image("$name_prefix-$name_suffix")
-  open("increment_vector.jl", "w") do f
-    write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
+function create_test_responder(rand_string::String)::LocalPackageResponder
+  open("responder_script.jl", "w") do f
+    write(f, "respond(v::Vector{Int}) = map(x -> x + 1, v)")
   end
-  increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
-  if isnothing(image_opt)
-    create_local_image(
-      increment_responder;
-      image_suffix="$name_prefix-$name_suffix",
-      package_compile=compile,
-    )
-  else
-    image_opt
-  end
+  get_responder("./responder_script.jl", :respond, Vector{Int})
 end
 
-function get_or_create_lambda_function(name_prefix::String, compile::Bool)::LambdaFunction
+function create_test_local_image(
+    name_prefix::String,
+    responder::LocalPackageResponder,
+    compile::Bool,
+  )::Tuple{String, LocalImage}
   name_suffix = compile ? "compiled" : "uncompiled"
-  lambda_opt = get_lambda_function("$name_prefix-$name_suffix")
-  if isnothing(lambda_opt)
-    local_image = get_or_create_local_image(name_prefix, compile)
-    remote_image = push_to_ecr!(local_image)
-    lf = create_lambda_function(remote_image)
-    # The first run of a new function seems to take unusually long, so we just get this
-    # out the way and discard the results as it's unrepresentative
-    _ = get_lambda_function_test_log(
-        lf, test_arg, expected_response
-    )
-    sleep(15)
-    lf
-  else
-    lambda_opt
-  end
+  name = "$name_prefix-$name_suffix"
+  li = create_local_image(
+    responder;
+    image_suffix=name,
+    package_compile=compile,
+  )
+  (name, li)
+end
+
+function create_test_lambda_function(
+    name::String,
+    local_image::LocalImage,
+  )::LambdaFunction
+  remote_image = push_to_ecr!(local_image)
+  lf = create_lambda_function(remote_image)
+  # The first run of a new function seems to take unusually long, so we just get this
+  # out the way and discard the results as it's unrepresentative
+  test_log = get_lambda_function_test_log(
+      lf, test_arg, expected_response
+  )
+  @info "Function $name created, first run had $(count_precompile_statements(test_log)) precompiles"
+  sleep(10)
+  lf
 end
 
 function get_local_image_run_time(
