@@ -9,7 +9,6 @@ abstract type AbstractResponder{IT} end
 
 """
     struct LocalPackageResponder{IT} <: AbstractResponder{IT}
-        pkg::Pkg.Types.PackageSpec
         original_path::String
         response_function::Symbol
         response_function_param_type::Type{IT}
@@ -84,11 +83,11 @@ function get_responder_from_local_script(
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
   cd(build_dir) do
+    Pkg.activate(pkg_name)
     for registry_url in registry_urls
       Pkg.Registry.add(RegistrySpec(url = registry_url))
     end
     Pkg.generate(pkg_name)
-    Pkg.activate("./$pkg_name")
     length(dependencies) > 0 && Pkg.add(dependencies)
   end
   script = open(local_path, "r") do f
@@ -96,12 +95,14 @@ function get_responder_from_local_script(
   end
   pkg_code = """
   module $pkg_name\n
+  export $(String(response_function))
   $script\n
   end\n
   """
   open(joinpath(build_dir, pkg_name, "src", pkg_name * ".jl"), "w") do f
     write(f, pkg_code)
   end
+  Pkg.activate()
   LocalPackageResponder(
                         local_path,
                         response_function,
@@ -162,22 +163,23 @@ function get_responder(
   if isurl(path_url)
     get_responder_from_package_url(path_url, response_function, IT; registry_urls)
   elseif isrelativeurl(path_url)
-    if isdir(path_url)
-      if "Project.toml" in readdir(path_url)
+    normalised_path = normpath(path_url)
+    if isdir(normalised_path)
+      if "Project.toml" in readdir(normalised_path)
         length(dependencies) > 0 && error("""
-          Dependencies have been passed, but path_url leads to a package; please specify dependencies in the Package's Project.toml
+          Dependencies have been passed, but normalised_path leads to a package; please specify dependencies in the Package's Project.toml
           """
         )
-        get_responder_from_local_package(path_url, response_function, IT; registry_urls)
+        get_responder_from_local_package(normalised_path, response_function, IT; registry_urls)
       else
         error("""
         Path points to a directory, but no Project.toml exists; please provide a path to either a package directory, or a script file
         """)
       end
-    elseif(isfile(path_url))
-      get_responder_from_local_script(joinpath(pwd(), path_url), response_function, IT; dependencies, registry_urls)
+    elseif(isfile(normalised_path))
+      get_responder_from_local_script(joinpath(pwd(), normalised_path), response_function, IT; dependencies, registry_urls)
     else
-      error("Unable to find path $path_url")
+      error("Unable to find path $normalised_path")
     end
   else
     error("path/url $path_url not recognized")

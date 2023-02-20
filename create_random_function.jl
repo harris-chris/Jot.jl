@@ -9,7 +9,8 @@ open("append_string.jl", "w") do f
 end
 
 responder = get_responder("./append_string.jl", :append_string, String)
-function_test_data = FunctionTestData("test-", "test-$this_random_string")
+# function_test_data = FunctionTestData("test-", "test-$this_random_string")
+function_test_data = nothing
 local_image = create_local_image(
   responder;
   image_suffix="append-string-$this_random_string",

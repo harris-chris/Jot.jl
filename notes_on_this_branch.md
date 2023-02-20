@@ -1,3 +1,16 @@
+The bootstrap script:
+alias Julia first, it's /user/local/julia/bin/julia on the docker image
+RIE runs on 8080
+
+What I think we want to do here:
+- Before even creating a local image:
+  - Run a julia script which starts the runtime locally and runs the function
+  - This script should use --trace_compile to get all the precompile statements
+  - We can then use `precompile_statements_file` for the sysimage
+  - This should still be platform-agnostic
+  - This script will have to be started via AWS RIE, see example in `get_bootstrap_script`
+  - The bootstrap script is actually a bash script, need to add the --trace_compile onto that
+
 Some potential problems:
 - Packagecompiler seems to be writing the package compile file to `/tmp`, it's actually writing it to $SYSIMAGE_PATH, not sure where that's coming from
 - The package-compile script is starting Jot async but it looks like Jot may not be up and running before the relevant bits of the package-compile script

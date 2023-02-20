@@ -3,9 +3,10 @@ using Sockets
 const SYSIMAGE_NAME = "CompiledSysImage.so"
 
 function get_bootstrap_script(
+    responder::LocalPackageResponder,
     julia_depot_path::String,
     temp_path::String,
-    function_test_data::Union{Nothing, FunctionTestData},
+    julia_args::Vector{String},
   )::String
 
   bootstrap_shebang = """
@@ -17,41 +18,67 @@ function get_bootstrap_script(
   export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
   """
 
-  julia_args = if isnothing(function_test_data)
-    ["--trace-compile=stderr"]
-  else
-    ["--trace-compile=stderr", "-J\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
-  end
-
-  run_julia_rie_cmd = "exec ./aws-lambda-rie /usr/local/julia/bin/julia " *
-    join(julia_args, " ") *
-    " -e"
-
-  run_julia_lambda_cmd = "exec /usr/local/julia/bin/julia " *
-    join(julia_args, " ") *
-    " -e"
-
-  bootstrap_body = """
-  echo "JOT_OBSERVATION ALL TMP CONTENTS AT BOOTSTRAP \$(ls -a /tmp)"
-  echo "JOT_OBSERVATION TMP SIZE AT BOOTSTRAP \$(du -h /tmp)"
-  echo "JOT_OBSERVATION DEPOT PATH CONTENTS AT BOOTSTRAP \$(ls -a /var/runtime/julia_depot)"
-  echo "JOT_OBSERVATION JULIA DEPOT PATH SIZE AT BOOTSTRAP \$(du -h $julia_depot_path)"
-
-  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
-    LOCAL="127.0.0.1:9001"
-    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LOCAL ..."
-    $run_julia_rie_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$LOCAL\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
-    echo "... AWS_LAMBDA_RUNTIME_API started"
-  else
-    echo "AWS_LAMBDA_RUNTIME_API = \$AWS_LAMBDA_RUNTIME_API"
-    echo "$STARTING_JULIA_JOT_OBSERVATION"
-    $run_julia_lambda_cmd "using Jot; using \$PKG_NAME; start_runtime(\\\"\$AWS_LAMBDA_RUNTIME_API\\\", \$FUNC_FULL_NAME, \$FUNC_PARAM_TYPE)" 2>&1
-    echo "$JULIA_STARTED_JOT_OBSERVATION"
-  fi
-  """
+  bootstrap_body = get_bootstrap_body(responder, julia_args)
   bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
   @debug bootstrap_script
   bootstrap_script
+end
+
+function get_bootstrap_body(
+    responder::LocalPackageResponder,
+    julia_args::Vector{String};
+    jot_path::Union{Nothing, String},
+  )::String
+
+  response_function_name = String(responder.response_function)
+  response_param_type = responder.response_function_param_type
+  responder_package_path = joinpath(responder.build_dir, responder.package_name)
+
+  julia_start_runtime_command =
+    "start_runtime(" *
+    join([
+      "\\\"\$LAMBDA_ENDPOINT\\\"",
+      "$(responder.package_name).$response_function_name",
+      "$response_param_type",
+    ], ", ") *
+    ")"
+
+  julia_exec_statements = [
+    "using Pkg",
+    # (isnothing(jot_path) ? "" : "Pkg.develop(PackageSpec(path=\\\"$jot_path\\\"))"),
+    "Pkg.develop(path=\\\"$responder_package_path\\\")",
+    "using Jot",
+    "using $(responder.package_name)",
+    julia_start_runtime_command,
+  ]
+  julia_exec = join(julia_exec_statements, "; ")
+
+  # else
+  #   ["--trace-compile=stderr", "-J\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
+  # end
+
+  run_julia_rie_cmd = "exec ./aws-lambda-rie julia " *
+    join(julia_args, " ") *
+    " -e \"$julia_exec\""
+
+  run_julia_lambda_cmd = "exec julia " *
+    join(julia_args, " ") *
+    " -e \"$julia_exec\""
+
+  """
+  if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
+    LAMBDA_ENDPOINT="127.0.0.1:9001"
+    echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LAMBDA_ENDPOINT ..."
+    $run_julia_rie_cmd 2>&1
+    echo "... AWS_LAMBDA_RUNTIME_API started"
+  else
+    LAMBDA_ENDPOINT=\$AWS_LAMBDA_RUNTIME_API
+    echo "LAMBDA_ENDPOINT = \$AWS_LAMBDA_RUNTIME_API"
+    echo "$STARTING_JULIA_JOT_OBSERVATION"
+    $run_julia_lambda_cmd 2>&1
+    echo "$JULIA_STARTED_JOT_OBSERVATION"
+  fi
+  """
 end
 
 function start_lambda_server(host::String, port::Int64)
@@ -182,6 +209,7 @@ function get_precompile_jl(
     function_test_data::FunctionTestData,
   )::String
   package_name = responder.package_name
+  function_name = String(responder.response_function)
   argument_type = responder.response_function_param_type
   test_argument = function_test_data.test_argument
   precompile_jl = """
@@ -196,15 +224,10 @@ function get_precompile_jl(
     isa(e, LoadError) && rethrow(e)
   end
 
-  try
-    @async Jot.start_runtime(
-      "127.0.0.1:9001", $package_name, argument_type; single_shot=true
-    )
-    sleep(10)
-  catch e
-    # isa(e, HTTP.ExceptionRequest.StatusError) || rethrow(e)
-    rethrow(e)
-  end
+  @async Jot.start_runtime(
+    "127.0.0.1:9001", "$function_name", argument_type; single_shot=true
+  )
+  sleep(10)
   """
   @debug precompile_jl
   precompile_jl

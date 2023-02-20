@@ -32,14 +32,16 @@ function lambda_error(error::String, endpoint::String, aws_request_id::String)
   )
 end
 
-function start_runtime(host::String, func_name::String, param_type::String; single_shot=false)
+function start_runtime(host::String, func_name::Symbol, param_type::String; single_shot=false)
   param_type = eval(Meta.parse(param_type))
-  start_runtime(host, eval(Meta.parse(func_name)), param_type)
+  response_func = eval(func_name)
+  start_runtime(host, response_func, param_type)
 end
 
 function start_runtime(
     host::String,
-    react_function::Function, ::Type{T};
+    react_function::Function,
+    ::Type{T};
     single_shot=false,
   ) where {T}
   tmp_contents = readdir("/tmp")
