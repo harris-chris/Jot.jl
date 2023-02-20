@@ -1,6 +1,12 @@
 The bootstrap script:
 alias Julia first, it's /user/local/julia/bin/julia on the docker image
-RIE runs on 8080
+RIE runs on 8080 by default
+Running the bootstrap script with --trace-compile gets us a load of precompile statements for jot.
+Running the tests for the package in question should do the same, I'm pretty sure we can just concatenate them both together.
+The script to start the bootstrap doesn't need to be a full script, can just `run` from within julia.
+We need a separate function in `Scripts.jl` to just grab the Julia start script, turn that into a separate script. Or make it a macro or something.
+
+Create a test with a custom function argument, ie a struct defined in that module
 
 What I think we want to do here:
 - Before even creating a local image:

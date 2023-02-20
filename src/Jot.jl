@@ -43,7 +43,7 @@ export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_l
 export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
 export FunctionTestData
-export get_precompile_statements_script
+export create_jot_sysimage!
 
 # CONSTANTS
 const docker_hash_limit = 12
