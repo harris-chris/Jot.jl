@@ -28,6 +28,7 @@ function get_bootstrap_body(
     responder::LocalPackageResponder,
     julia_args::Vector{String};
     jot_path::Union{Nothing, String},
+    timeout::Union{Nothing, Int64},
   )::String
 
   response_function_name = String(responder.response_function)
@@ -53,15 +54,17 @@ function get_bootstrap_body(
   ]
   julia_exec = join(julia_exec_statements, "; ")
 
-  # else
-  #   ["--trace-compile=stderr", "-J\"$(julia_depot_path)/$(SYSIMAGE_NAME)\""]
-  # end
-
-  run_julia_rie_cmd = "exec ./aws-lambda-rie julia " *
+  run_julia_rie_cmd =
+    "exec " *
+    (isnothing(timeout) ? "" : "timeout $(timeout)s ") *
+    "./aws-lambda-rie julia " *
     join(julia_args, " ") *
     " -e \"$julia_exec\""
 
-  run_julia_lambda_cmd = "exec julia " *
+  run_julia_lambda_cmd =
+    "exec " *
+    (isnothing(timeout) ? "" : "timeout $(timeout)s ") *
+    "julia " *
     join(julia_args, " ") *
     " -e \"$julia_exec\""
 

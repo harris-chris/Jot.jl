@@ -24,8 +24,9 @@ function create_jot_single_run_launcher_script!(
 
   bootstrap_body = get_bootstrap_body(
     responder,
-    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME"];
-    jot_path = jot_path
+    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "-i"];
+    jot_path = jot_path,
+    timeout = 60,
   )
 
   bootstrap_all = bootstrap_prefix * bootstrap_body
@@ -37,31 +38,70 @@ function create_jot_single_run_launcher_script!(
   fname
 end
 
+function create_precompile_statements_file!(
+    responder::LocalPackageResponder,
+    function_test_data::FunctionTestData,
+  )::String
+  launcher_script = create_jot_single_run_launcher_script!(responder)
+  @info "Launcher script created in $(pwd())"
+  @info "Starting launcher script..."
+  launcher = @async redirect_stdio(stdout="launcher_stdout", stderr="launcher_stderr") do
+    run(`sh $launcher_script`)
+  end
+  sleep(1)
+  open("launcher_stderr", "r") do f
+    if occursin("bind: address already in use", String(read(f)))
+      error(
+        "Port 8080 is already in use on host machine; unable to start AWS Lambda RIE"
+      )
+    end
+  end
+  @info "... launcher script started"
+  response = send_local_request(function_test_data.test_argument; local_port = 8080)
+  if response != function_test_data.expected_response
+    error(
+      "During package compilation, responder sent test response $response " *
+      "when $(function_test_data.expected_response) was expected"
+    )
+  else
+    @info "Received correct response $response from RIE server"
+  end
+
+  # Wait for the precompile statements file to exist
+  @info "Waiting for $PRECOMP_STATEMENTS_FNAME to be generated..."
+  precomp_timeout = 20.; delay = 0.1
+  while true
+    isfile(PRECOMP_STATEMENTS_FNAME) && break
+    precomp_timeout = precomp_timeout - delay
+    if precomp_timeout == 0.
+      error("Timed out waiting for $PRECOMP_STATEMENTS_FNAME to generate")
+    end
+    sleep(delay)
+  end
+  @info "... $PRECOMP_STATEMENTS_FNAME has been generated"
+  println("shutting down launcher")
+  @async Base.throwto(launcher, InterruptException())
+
+  PRECOMP_STATEMENTS_FNAME
+end
+
 function create_jot_sysimage!(
     responder::LocalPackageResponder,
     function_test_data::FunctionTestData,
   )
   run_dir = "jot_temp"
-
   cd(run_dir) do
-    launcher_script = create_jot_single_run_launcher_script!(responder)
-    @async run(`sh $launcher_script`)
-    sleep(1)
-    response = send_local_request(function_test_data.test_argument; local_port = 8080)
-    if response != function_test_data.expected_response
-      error(
-        "During package compilation, responder sent test response $response " *
-        "when $(function_test_data.expected_response) was expected"
-      )
-    end
-    sleep(10) # Delay to create precompile_statements
+    precomp_statements_fname = create_precompile_statements_file!(
+      responder, function_test_data
+    )
     create_sysimage(
       :Jot,
-      precompile_statements_file="$PRECOMP_STATEMENTS_FNAME",
+      precompile_statements_file=precomp_statements_fname,
       sysimage_path="$SYSIMAGE_FNAME",
       cpu_target="x86-64",
     )
   end
+  SYSIMAGE_FNAME
 end
 
 

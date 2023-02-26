@@ -1,6 +1,8 @@
 ! We can get rid of the PackageCompiler dependency from the docker image.
 ! append_string_package is getting added to the environment (not jot but just the standard environment)
-! rie is not being shut down if something goes wrong
+! rie is being shut down via timeout, would be nice to shut it down via InterruptException though.
+! redirect_stdio bumps our required julia version to 1.7
+! prog = ProgressUnknown("Working hard:", spinner=true) to get a spinner
 
 The bootstrap script:
 alias Julia first, it's /user/local/julia/bin/julia on the docker image

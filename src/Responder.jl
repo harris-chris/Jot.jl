@@ -83,7 +83,8 @@ function get_responder_from_local_script(
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
   cd(build_dir) do
-    Pkg.activate(pkg_name; temp=true)
+    # Pkg.develop(path=abspath(pwd()))
+    Pkg.activate(;temp=true)
     for registry_url in registry_urls
       Pkg.Registry.add(RegistrySpec(url = registry_url))
     end
