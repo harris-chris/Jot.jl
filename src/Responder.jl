@@ -84,11 +84,11 @@ function get_responder_from_local_script(
   pkg_name = get_package_name_from_script_name(script_filename)
   cd(build_dir) do
     # Pkg.develop(path=abspath(pwd()))
+    Pkg.generate(pkg_name)
     Pkg.activate(;temp=true)
     for registry_url in registry_urls
       Pkg.Registry.add(RegistrySpec(url = registry_url))
     end
-    Pkg.generate(pkg_name)
     length(dependencies) > 0 && Pkg.add(dependencies)
   end
   script = open(local_path, "r") do f

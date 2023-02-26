@@ -31,7 +31,7 @@ function create_jot_single_run_launcher_script!(
 
   bootstrap_all = bootstrap_prefix * bootstrap_body
 
-  fname = "single_run_launcher.jl"
+  fname = "single_run_launcher.sh"
   open(fname, "w") do f
     write(f, bootstrap_all)
   end
@@ -45,19 +45,34 @@ function create_precompile_statements_file!(
   launcher_script = create_jot_single_run_launcher_script!(responder)
   @info "Launcher script created in $(pwd())"
   @info "Starting launcher script..."
-  launcher = @async redirect_stdio(stdout="launcher_stdout", stderr="launcher_stderr") do
-    run(`sh $launcher_script`)
-  end
-  sleep(1)
-  open("launcher_stderr", "r") do f
-    if occursin("bind: address already in use", String(read(f)))
-      error(
-        "Port 8080 is already in use on host machine; unable to start AWS Lambda RIE"
-      )
+  stdout_buffer = IOBuffer(); stderr_buffer = IOBuffer()
+  launcher_started = Base.Event()
+
+  launcher_cmd = pipeline(`sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer)
+  launcher_process = open(launcher_cmd)
+
+  @info "Starting watcher processes..."
+  stdout_read = String(""); stderr_read = String("")
+  while true
+    stdout_read = stdout_read * String(take!(stdout_buffer))
+    stderr_read = stderr_read * String(take!(stderr_buffer))
+    if was_port_in_use(stderr_read)
+      error("Port 8080 was already in use by another process")
+    elseif did_launcher_run(stdout_read)
+      break
+    else
+      sleep(0.1)
     end
   end
-  @info "... launcher script started"
+
+  # @info "... waiting for launcher to start ..."
+  # wait(launcher_started)
+  # close(Base.pipe_writer(stdout_pipe))
+  # close(Base.pipe_writer(stderr_pipe))
+  @info "Launcher started"
+
   response = send_local_request(function_test_data.test_argument; local_port = 8080)
+
   if response != function_test_data.expected_response
     error(
       "During package compilation, responder sent test response $response " *
@@ -80,9 +95,46 @@ function create_precompile_statements_file!(
   end
   @info "... $PRECOMP_STATEMENTS_FNAME has been generated"
   println("shutting down launcher")
-  @async Base.throwto(launcher, InterruptException())
-
+  kill(launcher_process)
   PRECOMP_STATEMENTS_FNAME
+end
+
+function get_script_output_watchers(
+    stdout_pipe::Pipe,
+    stderr_pipe::Pipe,
+    launched_event::Base.Event,
+  )::Tuple{Task, Task}
+  stdout_watcher = @async begin
+    while true
+      stdout_text = readline(stdout_pipe)
+      @show stdout_text
+      if did_launcher_run(stdout_text)
+        notify(launched_event)
+        break
+      end
+    end
+  end
+  @show stdout_watcher
+  stderr_watcher = @async begin
+    while true
+      stderr_text = readline(stderr_pipe)
+      @show stderr_text
+      if was_port_in_use(stderr_text)
+        notify(launched_event)
+        break
+      end
+    end
+  end
+  @show stderr_watcher
+  (stdout_watcher, stderr_watcher)
+end
+
+function did_launcher_run(stdout_text::String)::Bool
+  occursin("start_runtime", stdout_text)
+end
+
+function was_port_in_use(stderr_text::String)::Bool
+  occursin("bind: address already in use", stderr_text)
 end
 
 function create_jot_sysimage!(
