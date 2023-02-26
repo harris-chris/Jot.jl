@@ -1,5 +1,8 @@
 using PackageCompiler
 
+const PRECOMP_STATEMENTS_FNAME = "precompile_statements.jl"
+const SYSIMAGE_FNAME = "SysImage.so"
+
 struct FunctionTestData
   test_argument::Any
   expected_response::Any
@@ -21,7 +24,7 @@ function create_jot_single_run_launcher_script!(
 
   bootstrap_body = get_bootstrap_body(
     responder,
-    ["--trace-compile=precompilation_statements.jl"];
+    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME"];
     jot_path = jot_path
   )
 
@@ -51,10 +54,11 @@ function create_jot_sysimage!(
         "when $(function_test_data.expected_response) was expected"
       )
     end
+    sleep(10) # Delay to create precompile_statements
     create_sysimage(
       :Jot,
-      precompile_statements_file="precompile_statements.jl",
-      sysimage_path="SysImage.so",
+      precompile_statements_file="$PRECOMP_STATEMENTS_FNAME",
+      sysimage_path="$SYSIMAGE_FNAME",
       cpu_target="x86-64",
     )
   end
