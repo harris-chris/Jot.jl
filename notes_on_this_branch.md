@@ -1,3 +1,5 @@
+We can get rid of the PackageCompiler dependency from the docker image.
+
 The bootstrap script:
 alias Julia first, it's /user/local/julia/bin/julia on the docker image
 RIE runs on 8080 by default

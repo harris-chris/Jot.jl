@@ -1,3 +1,4 @@
+using PackageCompiler
 
 struct FunctionTestData
   test_argument::Any
@@ -50,6 +51,12 @@ function create_jot_sysimage!(
         "when $(function_test_data.expected_response) was expected"
       )
     end
+    create_sysimage(
+      :Jot,
+      precompile_statements_file="precompile_statements.jl",
+      sysimage_path="SysImage.so",
+      cpu_target="x86-64",
+    )
   end
 end
 
