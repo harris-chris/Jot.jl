@@ -218,6 +218,15 @@ struct ResponderFunctionTestArgs
   invalid_arg::Any
 end
 
+function to_function_test_data(
+    ta::ResponderFunctionTestArgs,
+  )::FunctionTestData
+  FunctionTestData(
+    ta.good_arg,
+    ta.expected_response,
+  )
+end
+
 struct CreateLocalImageArgs
   use_aws_config::Bool
   expected_labels::ExpectedLabels
@@ -515,10 +524,11 @@ function test_local_image(
     create_local_image_args::CreateLocalImageArgs,
     responder_function_test_args::ResponderFunctionTestArgs,
   )::LocalImage
+  function_test_data = to_function_test_data(responder_function_test_args)
   local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
-    package_compile = false,
+    function_test_data = function_test_data,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
   @test Jot.matches(res, local_image)
@@ -608,10 +618,11 @@ function test_compiled_local_image(
     uncompiled_local_image::LocalImage;
     repeat_num::Int64 = 5,
   )::LocalImage
+  function_test_data = to_function_test_data(responder_function_test_args)
   compiled_local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
-    package_compile = true,
+    function_test_data = function_test_data,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
   (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(
