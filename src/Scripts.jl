@@ -27,8 +27,8 @@ end
 function get_bootstrap_body(
     responder::LocalPackageResponder,
     julia_args::Vector{String};
-    jot_path::Union{Nothing, String},
-    timeout::Union{Nothing, Int64},
+    jot_path::Union{Nothing, String} = nothing,
+    timeout::Union{Nothing, Int64} = nothing,
   )::String
 
   response_function_name = String(responder.response_function)

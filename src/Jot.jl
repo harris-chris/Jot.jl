@@ -231,7 +231,7 @@ function get_dockerfile(
       String(responder.response_function),
       responder.response_function_param_type
     ),
-    dockerfile_add_precompile(),
+    # dockerfile_add_precompile(),
   ]; init = "")
   dockerfile_update(generated_dockerfile)
 end
@@ -299,7 +299,7 @@ function create_local_image(
   else; false
   end
 
-  add_scripts_to_build_dir(function_test_data, julia_cpu_target, responder)
+  add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
   dockerfile = get_dockerfile(
     responder,
     julia_base_version;

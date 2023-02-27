@@ -42,7 +42,7 @@ function create_test_local_image(
     responder::LocalPackageResponder,
     function_test_data::Union{Nothing, FunctionTestData},
   )::Tuple{String, LocalImage}
-  name_suffix = compile ? "compiled" : "uncompiled"
+  name_suffix = isnothing(function_test_data) ? "uncompiled" : "compiled"
   name = "$name_prefix-$name_suffix"
   li = create_local_image(
     responder;
