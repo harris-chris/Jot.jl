@@ -82,6 +82,7 @@ function get_responder_from_local_script(
   build_dir = create_build_directory()
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
+  @show build_dir
   cd(build_dir) do
     # Pkg.develop(path=abspath(pwd()))
     Pkg.generate(pkg_name)

@@ -43,15 +43,12 @@ function create_precompile_statements_file!(
     function_test_data::FunctionTestData,
   )::String
   launcher_script = create_jot_single_run_launcher_script!(responder)
-  @info "Launcher script created in $(pwd())"
-  @info "Starting launcher script..."
   stdout_buffer = IOBuffer(); stderr_buffer = IOBuffer()
   launcher_started = Base.Event()
 
   launcher_cmd = pipeline(`sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer)
   launcher_process = open(launcher_cmd)
 
-  @info "Starting watcher processes..."
   stdout_read = String(""); stderr_read = String("")
   while true
     stdout_read = stdout_read * String(take!(stdout_buffer))
@@ -64,12 +61,6 @@ function create_precompile_statements_file!(
       sleep(0.1)
     end
   end
-
-  # @info "... waiting for launcher to start ..."
-  # wait(launcher_started)
-  # close(Base.pipe_writer(stdout_pipe))
-  # close(Base.pipe_writer(stderr_pipe))
-  @info "Launcher started"
 
   response = send_local_request(function_test_data.test_argument; local_port = 8080)
 
@@ -94,39 +85,8 @@ function create_precompile_statements_file!(
     sleep(delay)
   end
   @info "... $PRECOMP_STATEMENTS_FNAME has been generated"
-  println("shutting down launcher")
   kill(launcher_process)
   PRECOMP_STATEMENTS_FNAME
-end
-
-function get_script_output_watchers(
-    stdout_pipe::Pipe,
-    stderr_pipe::Pipe,
-    launched_event::Base.Event,
-  )::Tuple{Task, Task}
-  stdout_watcher = @async begin
-    while true
-      stdout_text = readline(stdout_pipe)
-      @show stdout_text
-      if did_launcher_run(stdout_text)
-        notify(launched_event)
-        break
-      end
-    end
-  end
-  @show stdout_watcher
-  stderr_watcher = @async begin
-    while true
-      stderr_text = readline(stderr_pipe)
-      @show stderr_text
-      if was_port_in_use(stderr_text)
-        notify(launched_event)
-        break
-      end
-    end
-  end
-  @show stderr_watcher
-  (stdout_watcher, stderr_watcher)
 end
 
 function did_launcher_run(stdout_text::String)::Bool
@@ -140,9 +100,8 @@ end
 function create_jot_sysimage!(
     responder::LocalPackageResponder,
     function_test_data::FunctionTestData,
-  )
-  run_dir = "jot_temp"
-  cd(run_dir) do
+  )::Nothing
+  cd(responder.build_dir) do
     precomp_statements_fname = create_precompile_statements_file!(
       responder, function_test_data
     )
@@ -153,7 +112,6 @@ function create_jot_sysimage!(
       cpu_target="x86-64",
     )
   end
-  SYSIMAGE_FNAME
 end
 
 

@@ -167,19 +167,28 @@ function write_to_build_dir!(
 end
 
 function add_scripts_to_build_dir(
-    function_test_data::Union{Nothing, FunctionTestData},
+    package_compile::Bool,
     julia_cpu_target::String,
     responder::AbstractResponder,
   )
-  add_to_build!(content, fname) = write_to_build_dir!(content, responder.build_dir, fname)
-  bootstrap_script = get_bootstrap_script(julia_depot_path, temp_path, function_test_data)
-  add_to_build!(bootstrap_script, "bootstrap")
-  init_script = get_init_script(function_test_data, julia_cpu_target, julia_depot_path)
-  add_to_build!(init_script, "init.jl")
-  if !isnothing(function_test_data)
-    precompile_script = get_precompile_jl(responder, function_test_data)
-    add_to_build!(precompile_script, "precompile.jl")
+  add_to_build!(content, fname) = write_to_build_dir!(
+    content, responder.build_dir, fname
+  )
+  julia_args = if package_compile
+    ["--sysimage=$SYSIMAGE_FNAME"]
+  else
+    Vector{String}()
   end
+  bootstrap_script = get_bootstrap_script(
+    responder, julia_depot_path, temp_path, julia_args
+  )
+  add_to_build!(bootstrap_script, "bootstrap")
+  # init_script = get_init_script(function_test_data, julia_cpu_target, julia_depot_path)
+  # add_to_build!(init_script, "init.jl")
+  # if !isnothing(function_test_data)
+  #   precompile_script = get_precompile_jl(responder, function_test_data)
+  #   add_to_build!(precompile_script, "precompile.jl")
+  # end
 end
 
 """
@@ -188,6 +197,7 @@ end
         julia_base_version::String,
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
+        function_test_data::FunctionTestData,
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -283,17 +293,19 @@ function create_local_image(
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
 
-  # if !isnothing(function_test_data)
-  #   sysimage_path = create_sysimage(responder, function_test_data)
-  #   add_sysimage_to_build_dir(sysimage_path)
-  # end
+  package_compile = if !isnothing(function_test_data)
+    create_jot_sysimage!(responder, function_test_data)
+    true
+  else; false
+  end
 
   add_scripts_to_build_dir(function_test_data, julia_cpu_target, responder)
-  dockerfile = get_dockerfile(responder,
-                              julia_base_version;
-                              user_defined_labels,
-                              dockerfile_update
-                             )
+  dockerfile = get_dockerfile(
+    responder,
+    julia_base_version;
+    user_defined_labels,
+    dockerfile_update,
+  )
   @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
     write(f, dockerfile)
