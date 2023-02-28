@@ -24,7 +24,7 @@ function create_jot_single_run_launcher_script!(
 
   bootstrap_body = get_bootstrap_body(
     responder,
-    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "-i"];
+    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "--project=."];
     jot_path = jot_path,
     timeout = 60,
   )
@@ -48,6 +48,7 @@ function create_precompile_statements_file!(
 
   launcher_cmd = pipeline(`sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer)
   launcher_process = open(launcher_cmd)
+  @info "Waiting for AWS RIE to start up ..."
 
   stdout_read = String(""); stderr_read = String("")
   while true
@@ -56,12 +57,14 @@ function create_precompile_statements_file!(
     if was_port_in_use(stderr_read)
       error("Port 8080 was already in use by another process")
     elseif did_launcher_run(stdout_read)
+      @info "... AWS RIE has started up"
       break
     else
       sleep(0.1)
     end
   end
 
+  @info "Making local responder invocation ..."
   response = send_local_request(function_test_data.test_argument; local_port = 8080)
 
   if response != function_test_data.expected_response
@@ -70,7 +73,7 @@ function create_precompile_statements_file!(
       "when $(function_test_data.expected_response) was expected"
     )
   else
-    @info "Received correct response $response from RIE server"
+    @info "... invocation received correct response $response from RIE server"
   end
 
   # Wait for the precompile statements file to exist
@@ -102,6 +105,15 @@ function create_jot_sysimage!(
     function_test_data::FunctionTestData,
   )::Nothing
   cd(responder.build_dir) do
+    @show responder.build_dir
+    @show responder.package_name
+    create_env_multiline = get_create_julia_environment_script(responder, responder.build_dir)
+    create_env_script = replace(create_env_multiline, "\n" => "; ")
+    @show create_env_script
+    eval(Meta.parse(create_env_script))
+    @info "Temporary environment created"
+    # Pkg.activate(".")
+    # Pkg.develop(PackageSpec(path=responder.package_name))
     precomp_statements_fname = create_precompile_statements_file!(
       responder, function_test_data
     )

@@ -54,7 +54,7 @@ function dockerfile_add_responder(
     res::LocalPackageResponder,
   )::String
   using_pkg_script = "using Pkg; "
-  add_module_script = "Pkg.develop(path=\\\"$runtime_path/$(res.package_name)\\\"); "
+  add_module_script = "Pkg.develop(PackageSpec(path=\\\"$runtime_path/$(res.package_name)\\\")); "
   instantiate_script = "Pkg.instantiate(); "
   """
   RUN julia -e \"$using_pkg_script$add_module_script$instantiate_script\"

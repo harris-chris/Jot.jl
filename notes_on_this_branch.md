@@ -3,6 +3,8 @@
 ! rie is being shut down via timeout, would be nice to shut it down via InterruptException though.
 ! redirect_stdio bumps our required julia version to 1.7
 ! prog = ProgressUnknown("Working hard:", spinner=true) to get a spinner
+! grep for all references for jot_temp
+! Believe that the point at which these packages are being made part of Jot is when you do Pkg.develop() in the single_run_launcher for package compile, but can't see a way to make this only temporary. Unless having it all run in a temp directory is enough for that.
 
 The bootstrap script:
 alias Julia first, it's /user/local/julia/bin/julia on the docker image

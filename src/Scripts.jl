@@ -24,6 +24,19 @@ function get_bootstrap_script(
   bootstrap_script
 end
 
+function get_create_julia_environment_script(
+    responder::LocalPackageResponder,
+    create_dir::String,
+  )::String
+  responder_package_path = joinpath(responder.build_dir, responder.package_name)
+  """
+  using Pkg
+  Pkg.activate(\"$create_dir\")
+  Pkg.add(url=\"$jot_github_url\")
+  Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
+  """
+end
+
 function get_bootstrap_body(
     responder::LocalPackageResponder,
     julia_args::Vector{String};
@@ -47,7 +60,7 @@ function get_bootstrap_body(
   julia_exec_statements = [
     "using Pkg",
     # (isnothing(jot_path) ? "" : "Pkg.develop(PackageSpec(path=\\\"$jot_path\\\"))"),
-    "Pkg.develop(path=\\\"$responder_package_path\\\")",
+    # "Pkg.develop(PackageSpec(path=\\\"$responder_package_path\\\"))",
     "using Jot",
     "using $(responder.package_name)",
     julia_start_runtime_command,
