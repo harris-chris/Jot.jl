@@ -61,6 +61,25 @@ function dockerfile_add_responder(
   """
 end
 
+function dockerfile_add_environment(
+    responder::LocalPackageResponder,
+  )::String
+  test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
+  jot_branch = if isnothing(test_running) || test_running == "false"
+    "main"
+  else
+    readchomp(`git branch --show-current`)
+  end
+  responder_package_path = "./$(responder.package_name)"
+  create_env_script = get_create_julia_environment_script(
+    responder_package_path, "."; jot_branch
+  )
+  create_env_statement = replace(create_env_script, "\n" => "; ") |> nest_quotes
+  """
+  RUN julia -e \"$create_env_statement\"
+  """
+end
+
 function dockerfile_add_jot()::String
   test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
   jot_branch = if isnothing(test_running) || test_running == "false"

@@ -43,7 +43,8 @@ export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_l
 export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
 export FunctionTestData
-export create_jot_sysimage!
+export create_jot_sysimage!, create_environment!
+export nest_quotes
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -154,6 +155,20 @@ function create_build_directory()::String
   build_dir
 end
 
+function create_environment!(
+    responder::LocalPackageResponder,
+  )::String
+  responder_package_path = "./$(responder.package_name)"
+  create_env_multiline = get_create_julia_environment_script(
+    responder_package_path, responder.build_dir
+  )
+  create_env_script = replace(create_env_multiline, "\n" => "; ")
+  @show create_env_script
+  eval(Meta.parse(create_env_script))
+  @info "Temporary environment created"
+  responder.build_dir
+end
+
 function write_to_build_dir!(
     content::String,
     build_dir::String,
@@ -174,10 +189,11 @@ function add_scripts_to_build_dir(
   add_to_build!(content, fname) = write_to_build_dir!(
     content, responder.build_dir, fname
   )
-  julia_args = if package_compile
-    ["--sysimage=$SYSIMAGE_FNAME"]
-  else
-    Vector{String}()
+  julia_args = [
+    "--project=.",
+    ]
+  if package_compile
+    julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
   end
   bootstrap_script = get_bootstrap_script(
     responder, julia_depot_path, temp_path, julia_args
@@ -221,9 +237,10 @@ function get_dockerfile(
     dockerfile_add_runtime_directories(julia_depot_path, temp_path, runtime_path),
     dockerfile_add_additional_registries(responder.registry_urls),
     dockerfile_copy_build_dir(),
-    dockerfile_add_responder(runtime_path, responder),
+    dockerfile_add_environment(responder),
+    # dockerfile_add_responder(runtime_path, responder),
     dockerfile_add_labels(combined_labels),
-    dockerfile_add_jot(),
+    # dockerfile_add_jot(),
     dockerfile_add_aws_rie(),
     dockerfile_add_bootstrap(
       runtime_path,
@@ -293,6 +310,7 @@ function create_local_image(
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
 
+  create_environment!(responder)
   package_compile = if !isnothing(function_test_data)
     create_jot_sysimage!(responder, function_test_data)
     true

@@ -9,17 +9,17 @@ function setup_images_and_functions(
   this_rand_string = this_random_string = randstring(8) |> lowercase
   name_prefix = "performance-test-$this_rand_string"
   responder, function_test_data = create_test_responder(this_rand_string)
+  compiled_name, compiled_local_image = create_test_local_image(
+    name_prefix, responder, function_test_data
+  )
+  compiled_lambda = create_test_lambda_function(
+    compiled_name, compiled_local_image
+  )
   uncompiled_name, uncompiled_local_image = create_test_local_image(
     name_prefix, responder, nothing
   )
   uncompiled_lambda = create_test_lambda_function(
     uncompiled_name, uncompiled_local_image
-  )
-  compiled_name, compiled_local_image = create_test_local_image(
-    name_prefix, responder, function_tests_data
-  )
-  compiled_lambda = create_test_lambda_function(
-    compiled_name, compiled_local_image
   )
   (uncompiled_local_image, uncompiled_lambda, compiled_local_image, compiled_lambda)
 end

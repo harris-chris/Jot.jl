@@ -2,6 +2,10 @@ using Sockets
 
 const SYSIMAGE_NAME = "CompiledSysImage.so"
 
+function nest_quotes(original::String)::String
+  replace(original, "\"" => "\\\"")
+end
+
 function get_bootstrap_script(
     responder::LocalPackageResponder,
     julia_depot_path::String,
@@ -25,22 +29,24 @@ function get_bootstrap_script(
 end
 
 function get_create_julia_environment_script(
-    responder::LocalPackageResponder,
-    create_dir::String,
+    responder_package_path::String,
+    create_dir::String;
+    jot_branch::String = "main",
   )::String
-  responder_package_path = joinpath(responder.build_dir, responder.package_name)
   """
   using Pkg
-  Pkg.activate(\"$create_dir\")
-  Pkg.add(url=\"$jot_github_url\")
-  Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
+  cd(\"$create_dir\") do
+    Pkg.activate(\".\")
+    Pkg.add(url=\"$jot_github_url\", rev=\"$jot_branch\")
+    Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
+    Pkg.precompile()
+  end
   """
 end
 
 function get_bootstrap_body(
     responder::LocalPackageResponder,
     julia_args::Vector{String};
-    jot_path::Union{Nothing, String} = nothing,
     timeout::Union{Nothing, Int64} = nothing,
   )::String
 
@@ -58,9 +64,6 @@ function get_bootstrap_body(
     ")"
 
   julia_exec_statements = [
-    "using Pkg",
-    # (isnothing(jot_path) ? "" : "Pkg.develop(PackageSpec(path=\\\"$jot_path\\\"))"),
-    # "Pkg.develop(PackageSpec(path=\\\"$responder_package_path\\\"))",
     "using Jot",
     "using $(responder.package_name)",
     julia_start_runtime_command,

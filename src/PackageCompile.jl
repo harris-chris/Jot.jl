@@ -11,31 +11,32 @@ end
 function create_jot_single_run_launcher_script!(
     responder::LocalPackageResponder,
   )::String
-  jot_path = abspath(pwd())
+  launcher_fname = "single_run_launcher.sh"
+  cd(responder.build_dir) do
+    @show responder.build_dir
+    if !("aws-lambda-rie" in readdir())
+      run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
+      run(`chmod +x ./aws-lambda-rie`)
+    end
+    @show readdir()
 
-  if !("aws-lambda-rie" in readdir())
-    run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
-    run(`chmod +x ./aws-lambda-rie`)
+    bootstrap_prefix = """
+    #!/bin/bash
+    """
+
+    bootstrap_body = get_bootstrap_body(
+      responder,
+      ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "--project=."];
+      timeout = 60,
+    )
+
+    bootstrap_all = bootstrap_prefix * bootstrap_body
+
+    open(launcher_fname, "w") do f
+      write(f, bootstrap_all)
+    end
   end
-
-  bootstrap_prefix = """
-  #!/bin/bash
-  """
-
-  bootstrap_body = get_bootstrap_body(
-    responder,
-    ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "--project=."];
-    jot_path = jot_path,
-    timeout = 60,
-  )
-
-  bootstrap_all = bootstrap_prefix * bootstrap_body
-
-  fname = "single_run_launcher.sh"
-  open(fname, "w") do f
-    write(f, bootstrap_all)
-  end
-  fname
+  launcher_fname
 end
 
 function create_precompile_statements_file!(
@@ -45,9 +46,13 @@ function create_precompile_statements_file!(
   launcher_script = create_jot_single_run_launcher_script!(responder)
   stdout_buffer = IOBuffer(); stderr_buffer = IOBuffer()
   launcher_started = Base.Event()
-
-  launcher_cmd = pipeline(`sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer)
-  launcher_process = open(launcher_cmd)
+  launcher_process = cd(responder.build_dir) do
+    launcher_cmd = pipeline(
+      `sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer
+    )
+    launcher_process = open(launcher_cmd)
+    launcher_process
+  end
   @info "Waiting for AWS RIE to start up ..."
 
   stdout_read = String(""); stderr_read = String("")
@@ -104,26 +109,18 @@ function create_jot_sysimage!(
     responder::LocalPackageResponder,
     function_test_data::FunctionTestData,
   )::Nothing
-  cd(responder.build_dir) do
-    @show responder.build_dir
-    @show responder.package_name
-    create_env_multiline = get_create_julia_environment_script(responder, responder.build_dir)
-    create_env_script = replace(create_env_multiline, "\n" => "; ")
-    @show create_env_script
-    eval(Meta.parse(create_env_script))
-    @info "Temporary environment created"
-    # Pkg.activate(".")
-    # Pkg.develop(PackageSpec(path=responder.package_name))
-    precomp_statements_fname = create_precompile_statements_file!(
-      responder, function_test_data
-    )
-    create_sysimage(
-      :Jot,
-      precompile_statements_file=precomp_statements_fname,
-      sysimage_path="$SYSIMAGE_FNAME",
-      cpu_target="x86-64",
-    )
-  end
+  # pkg_compile_dir = joinpath(responder.build_dir, "package_compile")
+  # Pkg.activate(".")
+  # Pkg.develop(PackageSpec(path=responder.package_name))
+  precomp_statements_fname = create_precompile_statements_file!(
+    responder, function_test_data
+  )
+  create_sysimage(
+    :Jot,
+    precompile_statements_file=precomp_statements_fname,
+    sysimage_path="$SYSIMAGE_FNAME",
+    cpu_target="x86-64",
+  )
 end
 
 
