@@ -155,6 +155,15 @@ function create_build_directory()::String
   build_dir
 end
 
+function add_aws_rie!(responder::LocalPackageResponder)::Nothing
+  cd(responder.build_dir) do
+    if !("aws-lambda-rie" in readdir())
+      run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
+      run(`chmod +x ./aws-lambda-rie`)
+    end
+  end
+end
+
 function create_environment!(
     responder::LocalPackageResponder,
   )::String
@@ -182,9 +191,10 @@ function write_to_build_dir!(
 end
 
 function add_scripts_to_build_dir(
+    responder::AbstractResponder,
     package_compile::Bool,
     julia_cpu_target::String,
-    responder::AbstractResponder,
+    function_test_data::FunctionTestData,
   )
   add_to_build!(content, fname) = write_to_build_dir!(
     content, responder.build_dir, fname
@@ -194,6 +204,8 @@ function add_scripts_to_build_dir(
     ]
   if package_compile
     julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
+    package_compile_script = get_invoke_package_compile_script(responder, function_test_data)
+    add_to_build!(package_compile_script, "compile_package.jl")
   end
   bootstrap_script = get_bootstrap_script(
     responder, julia_depot_path, temp_path, julia_args
@@ -224,6 +236,7 @@ function get_dockerfile(
     julia_base_version::String;
     user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
     dockerfile_update::Function = x -> x,
+    package_compile::Bool,
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
   if length(overlapped_keys) > 0
@@ -241,7 +254,8 @@ function get_dockerfile(
     # dockerfile_add_responder(runtime_path, responder),
     dockerfile_add_labels(combined_labels),
     # dockerfile_add_jot(),
-    dockerfile_add_aws_rie(),
+    # dockerfile_add_aws_rie(),
+    dockerfile_run_package_compile_script(package_compile),
     dockerfile_add_bootstrap(
       runtime_path,
       responder.package_name,
@@ -302,6 +316,7 @@ function create_local_image(
     julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
     function_test_data::Union{Nothing, FunctionTestData} = nothing,
+    package_compile::Bool = false,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
@@ -310,19 +325,31 @@ function create_local_image(
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
 
+  add_aws_rie!(responder)
   create_environment!(responder)
-  package_compile = if !isnothing(function_test_data)
-    create_jot_sysimage!(responder, function_test_data)
-    true
-  else; false
+  if !isnothing(function_test_data)
+    create_precompile_statements_file!(responder, function_test_data)
   end
 
-  add_scripts_to_build_dir(package_compile, julia_cpu_target, responder)
+  if package_compile
+    if isnothing(function_test_data)
+      error("If running with package_compile, please provide function_test_data")
+    end
+    create_jot_sysimage!(responder, function_test_data)
+  end
+
+  add_scripts_to_build_dir(
+    responder,
+    package_compile,
+    julia_cpu_target,
+    function_test_data
+  )
   dockerfile = get_dockerfile(
     responder,
     julia_base_version;
     user_defined_labels,
     dockerfile_update,
+    package_compile
   )
   @debug dockerfile
   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f

@@ -124,6 +124,16 @@ function dockerfile_add_precompile()::String
   """
 end
 
+function dockerfile_run_package_compile_script(pc::Bool)::String
+  if pc
+    """
+    RUN julia compile_package.jl
+    """
+  else
+    ""
+  end
+end
+
 
 function dockerfile_add_labels(labels::Labels)::String
   labels_str = to_docker_buildfile_format(labels)

@@ -2,15 +2,15 @@ using Sockets
 
 const SYSIMAGE_NAME = "CompiledSysImage.so"
 
-function nest_quotes(original::String)::String
+function nest_quotes(original::AbstractString)::String
   replace(original, "\"" => "\\\"")
 end
 
 function get_bootstrap_script(
     responder::LocalPackageResponder,
-    julia_depot_path::String,
-    temp_path::String,
-    julia_args::Vector{String},
+    julia_depot_path::AbstractString,
+    temp_path::AbstractString,
+    julia_args::Vector{<:AbstractString},
   )::String
 
   bootstrap_shebang = """
@@ -29,9 +29,9 @@ function get_bootstrap_script(
 end
 
 function get_create_julia_environment_script(
-    responder_package_path::String,
-    create_dir::String;
-    jot_branch::String = "main",
+    responder_package_path::AbstractString,
+    create_dir::AbstractString;
+    jot_branch::AbstractString = "main",
   )::String
   """
   using Pkg
@@ -46,7 +46,7 @@ end
 
 function get_bootstrap_body(
     responder::LocalPackageResponder,
-    julia_args::Vector{String};
+    julia_args::Vector{<:AbstractString};
     timeout::Union{Nothing, Int64} = nothing,
   )::String
 
@@ -100,7 +100,23 @@ function get_bootstrap_body(
   """
 end
 
-function start_lambda_server(host::String, port::Int64)
+function get_invoke_package_compile_script(
+    responder::LocalPackageResponder,
+    function_test_data::FunctionTestData,
+  )::String
+  """
+  using Jot
+  using $(responder.package_name)
+  function_test_data = $function_test_data
+  create_sysimage(
+    [:Jot, :$(responder.package_name)],
+    precompile_statements_file=\"$precomp_statements_fname\",
+    sysimage_path=\"$SYSIMAGE_FNAME\",
+  )
+  """
+end
+
+function start_lambda_server(host::AbstractString, port::Int64)
   ROUTER = HTTP.Router()
   server = Sockets.listen(Sockets.InetAddr(parse(IPAddr, host), port))
 
@@ -126,7 +142,7 @@ function start_lambda_server(host::String, port::Int64)
   @sync HTTP.serve(ROUTER, host, port, server=server)
 end
 
-function start_test_server(host::String, port::Int64, test_argument::Any)
+function start_test_server(host::AbstractString, port::Int64, test_argument::Any)
   ROUTER = HTTP.Router()
   server = Sockets.listen(Sockets.InetAddr(parse(IPAddr, host), port))
 
@@ -183,8 +199,8 @@ end
 
 function get_init_script(
     function_test_data::Union{Nothing, FunctionTestData},
-    cpu_target::String,
-    julia_depot_path::String,
+    cpu_target::AbstractString,
+    julia_depot_path::AbstractString,
   )::String
   precomp = """
   import Pkg
@@ -266,7 +282,7 @@ end
 
 function get_delete_ecr_repo_tags_script(
     ecr_repo::ECRRepo,
-    tag_keys::Vector{String}
+    tag_keys::Vector{<:AbstractString}
   )::String
   """
   aws ecr untag-resource \\
@@ -289,7 +305,7 @@ function get_delete_remote_image_script(remote_image::RemoteImage)::String
   """
 end
 
-function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
+function get_ecr_login_script(aws_config::AWSConfig, image_suffix::AbstractString)
   image_full_name = get_image_full_name(aws_config, image_suffix)
   """
   aws ecr get-login-password --region $(aws_config.region) \\
@@ -300,11 +316,15 @@ function get_ecr_login_script(aws_config::AWSConfig, image_suffix::String)
   """
 end
 
-get_docker_push_script(image_full_name_plus_tag::String) = """
+get_docker_push_script(image_full_name_plus_tag::AbstractString) = """
 docker push $image_full_name_plus_tag
 """
 
-function get_create_ecr_repo_script(image_suffix::String, aws_region::String, labels::Labels)::String
+function get_create_ecr_repo_script(
+    image_suffix::AbstractString,
+    aws_region::AbstractString,
+    labels::Labels
+  )::String
   tags_json = to_json(labels)
   """
   aws ecr create-repository \\
@@ -347,7 +367,9 @@ function get_create_lambda_role_script(role_name)::String
   """
 end
 
-function get_attach_lambda_execution_policy_to_role_script(role_name::String)::String
+function get_attach_lambda_execution_policy_to_role_script(
+    role_name::AbstractString,
+  )::String
   """
   aws iam attach-role-policy --role-name $(role_name) --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
   """
@@ -442,8 +464,8 @@ function get_log_streams_script(log_group_name::String)::String
 end
 
 function get_log_events_script(
-    log_group_name::String,
-    log_stream_name::String,
+    log_group_name::AbstractString,
+    log_stream_name::AbstractString,
   )::String
   """
   aws logs get-log-events \\

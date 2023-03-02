@@ -13,13 +13,6 @@ function create_jot_single_run_launcher_script!(
   )::String
   launcher_fname = "single_run_launcher.sh"
   cd(responder.build_dir) do
-    @show responder.build_dir
-    if !("aws-lambda-rie" in readdir())
-      run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
-      run(`chmod +x ./aws-lambda-rie`)
-    end
-    @show readdir()
-
     bootstrap_prefix = """
     #!/bin/bash
     """
@@ -85,7 +78,7 @@ function create_precompile_statements_file!(
   @info "Waiting for $PRECOMP_STATEMENTS_FNAME to be generated..."
   precomp_timeout = 20.; delay = 0.1
   while true
-    isfile(PRECOMP_STATEMENTS_FNAME) && break
+    isfile(joinpath(responder.build_dir, PRECOMP_STATEMENTS_FNAME)) && break
     precomp_timeout = precomp_timeout - delay
     if precomp_timeout == 0.
       error("Timed out waiting for $PRECOMP_STATEMENTS_FNAME to generate")
@@ -112,15 +105,14 @@ function create_jot_sysimage!(
   # pkg_compile_dir = joinpath(responder.build_dir, "package_compile")
   # Pkg.activate(".")
   # Pkg.develop(PackageSpec(path=responder.package_name))
-  precomp_statements_fname = create_precompile_statements_file!(
-    responder, function_test_data
-  )
-  create_sysimage(
-    :Jot,
-    precompile_statements_file=precomp_statements_fname,
-    sysimage_path="$SYSIMAGE_FNAME",
-    cpu_target="x86-64",
-  )
+  cd(responder.build_dir) do
+    create_sysimage(
+      :Jot,
+      precompile_statements_file=precomp_statements_fname,
+      sysimage_path="$SYSIMAGE_FNAME",
+      cpu_target="x86-64",
+    )
+  end
 end
 
 

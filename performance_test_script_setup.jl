@@ -5,23 +5,24 @@ test_arg = [1, 2]
 expected_response = [2, 3]
 
 function setup_images_and_functions(
-  )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
+  )::Tuple{LocalImage, LambdaFunction} #, LocalImage, LambdaFunction}
   this_rand_string = this_random_string = randstring(8) |> lowercase
   name_prefix = "performance-test-$this_rand_string"
   responder, function_test_data = create_test_responder(this_rand_string)
+  # uncompiled_name, uncompiled_local_image = create_test_local_image(
+  #   name_prefix, responder, nothing
+  # )
+  # uncompiled_lambda = create_test_lambda_function(
+  #   uncompiled_name, uncompiled_local_image
+  # )
   compiled_name, compiled_local_image = create_test_local_image(
     name_prefix, responder, function_test_data
   )
   compiled_lambda = create_test_lambda_function(
     compiled_name, compiled_local_image
   )
-  uncompiled_name, uncompiled_local_image = create_test_local_image(
-    name_prefix, responder, nothing
-  )
-  uncompiled_lambda = create_test_lambda_function(
-    uncompiled_name, uncompiled_local_image
-  )
-  (uncompiled_local_image, uncompiled_lambda, compiled_local_image, compiled_lambda)
+  (compiled_local_image, compiled_lambda)
+  # (uncompiled_local_image, uncompiled_lambda, compiled_local_image, compiled_lambda)
 end
 
 function create_test_responder(
@@ -60,11 +61,11 @@ function create_test_lambda_function(
   lf = create_lambda_function(remote_image)
   # The first run of a new function seems to take unusually long, so we just get this
   # out the way and discard the results as it's unrepresentative
-  test_log = get_lambda_function_test_log(
-      lf, test_arg, expected_response
-  )
-  @info "Function $name created, first run had $(count_precompile_statements(test_log)) precompiles"
-  sleep(10)
+  # test_log = get_lambda_function_test_log(
+  #     lf, test_arg, expected_response
+  # )
+  # @info "Function $name created, first run had $(count_precompile_statements(test_log)) precompiles"
+  # sleep(10)
   lf
 end
 
