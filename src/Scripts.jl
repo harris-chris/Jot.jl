@@ -112,6 +112,7 @@ function get_invoke_package_compile_script(
     [:Jot, :$(responder.package_name)],
     precompile_statements_file=\"$PRECOMP_STATEMENTS_FNAME\",
     sysimage_path=\"$SYSIMAGE_FNAME\",
+    cpu_target=\"x86-64\",
   )
   """
 end
