@@ -66,7 +66,6 @@ function create_test_lambda_function(
       lf, test_arg, expected_response
   )
   @info "Function $name created, first run had $(count_precompile_statements(test_log)) precompiles"
-  sleep(10)
   lf
 end
 

@@ -7,6 +7,8 @@ lambda_function_uncompiled,
 local_image_compiled,
 lambda_function_compiled) = setup_images_and_functions()
 
+# Let the lambda functions go cold
+sleep(60)
 repeat_num = 5
 
 # Get the average run times for the uncompiled local image:
