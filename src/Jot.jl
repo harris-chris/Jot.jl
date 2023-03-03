@@ -44,7 +44,7 @@ export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
 export FunctionTestData
 export create_jot_sysimage!, create_environment!
-export nest_quotes
+export nest_quotes, create_sysimage
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -162,6 +162,7 @@ function add_aws_rie!(responder::LocalPackageResponder)::Nothing
       run(`chmod +x ./aws-lambda-rie`)
     end
   end
+  nothing
 end
 
 function create_environment!(
@@ -194,7 +195,7 @@ function add_scripts_to_build_dir(
     responder::AbstractResponder,
     package_compile::Bool,
     julia_cpu_target::String,
-    function_test_data::FunctionTestData,
+    function_test_data::Union{Nothing, FunctionTestData},
   )
   add_to_build!(content, fname) = write_to_build_dir!(
     content, responder.build_dir, fname
@@ -225,7 +226,7 @@ end
         julia_base_version::String,
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
-        function_test_data::FunctionTestData,
+        function_test_data::Union{Nothing, FunctionTestData},
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -331,11 +332,8 @@ function create_local_image(
     create_precompile_statements_file!(responder, function_test_data)
   end
 
-  if package_compile
-    if isnothing(function_test_data)
-      error("If running with package_compile, please provide function_test_data")
-    end
-    create_jot_sysimage!(responder, function_test_data)
+  if package_compile && isnothing(function_test_data)
+    error("If running with package_compile, please provide function_test_data")
   end
 
   add_scripts_to_build_dir(

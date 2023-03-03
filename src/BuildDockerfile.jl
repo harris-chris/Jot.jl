@@ -127,7 +127,7 @@ end
 function dockerfile_run_package_compile_script(pc::Bool)::String
   if pc
     """
-    RUN julia compile_package.jl
+    RUN julia --project=. compile_package.jl
     """
   else
     ""

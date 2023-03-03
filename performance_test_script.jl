@@ -2,24 +2,24 @@ using Jot
 
 include("./performance_test_script_setup.jl")
 
-# (local_image_uncompiled,
-# lambda_function_uncompiled,
-(local_image_compiled,
+(local_image_uncompiled,
+lambda_function_uncompiled,
+local_image_compiled,
 lambda_function_compiled) = setup_images_and_functions()
 
 repeat_num = 5
 
 # Get the average run times for the uncompiled local image:
-# @info uppercase("\ngetting the average run times for the uncompiled local image:")
-# total_run_time = 0.0
-# for num = 1:repeat_num
-#   global total_run_time += get_local_image_run_time(
-#     local_image_uncompiled, test_arg, expected_response
-#   )
-#   sleep(1)
-# end
-# average_uncompiled_run_time = total_run_time / repeat_num
-# @info "Average function run time for uncompiled local image was $average_uncompiled_run_time"
+@info uppercase("\ngetting the average run times for the uncompiled local image:")
+total_run_time = 0.0
+for num = 1:repeat_num
+  global total_run_time += get_local_image_run_time(
+    local_image_uncompiled, test_arg, expected_response
+  )
+  sleep(1)
+end
+average_uncompiled_run_time = total_run_time / repeat_num
+@info "Average function run time for uncompiled local image was $average_uncompiled_run_time"
 
 # Get the average run times for the compiled local image:
 @info uppercase("\ngetting the average run times for the compiled local image:")
@@ -34,23 +34,23 @@ average_compiled_run_time = total_run_time / repeat_num
 @info "Average function run time for compiled local image was $average_compiled_run_time"
 
 # # Do a run of the uncompiled function
-# uncompiled_log = get_lambda_function_test_log(
-#     lambda_function_uncompiled, test_arg, expected_response
-# )
+uncompiled_log = get_lambda_function_test_log(
+    lambda_function_uncompiled, test_arg, expected_response
+)
 
 # # Show time breakdown of the uncompiled function run
-# @info uppercase("\nshowing the time breakdown of the initial uncompiled function run:")
-# uncompiled_run_time_breakdown = get_invocation_time_breakdown(uncompiled_log)
-# precompile_time = uncompiled_run_time_breakdown.precompile_time
-# request_id = get_lambda_request_id(uncompiled_log)
-# pct_text = if precompile_time != 0.0
-#   precompile_pct = precompile_time / uncompiled_run_time_breakdown.total
-#   "($precompile_pct of total run time of $(uncompiled_run_time_breakdown.total))"
-# else
-#   ""
-# end
-# @info "Uncompiled function with request id $request_id spent $precompile_time ms precompiling $pct_text"
-# @info "Uncompiled function with request id $request_id had $(count_precompile_statements(uncompiled_log)) precompiles"
+@info uppercase("\nshowing the time breakdown of the initial uncompiled function run:")
+uncompiled_run_time_breakdown = get_invocation_time_breakdown(uncompiled_log)
+precompile_time = uncompiled_run_time_breakdown.precompile_time
+request_id = get_lambda_request_id(uncompiled_log)
+pct_text = if precompile_time != 0.0
+  precompile_pct = precompile_time / uncompiled_run_time_breakdown.total
+  "($precompile_pct of total run time of $(uncompiled_run_time_breakdown.total))"
+else
+  ""
+end
+@info "Uncompiled function with request id $request_id spent $precompile_time ms precompiling $pct_text"
+@info "Uncompiled function with request id $request_id had $(count_precompile_statements(uncompiled_log)) precompiles"
 
 # Do a run of the compiled function
 compiled_log = get_lambda_function_test_log(

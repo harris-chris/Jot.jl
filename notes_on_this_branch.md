@@ -1,5 +1,6 @@
 All the code in responder.jl moves the responder package to the build directory, so we can safely assume that it's there.
-
+! Have a way to keep the build dir, maybe specify where it will go and if so keep it
+! Can we get rid of create_jot_sysimage!?
 ! Get rid of jot_path param to get_bootstrap_body
 ! We can get rid of the PackageCompiler dependency from the docker image.
 ! append_string_package is getting added to the environment (not jot but just the standard environment)

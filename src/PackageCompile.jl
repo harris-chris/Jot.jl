@@ -108,7 +108,7 @@ function create_jot_sysimage!(
   cd(responder.build_dir) do
     create_sysimage(
       :Jot,
-      precompile_statements_file=precomp_statements_fname,
+      precompile_statements_file=PRECOMP_STATEMENTS_FNAME,
       sysimage_path="$SYSIMAGE_FNAME",
       cpu_target="x86-64",
     )

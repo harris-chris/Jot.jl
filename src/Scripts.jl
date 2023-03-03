@@ -110,7 +110,7 @@ function get_invoke_package_compile_script(
   function_test_data = $function_test_data
   create_sysimage(
     [:Jot, :$(responder.package_name)],
-    precompile_statements_file=\"$precomp_statements_fname\",
+    precompile_statements_file=\"$PRECOMP_STATEMENTS_FNAME\",
     sysimage_path=\"$SYSIMAGE_FNAME\",
   )
   """
