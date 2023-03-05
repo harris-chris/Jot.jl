@@ -1,4 +1,10 @@
 All the code in responder.jl moves the responder package to the build directory, so we can safely assume that it's there.
+! Have a throw_away_first argument for `create_lambda_function`. Or maybe `test_on_creation`.
+! Does it still work without FunctionTestData?
+! Update tests:
+  - Add test to make sure that package compiled runs faster than not (after first invocation, but from cold), check precompile are zero.
+  - Adjust parameters for FunctionTestData, package_compile etc
+! FunctionTestData is being written as a string into `get_invoke_package_compile_script`, this means it has to round-trip, no good for functions and complex stuff. Not obvious how to work around that at the moment
 ! Have a way to keep the build dir, maybe specify where it will go and if so keep it
 ! Can we get rid of create_jot_sysimage!?
 ! Get rid of jot_path param to get_bootstrap_body

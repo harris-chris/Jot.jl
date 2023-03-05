@@ -79,7 +79,7 @@ function get_responder_from_local_script(
     registry_urls = Vector{String}(),
   )::LocalPackageResponder{IT} where {IT}
   !isfile(local_path) && error("$local_path does not point to a file")
-  build_dir = "/home/chris/per/jot.jl/jot_temp" # create_build_directory()
+  build_dir = create_build_directory()
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
   @show build_dir

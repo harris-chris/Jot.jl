@@ -102,9 +102,6 @@ function create_jot_sysimage!(
     responder::LocalPackageResponder,
     function_test_data::FunctionTestData,
   )::Nothing
-  # pkg_compile_dir = joinpath(responder.build_dir, "package_compile")
-  # Pkg.activate(".")
-  # Pkg.develop(PackageSpec(path=responder.package_name))
   cd(responder.build_dir) do
     create_sysimage(
       :Jot,
@@ -114,21 +111,4 @@ function create_jot_sysimage!(
     )
   end
 end
-
-
-# function create_sysimage(
-#     responder::AbstractResponder,
-#     function_test_data::FunctionTestData,
-#   )::String
-#   precompile_script = get_precompile_jl(responder, function_test_data)
-#   mktemp() do path, f
-#     create_sysimage(
-#       [:Jot,. respo,
-
-#   end
-
-
-#   open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
-#     write(f, dockerfile)
-#   end
 

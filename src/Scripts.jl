@@ -102,12 +102,10 @@ end
 
 function get_invoke_package_compile_script(
     responder::LocalPackageResponder,
-    function_test_data::FunctionTestData,
   )::String
   """
   using Jot
   using $(responder.package_name)
-  function_test_data = $function_test_data
   create_sysimage(
     [:Jot, :$(responder.package_name)],
     precompile_statements_file=\"$PRECOMP_STATEMENTS_FNAME\",
@@ -196,48 +194,6 @@ function get_lambda_dummy_server_jl()::String
   HTTP.@register(ROUTER, "GET", "/*", get_respond)
   HTTP.serve(ROUTER, "127.0.0.1", 9001)
   """
-end
-
-function get_init_script(
-    function_test_data::Union{Nothing, FunctionTestData},
-    cpu_target::AbstractString,
-    julia_depot_path::AbstractString,
-  )::String
-  precomp = """
-  import Pkg
-  using Jot
-  @info "Running precompile ..."
-  Pkg.precompile()
-  @info "... finished running precompile"
-  """
-
-  package_compile_script = """
-  @info "Running package compile script ..."
-  Pkg.add(Pkg.PackageSpec(;name="PackageCompiler", version="2.1.2"))
-  using PackageCompiler
-  # TODO: check intelligently for when it has started
-  @async Jot.start_test_server("127.0.0.1", 9001, function_test_data.test_argument)
-  sleep(5)
-  create_sysimage(
-    :Jot,
-    precompile_execution_file="precompile.jl",
-    sysimage_path="$(julia_depot_path)/$(SYSIMAGE_NAME)",
-    cpu_target="$cpu_target",
-  )
-  sysimage_generated = "$SYSIMAGE_NAME" in readdir("$julia_depot_path")
-  if sysimage_generated
-    @info "Sysimage generated at $(julia_depot_path)/$(SYSIMAGE_NAME)"
-  else
-    @info "Sysimage not found at $(julia_depot_path)/$(SYSIMAGE_NAME)"
-  end
-  @info "... finished running package compile script"
-  """
-  init_script = if isnothing(function_test_data)
-    precomp
-  else
-    precomp * package_compile_script
-  end
-  @show init_script
 end
 
 function get_precompile_jl(

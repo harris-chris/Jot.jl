@@ -623,6 +623,7 @@ function test_compiled_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
     function_test_data = function_test_data,
+    package_compile = true,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
   (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(

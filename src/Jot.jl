@@ -45,6 +45,7 @@ export LambdaComponents, run_test
 export FunctionTestData
 export create_jot_sysimage!, create_environment!
 export nest_quotes, create_sysimage
+export FunctionTestData
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -205,7 +206,7 @@ function add_scripts_to_build_dir(
     ]
   if package_compile
     julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
-    package_compile_script = get_invoke_package_compile_script(responder, function_test_data)
+    package_compile_script = get_invoke_package_compile_script(responder)
     add_to_build!(package_compile_script, "compile_package.jl")
   end
   bootstrap_script = get_bootstrap_script(
@@ -286,6 +287,7 @@ end
 Creates a locally-stored docker image containing the specified responder. This can be tested
 tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
+TODO - this is wrong
 If `function_test_data` is passed, then this test data will be used to compile the image using
 `PackageCompiler.jl` - this is not necessary for testing/exploration but is highly recommended
 for production use.
