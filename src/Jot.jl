@@ -213,12 +213,6 @@ function add_scripts_to_build_dir(
     responder, julia_depot_path, temp_path, julia_args
   )
   add_to_build!(bootstrap_script, "bootstrap")
-  # init_script = get_init_script(function_test_data, julia_cpu_target, julia_depot_path)
-  # add_to_build!(init_script, "init.jl")
-  # if !isnothing(function_test_data)
-  #   precompile_script = get_precompile_jl(responder, function_test_data)
-  #   add_to_build!(precompile_script, "precompile.jl")
-  # end
 end
 
 """
