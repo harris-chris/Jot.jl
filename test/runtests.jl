@@ -3,7 +3,7 @@ using Pkg
 using Random
 
 const jot_path = abspath(joinpath(pwd(), ".."))
-Pkg.develop(PackageSpec(path=jot_path))
+Pkg.activate(jot_path)
 using Jot
 
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest1")))
