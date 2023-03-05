@@ -33,8 +33,8 @@ function get_remote_images(repo::ECRRepo)::Vector{RemoteImage}
   get_images_script = get_images_in_ecr_repo_script(repo)
   images_json = readchomp(`bash -c $get_images_script`)
   images = JSON3.read(images_json, Dict{String, Vector{RemoteImage}})["imageIds"]
-  map(images) do img
-    @set img.ecr_repo = repo
+  map(images) do i
+    RemoteImage(i.imageDigest, i.imageTag, repo, i.exists)
   end
 end
 

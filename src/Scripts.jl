@@ -37,6 +37,8 @@ function get_create_julia_environment_script(
   using Pkg
   cd(\"$create_dir\") do
     Pkg.activate(\".\")
+    Pkg.instantiate()
+    Pkg.resolve()
     Pkg.add(url=\"$jot_github_url\", rev=\"$jot_branch\")
     Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
     Pkg.precompile()

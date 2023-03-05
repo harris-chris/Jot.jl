@@ -1,10 +1,13 @@
 All the code in responder.jl moves the responder package to the build directory, so we can safely assume that it's there.
+! Remove Setfield dependency
+! Is there some way to only temporarily add JotTest1 and JotTest2 to the Jot Project.Toml
 ! Have a throw_away_first argument for `create_lambda_function`. Or maybe `test_on_creation`.
 ! Does it still work without FunctionTestData?
 ! Update tests:
   - Add test to make sure that package compiled runs faster than not (after first invocation, but from cold), check precompile are zero.
   - Adjust parameters for FunctionTestData, package_compile etc
 ! Have a way to keep the build dir, maybe specify where it will go and if so keep it; or go the other way and get everything being done within the Dockerfile. Having the scripts generated locally and ten called from the dockerfile seems reasonable, although less visibility of them when they're running in the docker output. Maybe read the scripts, then replace \n => ;, and put them in the dockerfile output like that.
+! read jot_github_url from the .git directory?
 ! Think about the simplest possible flow, like:
   - Everything relates back to the `get_dockerfile` function
 ! Can we get rid of create_jot_sysimage!?

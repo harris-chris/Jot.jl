@@ -9,7 +9,6 @@ using Pkg
 using PrettyTables
 using IsURL
 using Random
-using Setfield
 using StructTypes
 using TOML
 import Base.delete!
@@ -153,6 +152,7 @@ end
 
 function create_build_directory()::String
   build_dir = mktempdir()
+  # build_dir = "jot_temp"
   build_dir
 end
 
@@ -175,6 +175,7 @@ function create_environment!(
   )
   create_env_script = replace(create_env_multiline, "\n" => "; ")
   @show create_env_script
+  @show Pkg.status()
   eval(Meta.parse(create_env_script))
   @info "Temporary environment created"
   responder.build_dir
