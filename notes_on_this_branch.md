@@ -4,8 +4,9 @@ All the code in responder.jl moves the responder package to the build directory,
 ! Update tests:
   - Add test to make sure that package compiled runs faster than not (after first invocation, but from cold), check precompile are zero.
   - Adjust parameters for FunctionTestData, package_compile etc
-! FunctionTestData is being written as a string into `get_invoke_package_compile_script`, this means it has to round-trip, no good for functions and complex stuff. Not obvious how to work around that at the moment
-! Have a way to keep the build dir, maybe specify where it will go and if so keep it
+! Have a way to keep the build dir, maybe specify where it will go and if so keep it; or go the other way and get everything being done within the Dockerfile. Having the scripts generated locally and ten called from the dockerfile seems reasonable, although less visibility of them when they're running in the docker output. Maybe read the scripts, then replace \n => ;, and put them in the dockerfile output like that.
+! Think about the simplest possible flow, like:
+  - Everything relates back to the `get_dockerfile` function
 ! Can we get rid of create_jot_sysimage!?
 ! Get rid of jot_path param to get_bootstrap_body
 ! We can get rid of the PackageCompiler dependency from the docker image.

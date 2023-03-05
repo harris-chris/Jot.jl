@@ -98,17 +98,3 @@ function was_port_in_use(stderr_text::String)::Bool
   occursin("bind: address already in use", stderr_text)
 end
 
-function create_jot_sysimage!(
-    responder::LocalPackageResponder,
-    function_test_data::FunctionTestData,
-  )::Nothing
-  cd(responder.build_dir) do
-    create_sysimage(
-      :Jot,
-      precompile_statements_file=PRECOMP_STATEMENTS_FNAME,
-      sysimage_path="$SYSIMAGE_FNAME",
-      cpu_target="x86-64",
-    )
-  end
-end
-

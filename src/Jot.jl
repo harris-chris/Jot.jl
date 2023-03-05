@@ -43,7 +43,7 @@ export get_all_local_images, get_all_remote_images, get_all_ecr_repos, get_all_l
 export get_all_containers, get_all_aws_roles
 export LambdaComponents, run_test
 export FunctionTestData
-export create_jot_sysimage!, create_environment!
+export create_environment!
 export nest_quotes, create_sysimage
 export FunctionTestData
 

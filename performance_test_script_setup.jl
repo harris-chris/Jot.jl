@@ -4,6 +4,53 @@ using Random
 test_arg = [1, 2]
 expected_response = [2, 3]
 
+function get_name(prefix::AbstractString, compiled::Bool)::String
+  compiled ? "$prefix-compiled" : "$prefix-uncompiled"
+end
+
+function delete_function!(
+    name::String,
+  )::Nothing
+  lf = get_lambda_function(name)
+  !isnothing(lf) && delete!q(lf)
+  ri = get_remote_image(name)
+  !isnothing(ri) && delete!q(ri)
+  li = get_local_image(name)
+  !isnothing(li) && delete!q(li)
+  nothing
+end
+
+function setup_generic_test_lambdas(
+  )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
+  this_string = this_random_string = "generic-test" |> lowercase
+  name_prefix = "performance-test-generic-test"
+  uncompiled_name = get_name(name_prefix, false)
+  compiled_name = get_name(name_prefix, true)
+  @info "Checking for existing images/lambda functions with name prefix $name_prefix"
+  uncompiled_li = get_remote_image(uncompiled_name)
+  compiled_li = get_remote_image(compiled_name)
+  uncompiled_lf = get_lambda_function(uncompiled_name)
+  compiled_lf = get_lambda_function(compiled_name)
+  if any(isnothing.([uncompiled_li, uncompiled_lf, compiled_li, compiled_lf]))
+    @info "Cannot find generic test lambda functions, creating them now"
+    delete_function!(uncompiled_name); delete_function!(compiled_name)
+    responder, function_test_data = create_test_responder(this_string)
+    _, uncompiled_li = create_test_local_image(
+      name_prefix, responder, nothing, false
+    )
+    uncompiled_lf = create_test_lambda_function(
+      uncompiled_name, uncompiled_local_image
+    )
+    _, compiled_li = create_test_local_image(
+      name_prefix, responder, function_test_data, true
+    )
+    compiled_lf = create_test_lambda_function(
+      compiled_name, compiled_local_image
+    )
+  end
+  (uncompiled_li, uncompiled_lf, compiled_li, compiled_lf)
+end
+
 function setup_images_and_functions(
   )::Tuple{LocalImage, LambdaFunction, LocalImage, LambdaFunction}
   this_rand_string = this_random_string = randstring(8) |> lowercase
@@ -43,8 +90,7 @@ function create_test_local_image(
     function_test_data::Union{Nothing, FunctionTestData},
     package_compile::Bool,
   )::Tuple{String, LocalImage}
-  name_suffix = isnothing(function_test_data) ? "uncompiled" : "compiled"
-  name = "$name_prefix-$name_suffix"
+  name = get_name(name_prefix, package_compile)
   li = create_local_image(
     responder;
     image_suffix=name,
