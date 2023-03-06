@@ -12,11 +12,11 @@ function delete_function!(
     name::String,
   )::Nothing
   lf = get_lambda_function(name)
-  !isnothing(lf) && delete!q(lf)
+  !isnothing(lf) && delete!(lf)
   ri = get_remote_image(name)
-  !isnothing(ri) && delete!q(ri)
+  !isnothing(ri) && delete!(ri)
   li = get_local_image(name)
-  !isnothing(li) && delete!q(li)
+  !isnothing(li) && delete!(li)
   nothing
 end
 
@@ -27,8 +27,8 @@ function setup_generic_test_lambdas(
   uncompiled_name = get_name(name_prefix, false)
   compiled_name = get_name(name_prefix, true)
   @info "Checking for existing images/lambda functions with name prefix $name_prefix"
-  uncompiled_li = get_remote_image(uncompiled_name)
-  compiled_li = get_remote_image(compiled_name)
+  uncompiled_li = get_local_image(uncompiled_name)
+  compiled_li = get_local_image(compiled_name)
   uncompiled_lf = get_lambda_function(uncompiled_name)
   compiled_lf = get_lambda_function(compiled_name)
   if any(isnothing.([uncompiled_li, uncompiled_lf, compiled_li, compiled_lf]))
@@ -39,13 +39,13 @@ function setup_generic_test_lambdas(
       name_prefix, responder, nothing, false
     )
     uncompiled_lf = create_test_lambda_function(
-      uncompiled_name, uncompiled_local_image
+      uncompiled_name, uncompiled_li
     )
     _, compiled_li = create_test_local_image(
       name_prefix, responder, function_test_data, true
     )
     compiled_lf = create_test_lambda_function(
-      compiled_name, compiled_local_image
+      compiled_name, compiled_li
     )
   end
   (uncompiled_li, uncompiled_lf, compiled_li, compiled_lf)
