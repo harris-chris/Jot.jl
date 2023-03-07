@@ -2,15 +2,18 @@ using Test
 using Pkg
 using Random
 
+# We want to add the two test packages to the global user environment; this way
+# they are available for the tests, but are not included in Jot's Project.toml
 const jot_path = abspath(joinpath(pwd(), ".."))
-Pkg.activate(jot_path)
-using Jot
-
+Pkg.activate()
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest1")))
 using JotTest1
-
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest2")))
 using JotTest2
+
+# Now switch back to the Jot project
+Pkg.activate(jot_path)
+using Jot
 
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
