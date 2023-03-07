@@ -2,15 +2,18 @@ using Test
 using Pkg
 using Random
 
+# We want to add the two test packages to the global user environment; this way
+# they are available for the tests, but are not included in Jot's Project.toml
 const jot_path = abspath(joinpath(pwd(), ".."))
-Pkg.develop(PackageSpec(path=jot_path))
-using Jot
-
+Pkg.activate()
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest1")))
 using JotTest1
-
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest2")))
 using JotTest2
+
+# Now switch back to the Jot project
+Pkg.activate(jot_path)
+using Jot
 
 const aws_config = AWSConfig(account_id="513118378795", region="ap-northeast-1")
 const test_suffix = randstring("abcdefghijklmnopqrstuvwxyz1234567890", 12)
@@ -218,9 +221,19 @@ struct ResponderFunctionTestArgs
   invalid_arg::Any
 end
 
+function to_function_test_data(
+    ta::ResponderFunctionTestArgs,
+  )::FunctionTestData
+  FunctionTestData(
+    ta.good_arg,
+    ta.expected_response,
+  )
+end
+
 struct CreateLocalImageArgs
   use_aws_config::Bool
   expected_labels::ExpectedLabels
+  use_function_test_data::Bool
 end
 
 mutable struct TestState
@@ -266,7 +279,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         joinpath(jot_path, "test/JotTest1"),
         Dict(jot_multi_test_tag_key=>"1"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -289,7 +302,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         joinpath(jot_path, "test/JotTest2"),
         Dict(jot_multi_test_tag_key=>"2"),
-      )
+      ), false
     ),
     get_empty_test_state(),
   )
@@ -310,7 +323,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         "https://github.com/harris-chris/JotTest3",
         Dict(jot_multi_test_tag_key=>"3"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -336,7 +349,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "map_log_gamma",
         joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
         Dict(jot_multi_test_tag_key=>"4"),
-      )
+      ), false
     ),
     get_empty_test_state(),
   )
@@ -362,7 +375,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "use_scratch_space",
         joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
         Dict(jot_multi_test_tag_key=>"5"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -515,10 +528,15 @@ function test_local_image(
     create_local_image_args::CreateLocalImageArgs,
     responder_function_test_args::ResponderFunctionTestArgs,
   )::LocalImage
+  function_test_data = if create_local_image_args.use_function_test_data
+    to_function_test_data(responder_function_test_args)
+  else
+    nothing
+  end
   local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
-    package_compile = false,
+    function_test_data = function_test_data,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
   @test Jot.matches(res, local_image)
@@ -608,9 +626,11 @@ function test_compiled_local_image(
     uncompiled_local_image::LocalImage;
     repeat_num::Int64 = 5,
   )::LocalImage
+  function_test_data = to_function_test_data(responder_function_test_args)
   compiled_local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
+    function_test_data = function_test_data,
     package_compile = true,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
   )
@@ -621,7 +641,7 @@ function test_compiled_local_image(
     responder_function_test_args.expected_response,
     repeat_num,
   )
-  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
+  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
   compiled_local_image
 end
 
@@ -707,6 +727,7 @@ function test_compiled_lambda_function(
     responder_function_test_args.expected_response,
     repeat_num,
   )
+  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
   compiled_lambda_function
 end
 

@@ -42,7 +42,7 @@ end
         no_cache::Bool = false,
         julia_base_version::String = "1.8.4",
         julia_cpu_target::String = "x86-64",
-        package_compile::Bool = false,
+        function_test_data::Union{Nothing, FunctionTestData} = nothing,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
       )::LambdaComponents
 
@@ -64,7 +64,7 @@ function create_lambda_components(
     no_cache::Bool = false,
     julia_base_version::String = "1.8.4",
     julia_cpu_target::String = "x86-64",
-    package_compile::Bool = false,
+    function_test_data::Union{Nothing, FunctionTestData} = nothing,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
   )::LambdaComponents
@@ -75,7 +75,7 @@ function create_lambda_components(
                                    no_cache = no_cache,
                                    julia_base_version = julia_base_version,
                                    julia_cpu_target = julia_cpu_target,
-                                   package_compile = package_compile,
+                                   function_test_data = function_test_data,
                                    user_defined_labels = user_defined_labels,
                                    dockerfile_update = dockerfile_update)
   LambdaComponents(get_response_function_name(local_image),
@@ -182,8 +182,6 @@ end
 matches(ecr_repo::ECRRepo, local_image::LocalImage) = matches(local_image, ecr_repo)
 
 function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
-  @debug local_image.Digest
-  @debug remote_image.imageDigest
   local_image.Digest == remote_image.imageDigest
 end
 matches(remote_image::RemoteImage, local_image::LocalImage) = matches(local_image, remote_image)
