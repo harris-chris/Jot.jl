@@ -233,6 +233,7 @@ end
 struct CreateLocalImageArgs
   use_aws_config::Bool
   expected_labels::ExpectedLabels
+  use_function_test_data::Bool
 end
 
 mutable struct TestState
@@ -278,7 +279,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         joinpath(jot_path, "test/JotTest1"),
         Dict(jot_multi_test_tag_key=>"1"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -301,7 +302,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         joinpath(jot_path, "test/JotTest2"),
         Dict(jot_multi_test_tag_key=>"2"),
-      )
+      ), false
     ),
     get_empty_test_state(),
   )
@@ -322,7 +323,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "response_func",
         "https://github.com/harris-chris/JotTest3",
         Dict(jot_multi_test_tag_key=>"3"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -348,7 +349,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "map_log_gamma",
         joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
         Dict(jot_multi_test_tag_key=>"4"),
-      )
+      ), false
     ),
     get_empty_test_state(),
   )
@@ -374,7 +375,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
         "use_scratch_space",
         joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
         Dict(jot_multi_test_tag_key=>"5"),
-      )
+      ), true
     ),
     get_empty_test_state(),
   )
@@ -527,7 +528,11 @@ function test_local_image(
     create_local_image_args::CreateLocalImageArgs,
     responder_function_test_args::ResponderFunctionTestArgs,
   )::LocalImage
-  function_test_data = to_function_test_data(responder_function_test_args)
+  function_test_data = if create_local_image_args.use_function_test_data
+    to_function_test_data(responder_function_test_args)
+  else
+    nothing
+  end
   local_image = create_local_image(
     res;
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,

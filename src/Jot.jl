@@ -152,7 +152,6 @@ end
 
 function create_build_directory()::String
   build_dir = mktempdir()
-  # build_dir = "/home/chris/per/jot.jl/jot_temp"
   build_dir
 end
 
@@ -219,10 +218,10 @@ end
 """
     get_dockerfile(
         responder::AbstractResponder,
-        julia_base_version::String,
+        julia_base_version::String;
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
-        function_test_data::Union{Nothing, FunctionTestData},
+        package_compile::Bool,
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
@@ -274,6 +273,7 @@ end
         julia_base_version::String = "1.8.4",
         julia_cpu_target::String = "x86-64",
         function_test_data::Union{Nothing, FunctionTestData} = nothing,
+        package_compile::Bool = false,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
         dockerfile_update::Function = x -> x,
         build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
@@ -282,10 +282,14 @@ end
 Creates a locally-stored docker image containing the specified responder. This can be tested
 tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
-TODO - this is wrong
-If `function_test_data` is passed, then this test data will be used to compile the image using
-`PackageCompiler.jl` - this is not necessary for testing/exploration but is highly recommended
-for production use.
+If `function_test_data` is passed, then this test data will be used to precompile both
+Jot and the responder code before adding it to the docker image. This will reduce AWS
+Lambda cold start times, but for production use, `package_compile` should be set to
+`true`.
+
+`package_compile` determines whether the code is compiled use `PackageCompiler.jl`,
+on the docker container. For production use this is highly recommended, although it
+adds 2-3 minutes to the total function build time.
 
 Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
 if nothing locally has changed, but the image is querying a remote object (say, a github repo)
@@ -319,7 +323,6 @@ function create_local_image(
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
-  # TODO check if the image suffix already exists
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
 
@@ -487,12 +490,12 @@ function is_jot_generated(c::Union{ECRRepo, LambdaComponent})::Bool
 end
 
 """
-    function run_local_image_test(
-      image::LocalImage,
-      function_argument::Any = "",
-      expected_response::Any = nothing;
-      then_stop::Bool = false,
-    )::Tuple{Bool, Float64}
+    run_local_image_test(
+        image::LocalImage,
+        function_argument::Any = "",
+        expected_response::Any = nothing;
+        then_stop::Bool = false,
+      )::Tuple{Bool, Float64}
 
 Runs a test of the given local docker image, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
@@ -528,12 +531,12 @@ function run_local_image_test(
 end
 
 """
-  function run_lambda_function_test(
-    func::LambdaFunction,
-    function_argument::Any = "",
-    expected_response::Any = nothing;
-    check_function_state::Bool = false,
-  )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
+    run_lambda_function_test(
+        func::LambdaFunction,
+        function_argument::Any = "",
+        expected_response::Any = nothing;
+        check_function_state::Bool = false,
+      )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 
 Runs a test of the given Lambda Function, passing `function_argument` (if given), and expecting
 `expected_response`(if given). If a function_argument is not given, then it will merely test
