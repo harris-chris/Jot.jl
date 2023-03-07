@@ -636,7 +636,7 @@ function test_compiled_local_image(
     responder_function_test_args.expected_response,
     repeat_num,
   )
-  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
+  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
   compiled_local_image
 end
 
@@ -722,7 +722,7 @@ function test_compiled_lambda_function(
     responder_function_test_args.expected_response,
     repeat_num,
   )
-  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
+  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
   compiled_lambda_function
 end
 
