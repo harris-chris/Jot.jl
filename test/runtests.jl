@@ -719,6 +719,7 @@ function test_compiled_lambda_function(
     responder_function_test_args.expected_response,
     repeat_num,
   )
+  @test average_compiled_run_time < (average_uncompiled_run_time / 4)
   compiled_lambda_function
 end
 

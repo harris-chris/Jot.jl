@@ -151,8 +151,8 @@ function move_local_to_build_directory(build_dir::String, path::String, name::St
 end
 
 function create_build_directory()::String
-  build_dir = mktempdir()
-  # build_dir = "jot_temp"
+  # build_dir = mktempdir()
+  build_dir = "/home/chris/per/jot.jl/jot_temp"
   build_dir
 end
 
