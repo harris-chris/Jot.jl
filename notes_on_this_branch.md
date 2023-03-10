@@ -1,15 +1,13 @@
-! multi-to argument for tests is not working
+! Not found a great way to ensure that PackageCompile is producing shorter run times - the problem is that we need to wait for a cold start to see, and the timeout for this is highly variable. The first run cannot be used as it seems to be special
+! multi-to argument for tests is not working, nor is --full
 ! set JULIA_LOAD_PATH=@ in the nix shell so that only Jot's packages can be used.
 ! Have a throw_away_first argument for `create_lambda_function`. Or maybe `test_on_creation`. Because the first function run is not representative in terms of timing.
 ! Does it still work without FunctionTestData? There are three scenarios - no FunctionTestData, FunctionTestData but no compile, FunctionTestData with compile. Add test for this.
 ! Have a way to keep the build dir, maybe specify where it will go and if so keep it; or go the other way and get everything being done within the Dockerfile. Having the scripts generated locally and ten called from the dockerfile seems reasonable, although less visibility of them when they're running in the docker output. Maybe read the scripts, then replace \n => ;, and put them in the dockerfile output like that.
-! read jot_github_url from the .git directory?
 ! Think about the simplest possible flow, like:
   - Everything relates back to the `get_dockerfile` function
 ! redirect_stdio bumps our required julia version to 1.7
 ! prog = ProgressUnknown("Working hard:", spinner=true) to get a spinner
-! grep for all references for jot_temp
-! Believe that the point at which these packages are being made part of Jot is when you do Pkg.develop() in the single_run_launcher for package compile, but can't see a way to make this only temporary. Unless having it all run in a temp directory is enough for that.
 
 The bootstrap script:
 alias Julia first, it's /user/local/julia/bin/julia on the docker image
@@ -29,6 +27,7 @@ What I think we want to do here:
   - This should still be platform-agnostic
   - This script will have to be started via AWS RIE, see example in `get_bootstrap_script`
   - The bootstrap script is actually a bash script, need to add the --trace_compile onto that
+  - PackageCompile should also try to run the test suite.
 
 There are a couple of scripts here that are useful for observing performance:
 

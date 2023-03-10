@@ -74,7 +74,16 @@ function run_tests(
     multi_tests_to::MultiTo,
     clean_up::Bool,
     clean_up_only::Bool,
+    run_all::Bool,
   )
+  if run_all
+    example_simple = true
+    example_components = true
+    multi_tests_list = Vector{Int64}()
+    compile_tests_list = Vector{Int64}()
+    clean_up = true
+  end
+
   if clean_up_only
     if any([example_simple, example_components, !isnothing(multi_tests_list)])
       error("--clean-up-only passed but tests also passed")
@@ -599,6 +608,8 @@ function compare_lambda_function_test_times(
     repeat_num::Int64,
   )::Tuple{Float64, Float64}
   total_run_time = 0.0
+  # Throw away first result, it's unrepresentative
+  _, _ = run_lambda_function_test(compiled, test_arg, expected_response)
   for num = 1:repeat_num
     _, test_log = run_lambda_function_test(compiled, test_arg, expected_response)
     this_run_time = get_invocation_run_time(test_log)
@@ -608,6 +619,8 @@ function compare_lambda_function_test_times(
   average_compiled_run_time = total_run_time / repeat_num
   @info "Average compiled run time was $average_compiled_run_time"
   total_run_time = 0.0
+  # Throw away first result, it's unrepresentative
+  _, _ = run_lambda_function_test(uncompiled, test_arg, expected_response)
   for num = 1:repeat_num
     _, test_log = run_lambda_function_test(uncompiled, test_arg, expected_response)
     this_run_time = get_invocation_run_time(test_log)
@@ -713,7 +726,7 @@ function test_compiled_lambda_function(
     aws_role::AWSRole,
     responder_function_test_args::ResponderFunctionTestArgs,
     uncompiled_lambda_function::LambdaFunction,
-    repeat_num::Int64 = 1,
+    repeat_num::Int64 = 5,
   )::LambdaFunction
   remote_image = push_to_ecr!(compiled_local_image)
   ecr_repo = remote_image.ecr_repo
@@ -779,14 +792,18 @@ function show_help()::Nothing
   println("    DEFAULT: lambda_function")
   println("--no-clean-up to have the tests skip tear down")
   println("--clean_up_only to have clean-up performed even though no tests have run")
-  println("--full to run all possible tests")
+  println("--all to run all possible tests")
 end
 
-function parse_example_simple(args::Vector{String})::Tuple{Bool, Vector{String}}
+function parse_all_flag(args::Vector{String})::Tuple{Bool, Vector{String}}
+  ("--all" in args, args[args.!="--all"])
+end
+
+function parse_example_simple_flag(args::Vector{String})::Tuple{Bool, Vector{String}}
   ("--example-simple" in args, args[args.!="--example-simple"])
 end
 
-function parse_example_components(args::Vector{String})::Tuple{Bool, Vector{String}}
+function parse_example_components_flag(args::Vector{String})::Tuple{Bool, Vector{String}}
   ("--example-components" in args, args[args.!="--example-components"])
 end
 
@@ -838,11 +855,11 @@ function parse_multi_tests_to(args::Vector{String})::Tuple{MultiTo, Vector{Strin
   (tests_to, filter(x -> !(length(x) >= 11 && x[begin:11] == "--multi-to="), args))
 end
 
-function parse_clean_up(args::Vector{String})::Tuple{Bool, Vector{String}}
+function parse_clean_up_flag(args::Vector{String})::Tuple{Bool, Vector{String}}
   (!("--no-clean-up" in args), args[args.!="--no-clean-up"])
 end
 
-function parse_clean_up_only(args::Vector{String})::Tuple{Bool, Vector{String}}
+function parse_clean_up_only_flag(args::Vector{String})::Tuple{Bool, Vector{String}}
   ("--clean-up-only" in args, args[args.!="--clean-up-only"])
 end
 
@@ -850,20 +867,21 @@ if ("--help" in ARGS || length(ARGS) == 0)
   show_help()
 else
   args = ARGS
-  simple, args = parse_example_simple(args)
-  components, args = parse_example_components(args)
+  simple, args = parse_example_simple_flag(args)
+  components, args = parse_example_components_flag(args)
+  run_all, args = parse_all_flag(args)
   multi_list, args = parse_tests_list(args, "--multi")
   compile_list, args = parse_tests_list(args, "--compile")
   @show compile_list
   multi_to, args = parse_multi_tests_to(args)
-  clean_up, args = parse_clean_up(args)
-  clean_up_only, args = parse_clean_up_only(args)
+  clean_up, args = parse_clean_up_flag(args)
+  clean_up_only, args = parse_clean_up_only_flag(args)
   @show args
   if length(args) != 0
     error("Args $(join(args, ", ")) not recognized")
   end
   run_tests(
-    simple, components, multi_list, compile_list, multi_to, clean_up, clean_up_only
+    simple, components, multi_list, compile_list, multi_to, clean_up, clean_up_only, run_all
   )
 end
 
