@@ -46,8 +46,7 @@ lambda_components |> with_remote_image! |> with_lambda_function! |> run_test
 
 ## Package Features
 - Easily create AWS Lambda functions from Julia packages or scripts
-- Test and check for at multiple stages
-- Allows easy checking for version consistency - eg, is a given Lambda Function using the correct code?
 - PackageCompiler.jl may be optionally used to greatly speed up cold start times
 - JSON read/write and error handling is handled by Jot - you just write standard Julia
+- Allows easy checking for version consistency - ie, is a given Lambda Function using the correct code?
 

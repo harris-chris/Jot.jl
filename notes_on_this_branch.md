@@ -1,3 +1,7 @@
+! We should have two `create_local_image` functions: `create_local_uncompiled_image` and `create_local_compiled_image`. Perhaps initially keep `create_local_image` and point it to `create_local_uncompiled_image`. Change documentation to `create_local_uncompiled_image` and give `create_local_image` a deprecation warning. When doing so, remember that `create_local_image` is referred to `Function_Performance.md`
+! run_lambda_function_test should take a `FunctionTestData`
+! Expand the "managing lambdas" section of the documentation to include the functions like `get_all_lambda_functions`, `get_lambda_function`
+! Put all the performance-related documentation in "Performance"
 ! Not found a great way to ensure that PackageCompile is producing shorter run times - the problem is that we need to wait for a cold start to see, and the timeout for this is highly variable. The first run cannot be used as it seems to be special
 ! multi-to argument for tests is not working, nor is --full
 ! set JULIA_LOAD_PATH=@ in the nix shell so that only Jot's packages can be used.

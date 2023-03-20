@@ -284,7 +284,7 @@ tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda
 
 If `function_test_data` is passed, then this test data will be used to precompile both
 Jot and the responder code before adding it to the docker image. This will reduce AWS
-Lambda cold start times, but for production use, `package_compile` should be set to
+Lambda cold start times, but for production use, `package_compile` should also be set to
 `true`.
 
 `package_compile` determines whether the code is compiled use `PackageCompiler.jl`,

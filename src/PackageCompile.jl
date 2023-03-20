@@ -5,8 +5,8 @@ const SYSIMAGE_FNAME = "SysImage.so"
 
 """
     struct FunctionTestData
-        test_argument::Any
-        expected_response::Any
+      test_argument::Any
+      expected_response::Any
     end
 
 A simple data structure that contains a test argument for a given lambda function, and what return value is expected from the function if passed taht test argument. For example, if your responder function takes a `Vector{Int64}` and increments each element in the vector by 1, you might use `[1, 2]` as the `test_argument`, and `[2, 3]` as the `expected_response`.
