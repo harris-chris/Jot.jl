@@ -123,7 +123,7 @@ function get_image_full_name(
     image_suffix::String,
   )::String
   registry = "$(aws_config.account_id).dkr.ecr.$(aws_config.region).amazonaws.com"
-  "$registry/$image_suffix"
+  lowercase("$registry/$image_suffix")
 end
 
 function get_image_full_name_plus_tag(
@@ -135,7 +135,7 @@ function get_image_full_name_plus_tag(
 end
 
 function get_image_full_name_plus_tag(image::LocalImage)::String
-  "$(image.Repository):$(image.Tag)"
+  lowercase("$(image.Repository):$(image.Tag)")
 end
 
 include("BuildDockerfile.jl")
@@ -323,8 +323,9 @@ function create_local_image(
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
   )::LocalImage
-  image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : image_suffix
+  image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : lowercase(image_suffix)
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
+  image_tag = lowercase(image_tag)
 
   add_aws_rie!(responder)
   create_environment!(responder)
@@ -372,7 +373,8 @@ function create_local_image(
   end
   @debug image_id
   this_image = get_local_image(image_id)
-  isnothing(this_image) ? error("Unable to locate created local image with image ID $image_id") : this_image
+  isnothing(this_image) && error("Unable to locate local image with image ID $image_id")
+  this_image
 end
 
 function parse_docker_ls_output(::Type{T}, raw_output::AbstractString)::Vector{T} where {T}

@@ -37,8 +37,8 @@ end
 
 Returns a `LocalImage` object, representing a locally-stored docker image.
 
-The passed `identity` string may be the repository name, or the docker image ID. If the image ID,
-it must be at least four characters in length.
+The passed `identity` string may be the repository name, or the docker image ID.
+If the image ID, it must be at least four characters in length.
 """
 function get_local_image(identity::AbstractString)::Union{Nothing, LocalImage}
   all = get_all_local_images()

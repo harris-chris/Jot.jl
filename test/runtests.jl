@@ -243,6 +243,8 @@ struct CreateLocalImageArgs
   use_aws_config::Bool
   expected_labels::ExpectedLabels
   use_function_test_data::Bool
+  image_suffix::Union{Nothing, String}
+  image_tag::Union{Nothing, String}
 end
 
 mutable struct TestState
@@ -283,12 +285,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
       Dict("double" => 4.5), 9.0, [1,2]
     ),
     CreateLocalImageArgs(
-      false, ExpectedLabels(
+      false,
+      ExpectedLabels(
         "JotTest1",
         "response_func",
         joinpath(jot_path, "test/JotTest1"),
         Dict(jot_multi_test_tag_key=>"1"),
-      ), true
+      ),
+      true,
+      "UpperCaseSuffix",
+      nothing
     ),
     get_empty_test_state(),
   )
@@ -306,12 +312,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
       [1,2],
     ),
     CreateLocalImageArgs(
-      true, ExpectedLabels(
+      true,
+      ExpectedLabels(
         "JotTest2",
         "response_func",
         joinpath(jot_path, "test/JotTest2"),
         Dict(jot_multi_test_tag_key=>"2"),
-      ), false
+      ),
+      false,
+      nothing,
+      "UpperCaseTag"
     ),
     get_empty_test_state(),
   )
@@ -327,12 +337,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
       [1, 2, 3, 4], Vector{Float64}([1.0, 1.0, 2.0, 6.0]), "string arg",
     ),
     CreateLocalImageArgs(
-      false, ExpectedLabels(
+      false,
+      ExpectedLabels(
         "JotTest3",
         "response_func",
         "https://github.com/harris-chris/JotTest3",
         Dict(jot_multi_test_tag_key=>"3"),
-      ), true
+      ),
+      true,
+      nothing,
+      nothing
     ),
     get_empty_test_state(),
   )
@@ -353,12 +367,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
       Dict("this" => "that"),
     ),
     CreateLocalImageArgs(
-      false, ExpectedLabels(
+      false,
+      ExpectedLabels(
         Jot.get_package_name_from_script_name("jot-test-4.jl"),
         "map_log_gamma",
         joinpath(jot_path, "test/JotTest4/jot-test-4.jl"),
         Dict(jot_multi_test_tag_key=>"4"),
-      ), false
+      ),
+      false,
+      nothing,
+      nothing
     ),
     get_empty_test_state(),
   )
@@ -379,12 +397,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
       1,
     ),
     CreateLocalImageArgs(
-      false, ExpectedLabels(
+      false,
+      ExpectedLabels(
         Jot.get_package_name_from_script_name("jot-test-5.jl"),
         "use_scratch_space",
         joinpath(jot_path, "test/JotTest5/jot-test-5.jl"),
         Dict(jot_multi_test_tag_key=>"5"),
-      ), true
+      ),
+      true,
+      nothing,
+      nothing
     ),
     get_empty_test_state(),
   )
@@ -547,6 +569,8 @@ function test_local_image(
     aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
     function_test_data = function_test_data,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
+    image_suffix = create_local_image_args.image_suffix,
+    image_tag = create_local_image_args.image_tag,
   )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
@@ -646,6 +670,8 @@ function test_compiled_local_image(
     function_test_data = function_test_data,
     package_compile = true,
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
+    image_suffix = create_local_image_args.image_suffix,
+    image_tag = create_local_image_args.image_tag,
   )
   (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(
     compiled_local_image,
