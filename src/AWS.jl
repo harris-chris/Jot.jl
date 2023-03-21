@@ -31,7 +31,7 @@ end
 @with_kw mutable struct AWSRolePolicyStatement
   Effect::Union{Missing, String} = missing
   Principal::Union{Missing, Dict{String, Any}} = missing
-  Action::Union{Missing, String} = missing
+  Action::Union{Missing, String, Vector{String}} = missing
 end
 StructTypes.StructType(::Type{AWSRolePolicyStatement}) = StructTypes.Mutable()
 Base.:(==)(a::AWSRolePolicyStatement, b::AWSRolePolicyStatement) = (

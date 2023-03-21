@@ -294,7 +294,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       "UpperCaseSuffix",
-      nothing
+      "latest"
     ),
     get_empty_test_state(),
   )
@@ -346,7 +346,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       nothing,
-      nothing
+      "latest"
     ),
     get_empty_test_state(),
   )
@@ -376,7 +376,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       false,
       nothing,
-      nothing
+      "latest"
     ),
     get_empty_test_state(),
   )
@@ -406,7 +406,7 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       nothing,
-      nothing
+      "latest"
     ),
     get_empty_test_state(),
   )
@@ -719,7 +719,7 @@ function test_lambda_function(
     responder_function_test_args::ResponderFunctionTestArgs,
     skip_test::Bool,
   )::LambdaFunction
-  lambda_function = create_lambda_function(ecr_repo; role = aws_role)
+  lambda_function = create_lambda_function(remote_image; role = aws_role)
   @test Jot.is_jot_generated(lambda_function)
   @test Jot.matches(remote_image, lambda_function)
   # Check that we can find it
@@ -757,7 +757,7 @@ function test_compiled_lambda_function(
   remote_image = push_to_ecr!(compiled_local_image)
   ecr_repo = remote_image.ecr_repo
   compiled_lambda_function = create_lambda_function(
-    ecr_repo; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
+    remote_image; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
   )
   (average_compiled_run_time, average_uncompiled_run_time) = compare_lambda_function_test_times(
     compiled_lambda_function,

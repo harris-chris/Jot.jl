@@ -16,7 +16,8 @@ import Base.delete!
 # EXPORTS
 export AWSConfig, LambdaException
 export get_responder, AbstractResponder, LocalPackageResponder
-export LocalImage, Container, RemoteImage, ECRRepo, AWSRole, LambdaFunction
+export LocalImage, Container, RemoteImage, ECRRepo, LambdaFunction
+export AWSRole, AWSRolePolicyDocument, AWSRolePolicyStatement
 export LambdaFunctionInvocationLog, LogEvent, InvocationTimeBreakdown
 export get_aws_role, get_user_labels
 export LambdaFunctionState, pending, active
@@ -357,6 +358,7 @@ function create_local_image(
   image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
                                                      image_suffix,
                                                      image_tag)
+  @show image_name_plus_tag
   # Build the actual image
   build_cmd = get_dockerfile_build_cmd(dockerfile,
                                        image_name_plus_tag,
@@ -595,6 +597,8 @@ function push_to_ecr!(image::LocalImage)::RemoteImage
   else
     existing_repo
   end
+  @show image
+  @show get_image_full_name_plus_tag(image)
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
   @info "Pushing image to ECR; this may take a few minutes"
   readchomp(`bash -c $push_script`)
@@ -624,6 +628,7 @@ function create_lambda_function(
     timeout::Int64 = 60,
     memory_size::Int64 = 2000,
   )::LambdaFunction
+  @info "Creating lambda function for remote image $(remote_image.ecr_repo.repositoryName)"
   function_name = isnothing(function_name) ? remote_image.ecr_repo.repositoryName : function_name
   role = isnothing(role) ? create_aws_role(create_role_name(function_name)) : role
   image_uri = "$(remote_image.ecr_repo.repositoryUri):$(remote_image.imageTag)"
@@ -662,6 +667,7 @@ function create_lambda_function(
   role = isnothing(role) ? create_aws_role(get_lambda_name(repo) * "-lambda-role") : role
   function_name = isnothing(function_name) ? repo.repositoryName : function_name
   image_uri = "$(repo.repositoryUri):$image_tag"
+  @info "Creating lambda function for ECR repo $(image_uri)"
   labels = get_labels(repo)
   create_lambda_function(image_uri, role, function_name, timeout, memory_size, labels)
 end
