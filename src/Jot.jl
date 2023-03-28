@@ -46,6 +46,7 @@ export FunctionTestData
 export create_environment!
 export nest_quotes, create_sysimage
 export FunctionTestData
+export count_precompile_statements
 
 # CONSTANTS
 const docker_hash_limit = 12
@@ -204,6 +205,7 @@ function add_scripts_to_build_dir(
   )
   julia_args = [
     "--project=.",
+    "--trace-compile=stderr",
     ]
   if package_compile
     julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
@@ -537,8 +539,7 @@ end
 """
     run_lambda_function_test(
         func::LambdaFunction,
-        function_argument::Any = "",
-        expected_response::Any = nothing;
+        function_test_data::FunctionTestData;
         check_function_state::Bool = false,
       )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 
@@ -549,15 +550,14 @@ pass, establishing only that the function can be contacted. Returns a tuple of `
 """
 function run_lambda_function_test(
     func::LambdaFunction,
-    function_argument::Any = "",
-    expected_response::Any = nothing;
+    function_test_data::FunctionTestData;
     check_function_state::Bool = false,
   )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
   try
     actual_response, log = invoke_function_with_log(
-        function_argument, func; check_state = check_function_state
+        function_test_data.test_argument, func; check_state = check_function_state
     )
-    passed = actual_response == expected_response
+    passed = actual_response == function_test_data.expected_response
     time_taken = get_invocation_run_time(log)
     passed && @info "Remote test passed in $time_taken ms; result received matched expected $actual_response"
     !passed && @info "Remote test failed; actual: $actual_response was not equal to expected: $expected_response"

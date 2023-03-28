@@ -1,6 +1,9 @@
 # Functions
 
 ```@docs
+count_precompile_statements(
+    log::LambdaFunctionInvocationLog,
+  )
 create_lambda_function(
     remote_image::RemoteImage;
     role::Union{AWSRole, Nothing} = nothing,
@@ -103,8 +106,7 @@ run_local_image_test(
   )
 run_lambda_function_test(
     func::LambdaFunction,
-    function_argument::Any = "",
-    expected_response::Any = nothing;
+    function_test_data::FunctionTestData;
     check_function_state::Bool = false,
   )
 run_test(

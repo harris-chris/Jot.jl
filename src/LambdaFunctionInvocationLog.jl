@@ -279,3 +279,20 @@ function get_invocation_run_time(report_event::LogEvent)::Float64
   parse(Float64, duration_str)
 end
 
+"""
+    count_precompile_statements(
+        log::LambdaFunctionInvocationLog,
+      )::Int64
+
+Counts the number of precompilation statements that were emitted during the Julia
+run-time. If the function has been precompiled or compiled with `PackageCompiler`,
+this should be zero.
+"""
+function count_precompile_statements(
+    log::LambdaFunctionInvocationLog,
+  )::Int64
+  precompile_events = filter(log.cloudwatch_log_events) do ev
+    startswith(ev.message, "precompile(")
+  end
+  length(precompile_events)
+end

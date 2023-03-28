@@ -175,7 +175,7 @@ function run_example_simple_test(clean_up::Bool)
     # ... and test it to see if it's working OK
     @info "Testing lambda function"
     @test run_lambda_function_test(
-      increment_vector_lambda, [2,3,4], [3,4,5]; check_function_state=true
+      increment_vector_lambda, FunctionTestData([2,3,4], [3,4,5]); check_function_state=true
     ) |> first
   end
   if clean_up
@@ -491,6 +491,7 @@ function run_multi_tests(
                 test_data.test_state.remote_image,
                 aws_role,
                 test_data.responder_function_test_args,
+                test_data.create_local_image_args.use_function_test_data,
                 skip_test_because_running_comparison_test_later,
               )
             end
@@ -627,15 +628,14 @@ end
 function compare_lambda_function_test_times(
     compiled::LambdaFunction,
     uncompiled::LambdaFunction,
-    test_arg::Any,
-    expected_response::Any,
+    function_test_data::FunctionTestData,
     repeat_num::Int64,
   )::Tuple{Float64, Float64}
   total_run_time = 0.0
   # Throw away first result, it's unrepresentative
-  _, _ = run_lambda_function_test(compiled, test_arg, expected_response)
+  _, _ = run_lambda_function_test(compiled, function_test_data)
   for num = 1:repeat_num
-    _, test_log = run_lambda_function_test(compiled, test_arg, expected_response)
+    _, test_log = run_lambda_function_test(compiled, function_test_data)
     this_run_time = get_invocation_run_time(test_log)
     @info "Test run $num with compiled local image took $this_run_time"
     total_run_time += this_run_time
@@ -644,9 +644,9 @@ function compare_lambda_function_test_times(
   @info "Average compiled run time was $average_compiled_run_time"
   total_run_time = 0.0
   # Throw away first result, it's unrepresentative
-  _, _ = run_lambda_function_test(uncompiled, test_arg, expected_response)
+  _, _ = run_lambda_function_test(uncompiled, function_test_data)
   for num = 1:repeat_num
-    _, test_log = run_lambda_function_test(uncompiled, test_arg, expected_response)
+    _, test_log = run_lambda_function_test(uncompiled, function_test_data)
     this_run_time = get_invocation_run_time(test_log)
     @info "Test run $num with uncompiled local image took $this_run_time"
     total_run_time += this_run_time
@@ -717,6 +717,7 @@ function test_lambda_function(
     remote_image::RemoteImage,
     aws_role::AWSRole,
     responder_function_test_args::ResponderFunctionTestArgs,
+    use_function_test_data::Bool,
     skip_test::Bool,
   )::LambdaFunction
   lambda_function = create_lambda_function(remote_image; role = aws_role)
@@ -725,15 +726,27 @@ function test_lambda_function(
   # Check that we can find it
   @test lambda_function in Jot.get_all_lambda_functions()
   if !skip_test
-    # Invoke it
+    # First invocation is exceptional, discard it
+    _ = run_lambda_function_test(
+      lambda_function,
+      to_function_test_data(responder_function_test_args);
+      check_function_state=true
+    )
+    sleep(5)
+    # Invoke it again
     (result, log) = run_lambda_function_test(
       lambda_function,
-      responder_function_test_args.good_arg,
-      responder_function_test_args.expected_response;
+      to_function_test_data(responder_function_test_args);
       check_function_state=true
     )
     @test result
     @info "Lambda function ran in $(get_invocation_run_time(log))"
+    # Unless FunctionTestData was not passed, check that there are no precopmiles
+    if use_function_test_data
+       @test count_precompile_statements(log) == 0
+    else
+       @test count_precompile_statements(log) > 0
+    end
     # Create the same thing using a remote image
     @test lambda_function == create_lambda_function(
       remote_image;
@@ -762,8 +775,7 @@ function test_compiled_lambda_function(
   (average_compiled_run_time, average_uncompiled_run_time) = compare_lambda_function_test_times(
     compiled_lambda_function,
     uncompiled_lambda_function,
-    responder_function_test_args.good_arg,
-    responder_function_test_args.expected_response,
+    to_function_test_data(responder_function_test_args),
     repeat_num,
   )
   @test average_compiled_run_time < (average_uncompiled_run_time / 2)
