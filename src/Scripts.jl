@@ -7,65 +7,34 @@ function nest_quotes(original::AbstractString)::String
 end
 
 function get_bootstrap_script(
-    responder::LocalPackageResponder,
-    julia_depot_path::AbstractString,
-    temp_path::AbstractString,
-    julia_args::Vector{<:AbstractString},
+    responder::Responder,
+    julia_args::Vector{<:AbstractString};
+    timeout::Union{Nothing, Int64} = nothing,
   )::String
 
   bootstrap_shebang = """
   #!/bin/bash
   echo "$BOOTSTRAP_STARTED_JOT_OBSERVATION"
+  echo "JULIA_DEPOT_PATH is \$JULIA_DEPOT_PATH"
+  echo "\$(ls \$JULIA_DEPOT_PATH)"
   """
-
-  bootstrap_env_vars = """
-  export JULIA_DEPOT_PATH=$temp_path:$julia_depot_path
-  """
-
-  bootstrap_body = get_bootstrap_body(responder, julia_args)
-  bootstrap_script = bootstrap_shebang * bootstrap_env_vars * bootstrap_body
-  @debug bootstrap_script
-  bootstrap_script
-end
-
-function get_create_julia_environment_script(
-    responder_package_path::AbstractString,
-    create_dir::AbstractString;
-    jot_branch::AbstractString = "main",
-  )::String
-  """
-  using Pkg
-  cd(\"$create_dir\") do
-    Pkg.activate(\".\")
-    Pkg.add(url=\"$jot_github_url\", rev=\"$jot_branch\")
-    Pkg.develop(PackageSpec(path=\"$responder_package_path\"))
-    Pkg.precompile()
-  end
-  """
-end
-
-function get_bootstrap_body(
-    responder::LocalPackageResponder,
-    julia_args::Vector{<:AbstractString};
-    timeout::Union{Nothing, Int64} = nothing,
-  )::String
 
   response_function_name = String(responder.response_function)
   response_param_type = responder.response_function_param_type
-  responder_package_path = joinpath(responder.build_dir, responder.package_name)
+  responder_package_name = get_package_name(responder)
 
   julia_start_runtime_command =
     "start_runtime(" *
     join([
       "\\\"\$LAMBDA_ENDPOINT\\\"",
-      "$(responder.package_name).$response_function_name",
+      "$responder_package_name.$response_function_name",
       "$response_param_type",
     ], ", ") *
     ")"
 
   julia_exec_statements = [
     "using Jot",
-    "using $(responder.package_name)",
+    "using $responder_package_name",
     julia_start_runtime_command,
   ]
   julia_exec = join(julia_exec_statements, "; ")
@@ -84,7 +53,7 @@ function get_bootstrap_body(
     join(julia_args, " ") *
     " -e \"$julia_exec\""
 
-  """
+  bootstrap_body = """
   if [ -z "\${AWS_LAMBDA_RUNTIME_API}" ]; then
     LAMBDA_ENDPOINT="127.0.0.1:9001"
     echo "AWS_LAMBDA_RUNTIME_API not found, starting AWS RIE on \$LAMBDA_ENDPOINT ..."
@@ -98,17 +67,76 @@ function get_bootstrap_body(
     echo "$JULIA_STARTED_JOT_OBSERVATION"
   fi
   """
+
+  bootstrap_script = bootstrap_shebang * bootstrap_body
+  @debug bootstrap_script
+  bootstrap_script
+end
+
+function get_create_julia_environment_bash_script(
+    registry_urls::Vector{<:AbstractString},
+  )::String
+  create_env_julia_script = get_create_julia_environment_script(registry_urls)
+  this_script = replace(create_env_julia_script, "\n" => "; ", "\"" => "\\\"")
+  """
+  JULIA_DEPOT_PATH=$julia_depot_dir_name julia -e \"$this_script\"
+  """
+end
+
+function get_create_julia_environment_script(
+    registry_urls::Vector{<:AbstractString},
+  )::String
+  registries_str = if length(registry_urls) > 0
+    incl_general = vcat(registry_urls, "https://github.com/JuliaRegistries/General")
+    registries_str = foldl(incl_general; init="") do acc, registry
+      acc * "Pkg.Registry.add(RegistrySpec(url=\"$registry\"))\n"
+    end
+  else
+    ""
+  end
+  """
+  using Pkg
+  Pkg.activate(\"./\")
+  $registries_str
+  Pkg.instantiate()
+  """
+end
+
+function get_add_julia_packages_bash_script(
+    responder_basename::AbstractString,
+    jot_basename::AbstractString,
+  )::String
+  add_packages_julia_script = get_add_packages_julia_script(
+    responder_basename, jot_basename
+  )
+  this_script = replace(add_packages_julia_script, "\n" => "; ", "\"" => "\\\"")
+  """
+  JULIA_DEPOT_PATH=$julia_depot_dir_name julia -e \"$this_script\"
+  """
+end
+
+function get_add_packages_julia_script(
+    responder_basename::AbstractString,
+    jot_basename::AbstractString,
+  )::String
+  """
+  using Pkg
+  Pkg.activate(\"./\")
+  Pkg.develop(PackageSpec(path=\"./$jot_basename\"))
+  Pkg.develop(PackageSpec(path=\"./$responder_basename\"))
+  Pkg.instantiate()
+  """
 end
 
 function get_invoke_package_compile_script(
-    responder::LocalPackageResponder,
+    responder::Responder,
   )::String
   """
   using Jot
-  using $(responder.package_name)
+  using $(get_package_name(responder))
   create_sysimage(
-    [:Jot, :$(responder.package_name)],
-    precompile_statements_file=\"$PRECOMP_STATEMENTS_FNAME\",
+    [:Jot, :$(get_package_name(responder))],
+    precompile_statements_file=\"$precompile_statements_fname\",
     sysimage_path=\"$SYSIMAGE_FNAME\",
     cpu_target=\"x86-64\",
   )

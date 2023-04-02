@@ -15,7 +15,7 @@ import Base.delete!
 
 # EXPORTS
 export AWSConfig, LambdaException
-export get_responder, AbstractResponder, LocalPackageResponder
+export get_responder, Responder, Responder
 export LocalImage, Container, RemoteImage, ECRRepo, LambdaFunction
 export AWSRole, AWSRolePolicyDocument, AWSRolePolicyStatement
 export LambdaFunctionInvocationLog, LogEvent, InvocationTimeBreakdown
@@ -51,10 +51,17 @@ export count_precompile_statements
 # CONSTANTS
 const docker_hash_limit = 12
 const runtime_path = "/var/runtime"
-const julia_depot_path = "/var/runtime/julia_depot"
+const julia_depot_dir_name = "julia_depot"
 const temp_path = "/tmp"
 const jot_github_url = "https://github.com/harris-chris/Jot.jl"
 const writable_depot_folders = ["logs", "scratchspaces"]
+const jot_path = dirname(dirname(@__FILE__))
+const julia_cpu_target = "x86-64"
+const julia_base_version = "1.8.4"
+const jot_test_string = "jot-test-string-UkMfYPMu6g8QI9lE540X"
+const jot_test_json = JSON3.write(jot_test_string)
+const jot_test_string_response_suffix = "-response"
+const precompile_statements_fname = "precompile_statements.jl"
 
 abstract type LambdaComponent end
 
@@ -94,8 +101,8 @@ end
 
 # -- get_tree_hash --
 
-function get_tree_hash(res::LocalPackageResponder)::String
-  get_tree_hash(joinpath(res.build_dir, res.package_name))
+function get_tree_hash(res::Responder)::String
+  get_tree_hash(get_responder_path(res))
 end
 
 function get_tree_hash(path::String)::String
@@ -144,98 +151,160 @@ include("BuildDockerfile.jl")
 include("Runtime.jl")
 include("Scripts.jl")
 
-function get_response_function_name(res::LocalPackageResponder)::String
-  "$(res.package_name).$(res.response_function)"
+function get_response_function_name(res::Responder)::String
+  "$(get_package_name(res)).$(res.response_function)"
 end
 
-function move_local_to_build_directory(build_dir::String, path::String, name::String)
-  Base.Filesystem.cp(path, joinpath(build_dir, name))
+function move_package_to_build_directory(
+    local_path::String,
+    build_dir::AbstractString,
+  )::String
+  initial_build_dir_contents = readdir(build_dir)
+  to_build_dir_subdir = joinpath(build_dir, basename(local_path))
+  cp(local_path, to_build_dir_subdir; force=true)
+  new_dir = [x for x in readdir(build_dir) if !(x in initial_build_dir_contents)] |> last
+  new_dir
 end
 
-function create_build_directory()::String
-  build_dir = mktempdir()
-  build_dir
-end
-
-function add_aws_rie!(responder::LocalPackageResponder)::Nothing
-  cd(responder.build_dir) do
-    if !("aws-lambda-rie" in readdir())
-      run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
-      run(`chmod +x ./aws-lambda-rie`)
+function create_build_directory!(
+    at_path::Union{Nothing, String} = nothing,
+  )::String
+  if isnothing(at_path)
+    mktempdir()
+  else
+    abs_at_path = isabspath(at_path) ? at_path : abspath(at_path)
+    if occursin(jot_path, abs_at_path)
+      error("Build directory $abs_at_path cannot be within local Jot directory $jot_path")
+    elseif ispath(abs_at_path) && length(readdir(abs_at_path)) != 0
+      error("Non-empty build directory $abs_at_path already exists; aborting")
     end
+    mkpath(abs_at_path)
+  end
+end
+
+function add_aws_rie!()::Nothing
+  if !("aws-lambda-rie" in readdir())
+    run(`curl -Lo ./aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie`)
+    run(`chmod +x ./aws-lambda-rie`)
   end
   nothing
 end
 
 function create_environment!(
-    responder::LocalPackageResponder,
+    responder::Responder,
+    jot_path::AbstractString,
+    build_at_path::Union{Nothing, AbstractString},
+    function_test_data::Union{Nothing, FunctionTestData},
+    run_tests::Bool,
   )::String
-  responder_package_path = "./$(responder.package_name)"
-  create_env_multiline = get_create_julia_environment_script(
-    responder_package_path, responder.build_dir
-  )
-  create_env_script = replace(create_env_multiline, "\n" => "; ")
-  @show create_env_script
-  @show Pkg.status()
-  eval(Meta.parse(create_env_script))
-  @info "Temporary environment created"
-  responder.build_dir
+  build_dir = create_build_directory!(build_at_path)
+  mkdir(joinpath(build_dir, julia_depot_dir_name))
+
+  responder_basename = move_package_to_build_directory(responder.local_path, build_dir)
+  jot_basename = move_package_to_build_directory(jot_path, build_dir)
+
+  cd(build_dir) do
+    add_aws_rie!()
+    create_env_script = add_create_environment_script!(responder.registry_urls)
+    readchomp(`bash $create_env_script`)
+    add_packages_script = add_add_julia_packages_script!(responder_basename, jot_basename)
+    readchomp(`bash $add_packages_script`)
+    create_precompile_statements_file!(responder, function_test_data, run_tests)
+    package_compile_script = add_package_compile_script!(responder, function_test_data)
+    readchomp(`julia --project=. $package_compile_script`)
+    _ = add_bootstrap_script!(responder)
+  end
+  build_dir
 end
 
-function write_to_build_dir!(
+function add_create_environment_script!(
+    registry_urls::Vector{<:AbstractString},
+  )::String
+  script_fname = "create_environment"
+  script_contents = get_create_julia_environment_bash_script(registry_urls)
+  open(script_fname, "w") do f
+    write(f, script_contents)
+  end
+  script_fname
+end
+
+function add_add_julia_packages_script!(
+    responder_basename::AbstractString,
+    jot_basename::AbstractString,
+  )::String
+  script_fname = "create_environment"
+  script_contents = get_add_julia_packages_bash_script(responder_basename, jot_basename)
+  open(script_fname, "w") do f
+    write(f, script_contents)
+  end
+  script_fname
+end
+
+function write_file!(
     content::String,
-    build_dir::String,
     filename::String,
   )::Nothing
-  full_fpath = joinpath(build_dir, filename)
-  open(full_fpath, "w") do f
+  open(filename, "w") do f
     write(f, content)
   end
   nothing
 end
 
-function add_scripts_to_build_dir(
-    responder::AbstractResponder,
-    package_compile::Bool,
-    julia_cpu_target::String,
+function add_package_compile_script!(
+    responder::Responder,
     function_test_data::Union{Nothing, FunctionTestData},
-  )
-  add_to_build!(content, fname) = write_to_build_dir!(
-    content, responder.build_dir, fname
-  )
+  )::String
+  package_compile_script = get_invoke_package_compile_script(responder)
+  script_fname = "compile_package.jl"
+  write_file!(package_compile_script, script_fname)
+  script_fname
+end
+
+function add_bootstrap_script!(
+    responder::Responder,
+  )::String
   julia_args = [
     "--project=.",
     "--trace-compile=stderr",
+    "--sysimage=$SYSIMAGE_FNAME",
     ]
-  if package_compile
-    julia_args = vcat(julia_args, ["--sysimage=$SYSIMAGE_FNAME"])
-    package_compile_script = get_invoke_package_compile_script(responder)
-    add_to_build!(package_compile_script, "compile_package.jl")
-  end
-  bootstrap_script = get_bootstrap_script(
-    responder, julia_depot_path, temp_path, julia_args
+  bootstrap_script = get_bootstrap_script(responder, julia_args)
+  bootstrap_fname = "bootstrap"
+  write_file!(bootstrap_script, bootstrap_fname)
+  bootstrap_fname
+end
+
+function create_dockerfile!(
+    environment_dir::String,
+    responder::Responder,
+    user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
+    dockerfile_update::Function = x -> x,
+  )::Nothing
+  dockerfile = get_dockerfile(
+    responder,
+    user_defined_labels,
+    dockerfile_update,
   )
-  add_to_build!(bootstrap_script, "bootstrap")
+  open(joinpath(environment_dir, "Dockerfile"), "w") do f
+    write(f, dockerfile)
+  end
+  nothing
 end
 
 """
     get_dockerfile(
-        responder::AbstractResponder,
-        julia_base_version::String;
+        responder::Responder,
         user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
         dockerfile_update::Function = x -> x,
-        package_compile::Bool,
       )::String
 
 Returns contents for a Dockerfile. This function is called in `create_local_image` in order to
 create a local docker image.
 """
 function get_dockerfile(
-    responder::AbstractResponder,
-    julia_base_version::String;
+    responder::Responder,
     user_defined_labels::AbstractDict{String, String} = AbstractDict{String, String}(),
     dockerfile_update::Function = x -> x,
-    package_compile::Bool,
   )::String
   overlapped_keys = [key for key in user_defined_labels if key in map(String, fieldnames(Labels))]
   if length(overlapped_keys) > 0
@@ -246,18 +315,19 @@ function get_dockerfile(
     *, [
     dockerfile_add_julia_image(julia_base_version),
     dockerfile_add_utilities(),
-    dockerfile_add_runtime_directories(julia_depot_path, temp_path, runtime_path),
-    dockerfile_add_additional_registries(responder.registry_urls),
+    dockerfile_add_runtime_directories(runtime_path),
+    # dockerfile_add_additional_registries(responder.registry_urls),
     dockerfile_copy_build_dir(),
-    dockerfile_add_environment(responder),
+    dockerfile_create_julia_environment(),
+    # dockerfile_move_depot_path_to_tmp(),
     # dockerfile_add_responder(runtime_path, responder),
     dockerfile_add_labels(combined_labels),
     # dockerfile_add_jot(),
     # dockerfile_add_aws_rie(),
-    dockerfile_run_package_compile_script(package_compile),
+    # dockerfile_run_package_compile_script(package_compile),
     dockerfile_add_bootstrap(
       runtime_path,
-      responder.package_name,
+      get_package_name(responder),
       String(responder.response_function),
       responder.response_function_param_type
     ),
@@ -268,107 +338,66 @@ end
 
 """
     create_local_image(
-        responder::AbstractResponder;
+        responder::Responder;
         image_suffix::Union{Nothing, String} = nothing,
         aws_config::Union{Nothing, AWSConfig} = nothing,
         image_tag::String = "latest",
         no_cache::Bool = false,
-        julia_base_version::String = "1.8.4",
-        julia_cpu_target::String = "x86-64",
         function_test_data::Union{Nothing, FunctionTestData} = nothing,
-        package_compile::Bool = false,
+        build_at_path::Union{Nothing, AbstractString} = nothing,
         user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
         dockerfile_update::Function = x -> x,
         build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
+        run_tests_during_package_compile::Bool = false,
       )::LocalImage
 
-Creates a locally-stored docker image containing the specified responder. This can be tested
-tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
+Creates a locally-stored docker image containing the specified responder. This can be tested locally, or directly uploaded to an AWS ECR Repo for use as an AWS Lambda function.
 
-If `function_test_data` is passed, then this test data will be used to precompile both
-Jot and the responder code before adding it to the docker image. This will reduce AWS
-Lambda cold start times, but for production use, `package_compile` should also be set to
-`true`.
+If `function_test_data` is passed, then this test data will be used to test the resulting docker image. It will also cause the responder function itself to be included in the package compiler process, improving the performance of the lambda function.
 
-`package_compile` determines whether the code is compiled use `PackageCompiler.jl`,
-on the docker container. For production use this is highly recommended, although it
-adds 2-3 minutes to the total function build time.
+Use `no_cache` to construct the local image without using a cache; this is sometimes necessary if nothing locally has changed, but the image is querying a remote object (say, a github repo) which has changed.
 
-Use `no_cache` to construct the local image without using a cache; this is sometimes necessary
-if nothing locally has changed, but the image is querying a remote object (say, a github repo)
-which has changed.
+If `user_defined_labels` are defined, these will be added to the generated `LocalImage`, as well as all subsequent types based on the `LocalImage`, like the remote image or the ultimate Lambda function. They can be retrieved using the `get_labels` function, alongside the Jot-generated labels.
 
-If `user_defined_labels` are defined, these will be added to the generated `LocalImage`, as well
-as all subsequent types based on the `LocalImage`, like the remote image or the ultimate Lambda
-function. They can be retrieved using the `get_labels` function, alongside the Jot-generated
-labels.
+`dockerfile_update` is a function that accepts the pre-generated Dockerfile as its only argument, and returns a new Dockerfile. The most likely use case for this is to add customized extensions to the generated Dockerfile. For example, passing `(dockerfile) -> dockerfile * "RUN ssh-keygen -t rsa -f .ssh/id_rsa -N"` will cause an SSH key to be created within the docker image.
 
-`dockerfile_update` is a function that accepts the pre-generated Dockerfile as its only argument,
-and returns a new Dockerfile. The most likely use case for this is to add customized extensions
-to the generated Dockerfile. For example, passing
-`(dockerfile) -> dockerfile * "RUN ssh-keygen -t rsa -f .ssh/id_rsa -N"`
-will cause an SSH key to be created within the docker image.
+`build_args` are arguments that are appended to the `docker build` command using the `--build-arg` command-line argument.
 
-`build_args` are arguments that are appended to the `docker build` command using the `--build-arg`
-command-line argument.
+`run_tests_during_package_compile` tells Jot whether it should run the package's tests during the package compilation process. This will very likely cause additional code paths to be included in the package compilation process, and therefore can improve the performance of the resulting lambda function. However, it may add considerably to the image build time, particularly if your test suite is extensive.
 """
 function create_local_image(
-    responder::AbstractResponder;
+    responder::Responder;
     image_suffix::Union{Nothing, String} = nothing,
     aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
-    julia_base_version::String = "1.8.4",
-    julia_cpu_target::String = "x86-64",
     function_test_data::Union{Nothing, FunctionTestData} = nothing,
-    package_compile::Bool = false,
+    build_at_path::Union{Nothing, AbstractString} = nothing,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
     build_args::AbstractDict{String, String} = OrderedDict{String, String}(),
+    run_tests_during_package_compile::Bool = false,
   )::LocalImage
   image_suffix = isnothing(image_suffix) ? get_lambda_name(responder) : lowercase(image_suffix)
   aws_config = isnothing(aws_config) ? get_aws_config() : aws_config
   image_tag = lowercase(image_tag)
 
-  add_aws_rie!(responder)
-  create_environment!(responder)
-  if !isnothing(function_test_data)
-    create_precompile_statements_file!(responder, function_test_data)
-  end
-
-  if package_compile && isnothing(function_test_data)
-    error("If running with package_compile, please provide function_test_data")
-  end
-
-  add_scripts_to_build_dir(
+  env_dir = create_environment!(
     responder,
-    package_compile,
-    julia_cpu_target,
-    function_test_data
+    jot_path,
+    build_at_path,
+    function_test_data,
+    run_tests_during_package_compile,
   )
-  dockerfile = get_dockerfile(
-    responder,
-    julia_base_version;
-    user_defined_labels,
-    dockerfile_update,
-    package_compile
+  create_dockerfile!(env_dir, responder, user_defined_labels, dockerfile_update)
+  image_name_plus_tag = get_image_full_name_plus_tag(
+    aws_config, image_suffix, image_tag
   )
-  @debug dockerfile
-  open(joinpath(responder.build_dir, "Dockerfile"), "w") do f
-    write(f, dockerfile)
-  end
-  image_name_plus_tag = get_image_full_name_plus_tag(aws_config,
-                                                     image_suffix,
-                                                     image_tag)
-  @show image_name_plus_tag
   # Build the actual image
-  build_cmd = get_dockerfile_build_cmd(dockerfile,
-                                       image_name_plus_tag,
-                                       no_cache,
-                                       build_args)
-  run(Cmd(build_cmd, dir=responder.build_dir))
+  build_cmd = get_dockerfile_build_cmd(image_name_plus_tag, no_cache, build_args)
+  run(Cmd(build_cmd, dir=env_dir))
   # Locate it and return it
-  id_fname = joinpath(responder.build_dir, "id")
+  id_fname = joinpath(env_dir, "id")
   @debug id_fname
   image_id = open(id_fname, "r") do f
     full_str = String(read(f))
@@ -395,14 +424,15 @@ end
 
 # -- get_labels --
 
-function get_labels(res::LocalPackageResponder)::Labels
-  Labels( RESPONDER_PACKAGE_NAME=res.package_name,
-          RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
-          RESPONDER_COMMIT=get_commit(res),
-          RESPONDER_TREE_HASH=get_tree_hash(res),
-          RESPONDER_PKG_SOURCE=get_responder_path(res),
-          IS_JOT_GENERATED="true",
-         )
+function get_labels(res::Responder)::Labels
+  Labels(
+    RESPONDER_PACKAGE_NAME=get_package_name(res),
+    RESPONDER_FUNCTION_NAME=get_responder_function_name(res),
+    RESPONDER_COMMIT=get_commit(res),
+    RESPONDER_TREE_HASH=get_tree_hash(res),
+    RESPONDER_PKG_SOURCE=res.source_path,
+    IS_JOT_GENERATED="true",
+  )
 end
 
 """
@@ -498,16 +528,11 @@ end
 """
     run_local_image_test(
         image::LocalImage,
-        function_argument::Any = "",
-        expected_response::Any = nothing;
+        function_test_data::Union{Nothing, FunctionTestData} = nothing;
         then_stop::Bool = false,
       )::Tuple{Bool, Float64}
 
-Runs a test of the given local docker image, passing `function_argument` (if given), and expecting
-`expected_response`(if given). If a function_argument is not given, then it will merely test
-that any kind of response is received - this response may be an error JSON and the test will still
-pass, establishing only that the image can be contacted. Returns a tuple of (test result, time)
-where time is the time taken for a response to be received, in seconds.
+Runs a test of the given local docker image, defaulting to the standard jot test string if function_test_data is not given. Returns a tuple of (test result, time) where time is the time taken for a response to be received, in seconds.
 
 The test will use an already-running docker container, if one exists. If this is the case then the
 `then_stop` parameter tells the function whether to stop the docker container after running the
@@ -516,30 +541,28 @@ then shut it down afterwards. This is true regardless of the value of `then_stop
 """
 function run_local_image_test(
     image::LocalImage,
-    function_argument::Any = "",
-    expected_response::Any = nothing;
+    function_test_data::Union{Nothing, FunctionTestData} = nothing;
     then_stop::Bool = false,
   )::Tuple{Bool, Float64}
   running = get_all_containers(image)
   con = length(running) == 0 ? run_image_locally(image) : nothing
-  time_taken = @elapsed actual = send_local_request(function_argument)
+  test_data = isnothing(function_test_data) ? get_jot_test_data() : function_test_data
+  time_taken = @elapsed actual = send_local_request(test_data.test_argument)
   !isnothing(con) && (stop_container(con); delete!(con))
   then_stop && foreach(stop_container, running)
-  if !isnothing(expected_response)
-    passed = actual == expected_response
-    passed && @info "Local test passed in $time_taken seconds; result received matched expected $actual"
-    !passed && @info "Local test failed; actual: $actual was not equal to expected: $expected_response"
-    (passed, time_taken)
-  else
-    @info "Response received from container; test passed"
-    (true, time_taken)
-  end
+
+  passed = actual == test_data.expected_response
+  passed && @info "Local test passed in $time_taken seconds; " *
+    "result received matched expected $actual"
+  !passed && @info "Local test failed; actual: " *
+    "$actual was not equal to expected: $(test_data.expected_response)"
+  (passed, time_taken)
 end
 
 """
     run_lambda_function_test(
         func::LambdaFunction,
-        function_test_data::FunctionTestData;
+        function_test_data::Union{Nothing, FunctionTestData};
         check_function_state::Bool = false,
       )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
 
@@ -550,20 +573,21 @@ pass, establishing only that the function can be contacted. Returns a tuple of `
 """
 function run_lambda_function_test(
     func::LambdaFunction,
-    function_test_data::FunctionTestData;
+    function_test_data::Union{Nothing, FunctionTestData};
     check_function_state::Bool = false,
   )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog}}
+  test_data = isnothing(function_test_data) ? get_jot_test_data() : function_test_data
   try
     actual_response, log = invoke_function_with_log(
-        function_test_data.test_argument, func; check_state = check_function_state
+        test_data.test_argument, func; check_state = check_function_state
     )
-    passed = actual_response == function_test_data.expected_response
+    passed = actual_response == test_data.expected_response
     time_taken = get_invocation_run_time(log)
     passed && @info "Remote test passed in $time_taken ms; result received matched expected $actual_response"
-    !passed && @info "Remote test failed; actual: $actual_response was not equal to expected: $expected_response"
+    !passed && @info "Remote test failed; actual: $actual_response was not equal to expected: $(test_data.expected_response)"
     (passed, log)
   catch e
-    if isa(e, LambdaException) && isnothing(expected_response)
+    if isa(e, LambdaException) && isnothing(test_data.expected_response)
       @info "Error response received from lambda function; test passed"
       (true, missing)
     else
@@ -597,8 +621,6 @@ function push_to_ecr!(image::LocalImage)::RemoteImage
   else
     existing_repo
   end
-  @show image
-  @show get_image_full_name_plus_tag(image)
   push_script = get_image_full_name_plus_tag(image) |> get_docker_push_script
   @info "Pushing image to ECR; this may take a few minutes"
   readchomp(`bash -c $push_script`)
@@ -756,8 +778,8 @@ end
 
 # -- get_lambda_name --
 
-function get_lambda_name(res::AbstractResponder)::String
-  lowercase(res.package_name)
+function get_lambda_name(res::Responder)::String
+  lowercase(get_package_name(res))
 end
 
 function get_lambda_name(local_image::LocalImage)::Union{Nothing, String}

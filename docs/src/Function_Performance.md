@@ -1,14 +1,13 @@
 # Function Performance
 
-### Naive vs Precompiled vs PackageCompiled
-Depending on how the `create_local_image` function is called, the resulting lambda function will be in one of three possible states:
-- If you have called `create_local_image` without either the `function_test_data` or `package_compile` parameters, your function will have been neither precompiled nor PackageCopmiled. Of the three states, this is the slowest, with invocations of the function taking the maximum possible time. This is fine for testing but not for production use.
-- If you have called `create_local_image` with `function_test_data`, but not `package_compile`, your function will be precompiled, but not PackageCompiled. Precompilation is a Julia-native concept, and it means that any compilation required by the function has been done in advance, and stored as part of the docker image.
-- If you have called `create_local_image` with `function_test_data` and with `package_compile=true`, your function will be both precompiled, and PackageCompiled. PackageCompiled means that [PackageCompiler.jl](https://github.com/JuliaLang/PackageCompiler.jl) has been used to create a Julia [system image](https://docs.julialang.org/en/v1/devdocs/sysimg/), and that this system image is part of the docker image. This will result in very fast Lambda function run times, and is highly recommended for production use.
+### The role of PackageCompiler.jl
+Jot uses [PackageCompiler.jl](https://github.com/JuliaLang/PackageCompiler.jl) to optimize the performance of its generated functions. The package compilation process uses the concept of an "exemplar session" to discover which Julia methods need to be compiled. This "exemplar session" will, ideally, call all methods that will be used by the actual docker image, when running on AWS Lambda. With Jot, an exemplar session is created automatically during the `create_local_image` stage. This test run simulates how AWS Lambda will invoke the responder function. There are two variables that affect the contents of this test run, and consequently the ultimate performance of the lambda function:
 
-When setting the `package_compile` option to `true`, you will need to also pass a `FunctionTestData` object to the `function_test_data` parameter of `create_local_image`. This defines a sample argument to pass when testing your lambda function, and the expected response that the lambda function should return when passed that argument.
+- If you have called `create_local_image` with the `function_test_data` parameter, then the responder function will be called with the `test_arument` parameter supplied in the `function_test_data`. If `function_test_data` is not passed, then the Jot runtime on the docker image - used for HTTP communication with AWS, and JSON reading/writing - will still be part of the exemplar session, but the responder function will not.
+- If your responder is a package with a test suite, and you have called `create_local_image` with `run_tests_during_package_compile=true`, then this test suite will be executed as part of the exemplar session. Since the `test_argument` parameter can only invoke a single code path, having a test suite (which presumably tests multiple code paths) is a more robust way to improve performance.
 
-So if your responder function takes a vector of integers, and increases each element by 1:
+### Passing function_test_data
+If your responder function takes a vector of integers, and increases each element by 1:
 ```
 open("increment_vector.jl", "w") do f
   write(f, "increment_vector(v::Vector{Int}) = map(x -> x + 1, v)")
@@ -16,7 +15,7 @@ end
 increment_responder = get_responder("./increment_vector.jl", :increment_vector, Vector{Int})
 ```
 
-... then your `FunctionTestData` might look like this:
+... then your `function_test_data` might look like this:
 ```
 function_test_data = FunctionTestData([1,2,3], [2,3,4])
 ```
@@ -24,7 +23,7 @@ where `[1,2,3]` is the argument you intend to pass to the responder, and `[2,3,4
 
 ... and your call to `create_local_image` might look like this:
 ```
-`create_local_image(increment_responder; function_test_data=function_test_data, package_compile=true)`
+`create_local_image(increment_responder; function_test_data=function_test_data)`
 ```
 
 ### Hot vs warm vs cold starts

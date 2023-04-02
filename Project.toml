@@ -1,7 +1,7 @@
 name = "Jot"
 uuid = "1043c0aa-ccf1-46a7-999a-bd3d0ee21baa"
 authors = ["Chris Harris <chrisharriscjh@gmail.com> and contributors"]
-version = "0.1.0"
+version = "0.5.0"
 
 [deps]
 Formatting = "59287772-0a20-5a39-b81b-1366585eb4c0"
@@ -26,7 +26,7 @@ PackageCompiler = "2"
 Parameters = "0.12"
 PrettyTables = "1"
 StructTypes = "1"
-julia = "1.3"
+julia = "1.7"
 
 [extras]
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"

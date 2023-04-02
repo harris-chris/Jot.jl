@@ -248,7 +248,6 @@ function get_cloudwatch_log_group_name(
   describe_log_groups_script = get_describe_log_groups_script()
   log_groups_str = readchomp(`bash -c $describe_log_groups_script`)
   log_groups = JSON3.read(log_groups_str, Dict{String, Vector{LogGroup}})["logGroups"]
-  @show lambda_function.FunctionArn
   this_log_groups = filter(log_groups) do group
     endswith(group.arn, "log-group:/aws/lambda/$(lambda_function.FunctionName):*")
   end

@@ -1,88 +1,74 @@
 
 """
-    abstract type AbstractResponder{IT} end
-
-The supertype of all responder types. The type parameter represents the parameter type of the
-`response_function` responder attribute.
-"""
-abstract type AbstractResponder{IT} end
-
-"""
-    struct LocalPackageResponder{IT} <: AbstractResponder{IT}
-        original_path::String
+    struct Responder{IT}
+        local_path::String
         response_function::Symbol
         response_function_param_type::Type{IT}
-        build_dir::String
-        package_name::String
         registry_urls::Vector{String}
+        source_path::AbstractString
     end
 
-A responder that is located locally (in the temporary `build_dir`) and is a Julia package. This is
-usually created by the `Responder` function.
+A responder, stored at the location pointed to by `local_path`, and a valid Julia
+package. This is not instantiated directly, but created via the `get_responder`
+function.
 """
-mutable struct LocalPackageResponder{IT} <: AbstractResponder{IT}
-  original_path::String
+mutable struct Responder{IT}
+  local_path::String
   response_function::Symbol
   response_function_param_type::Type{IT}
-  build_dir::String
-  package_name::String
   registry_urls::Vector{String}
+  source_path::AbstractString
 end
 
 function get_responder_from_local_package(
     path::String,
     response_function::Symbol,
-    ::Type{IT};
-    registry_urls::Vector{String} = Vector{String}(),
-  )::LocalPackageResponder{IT} where {IT}
+    ::Type{IT},
+    registry_urls::Vector{String},
+  )::Responder{IT} where {IT}
   isdir(path) || error("Unable to find local directory $(path)")
   "Project.toml" in readdir(path) || error("Unable to find Project.toml in $path")
   path = path[end] == '/' ? path[1:end-1] : path |> abspath
-  pkg_spec = PackageSpec(path=path)
-  build_dir = create_build_directory()
-  package_name = get_responder_package_name(path)
-  move_local_to_build_directory(build_dir, path, package_name)
-  println("Pinned $package_name.$response_function with tree hash $(get_tree_hash(build_dir)) to $build_dir")
-  LocalPackageResponder(path, response_function, IT, build_dir, package_name, registry_urls)
+  Responder(path, response_function, IT, registry_urls, path)
 end
 
 function get_responder_from_package_url(
     url::String,
     response_function::Symbol,
-    ::Type{IT};
-    registry_urls::Vector{String} = Vector{String}(),
-  )::LocalPackageResponder{IT} where {IT}
-  build_dir = create_build_directory()
-  dev_dir = get(ENV, "JULIA_PKG_DEVDIR", nothing)
-  current_build_dir_contents = readdir(build_dir)
-  ENV["JULIA_PKG_DEVDIR"] = build_dir
-  Pkg.develop(url=url)
-  if !isnothing(dev_dir) ENV["JULIA_PKG_DEVDIR"] = dev_dir end
-  new_dir = [x for x in readdir(build_dir) if !(x in current_build_dir_contents)] |> last
-  pkg_name = get_responder_package_name(joinpath(build_dir, new_dir))
-  Pkg.rm(pkg_name)
-  LocalPackageResponder(
-                        url,
-                        response_function,
-                        IT,
-                        build_dir,
-                        pkg_name,
-                        registry_urls
-                       )
+    ::Type{IT},
+    registry_urls::Vector{String},
+  )::Responder{IT} where {IT}
+  build_dir = mktempdir()
+  local_path = cd(build_dir) do
+    Pkg.activate(".")
+    dev_dir = get(ENV, "JULIA_PKG_DEVDIR", nothing)
+    ENV["JULIA_PKG_DEVDIR"] = build_dir
+    initial_build_dir_contents = readdir(build_dir)
+    Pkg.develop(PackageSpec(url=url))
+    pkg_dir = [
+      x for x in readdir(build_dir, join=true)
+      if !(x in initial_build_dir_contents) && isdir(x)
+    ] |> last
+    if !isnothing(dev_dir) ENV["JULIA_PKG_DEVDIR"] = dev_dir end
+    pkg_dir
+  end
+
+  Responder(
+    local_path, response_function, IT, registry_urls, url
+  )
 end
 
 function get_responder_from_local_script(
     local_path::String,
     response_function::Symbol,
-    ::Type{IT};
-    dependencies = Vector{String}(),
-    registry_urls = Vector{String}(),
-  )::LocalPackageResponder{IT} where {IT}
+    ::Type{IT},
+    dependencies::Vector{String},
+    registry_urls::Vector{String},
+  )::Responder{IT} where {IT}
   !isfile(local_path) && error("$local_path does not point to a file")
-  build_dir = create_build_directory()
+  build_dir = create_build_directory!()
   script_filename = basename(local_path)
   pkg_name = get_package_name_from_script_name(script_filename)
-  @show build_dir
   cd(build_dir) do
     # Pkg.develop(path=abspath(pwd()))
     Pkg.generate(pkg_name)
@@ -90,7 +76,6 @@ function get_responder_from_local_script(
     for registry_url in registry_urls
       Pkg.Registry.add(RegistrySpec(url = registry_url))
     end
-    @show dependencies
     length(dependencies) > 0 && Pkg.add(dependencies)
   end
   script = open(local_path, "r") do f
@@ -106,14 +91,9 @@ function get_responder_from_local_script(
     write(f, pkg_code)
   end
   Pkg.activate()
-  LocalPackageResponder(
-                        local_path,
-                        response_function,
-                        IT,
-                        build_dir,
-                        pkg_name,
-                        registry_urls,
-                       )
+  Responder(
+    joinpath(build_dir, pkg_name), response_function, IT, registry_urls, local_path
+  )
 end
 
 function get_package_name_from_script_name(filename::String)::String
@@ -125,10 +105,11 @@ function get_package_name_from_script_name(filename::String)::String
   pkg_name * "_package"
 end
 
-Base.:(==)(a::LocalPackageResponder, b::LocalPackageResponder) = get_tree_hash(a) == get_tree_hash(b)
+Base.:(==)(a::Responder, b::Responder) = get_tree_hash(a) == get_tree_hash(b)
 
-function Base.show(res::LocalPackageResponder)::String
-  "$(get_response_function_name(res)) from $(res.package_spec.repo.source) with tree hash $(get_tree_hash(res))"
+function Base.show(res::Responder)::String
+  "$(get_response_function_name(res)) from $(res.local_path) with tree hash " *
+  "$(get_tree_hash(res))"
 end
 
 """
@@ -136,10 +117,11 @@ end
         path_url::String,
         response_function::Symbol,
         response_function_param_type::Type{IT};
-        dependencies = Vector{String}(),
-        registry_urls = Vector{String}(),
-      )::AbstractResponder{IT} where {IT}
-Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
+        dependencies::Vector{<:AbstractString} = Vector{String}(),
+        registry_urls::Vector{<:AbstractString} = Vector{String}(),
+      )::Responder{IT} where {IT}
+
+Returns an Responder, a type that holds the function that will be used to respond to AWS
 Lambda calls.
 
 `path_url` may be either a local filesystem path, or a url.
@@ -155,16 +137,20 @@ https://github.com/harris-chris/JotTest3
 `response_function` is a function within this module that you would like to use to respond to AWS
 Lambda calls. `response_function_param_type` specifies the type that the response function is
 expecting as its only argument.
+
+`registry_urls` may be used to make additional julia registries available, the packages from which can then be used in the `dependencies` parameter.
 """
 function get_responder(
     path_url::String,
     response_function::Symbol,
     response_function_param_type::Type{IT};
-    dependencies = Vector{String}(),
-    registry_urls = Vector{String}(),
-  )::AbstractResponder{IT} where {IT}
+    dependencies::Vector{<:AbstractString} = Vector{String}(),
+    registry_urls::Vector{<:AbstractString} = Vector{String}(),
+  )::Responder{IT} where {IT}
   if isurl(path_url)
-    get_responder_from_package_url(path_url, response_function, IT; registry_urls)
+    get_responder_from_package_url(
+      path_url, response_function, IT, registry_urls,
+    )
   elseif isrelativeurl(path_url)
     normalised_path = normpath(path_url)
     if isdir(normalised_path)
@@ -173,14 +159,19 @@ function get_responder(
           Dependencies have been passed, but normalised_path leads to a package; please specify dependencies in the Package's Project.toml
           """
         )
-        get_responder_from_local_package(normalised_path, response_function, IT; registry_urls)
+        get_responder_from_local_package(
+          normalised_path, response_function, IT, registry_urls
+        )
       else
         error("""
         Path points to a directory, but no Project.toml exists; please provide a path to either a package directory, or a script file
         """)
       end
     elseif(isfile(normalised_path))
-      get_responder_from_local_script(joinpath(pwd(), normalised_path), response_function, IT; dependencies, registry_urls)
+      abs_path = joinpath(pwd(), normalised_path)
+      get_responder_from_local_script(
+        abs_path, response_function, IT, dependencies, registry_urls
+      )
     else
       error("Unable to find path $normalised_path")
     end
@@ -193,11 +184,11 @@ end
     function get_responder(
         mod::Module,
         response_function::Symbol,
-        response_function_param_type::Type{IT},
-        registry_urls::Vector{String} = Vector{String}(),
-      )::AbstractResponder{IT} where {IT}
+        response_function_param_type::Type{IT};
+        registry_urls::Vector{<:AbstractString} = Vector{String}(),
+      )::Responder{IT} where {IT}
 
-Returns an AbstractResponder, a type that holds the function that will be used to respond to AWS
+Returns an Responder, a type that holds the function that will be used to respond to AWS
 Lambda calls.
 
 `mod` is a module currently in scope, and response_function is a function within this module that
@@ -206,32 +197,34 @@ you would like to use to respond to AWS Lambda calls.
 `response_function` is a function within this module that you would like to use to respond to AWS
 Lambda calls. `response_function_param_type` specifies the type that the response function is
 expecting as its only argument.
+
+`registry_urls` may be used to make additional julia registries available, the packages from which can then be used in the `dependencies` parameter.
 """
 function get_responder(
     mod::Module,
     response_function::Symbol,
     response_function_param_type::Type{IT};
-    registry_urls::Vector{String} = Vector{String}(),
-  )::LocalPackageResponder{IT} where {IT}
+    registry_urls::Vector{<:AbstractString} = Vector{String}(),
+  )::Responder{IT} where {IT}
   pkg_path = get_package_path(mod)
-  get_responder_from_local_package(pkg_path, response_function, IT; registry_urls)
+  get_responder_from_local_package(pkg_path, response_function, IT, registry_urls)
 end
 
-function get_responder_package_name(path::String)::String
-  open(joinpath(path, "Project.toml"), "r") do file
+function get_responder_path(res::Responder)::String
+  res.local_path
+end
+
+function get_package_name(res::Responder)::String
+  open(joinpath(get_responder_path(res), "Project.toml"), "r") do file
     proj = file |> TOML.parse
     proj["name"]
   end
 end
 
-function get_responder_path(res::LocalPackageResponder)::Union{Nothing, String}
-  res.original_path
+function get_commit(res::Responder)::String
+  get_commit(get_responder_path(res))
 end
 
-function get_commit(res::LocalPackageResponder)::String
-  get_commit(res.build_dir)
-end
-
-function get_responder_function_name(res::LocalPackageResponder)::String
+function get_responder_function_name(res::Responder)::String
   res.response_function |> String
 end

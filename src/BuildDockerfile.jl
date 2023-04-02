@@ -29,17 +29,14 @@ function dockerfile_add_utilities()::String
 end
 
 function dockerfile_add_runtime_directories(
-    julia_depot_path::String,
-    temp_path::String,
     runtime_path::String
   )::String
   """
-  RUN mkdir -p $julia_depot_path
-  ENV JULIA_DEPOT_PATH=$julia_depot_path
   RUN mkdir -p $temp_path
   ENV TMPDIR=$temp_path
   RUN mkdir -p $runtime_path
   WORKDIR $runtime_path
+  ENV JULIA_DEPOT_PATH="$temp_path:$runtime_path/$julia_depot_dir_name"
   """
 end
 
@@ -49,34 +46,30 @@ function dockerfile_copy_build_dir()::String
   """
 end
 
+function dockerfile_move_depot_path_to_tmp()::String
+  """
+  RUN mv ./$julia_depot_dir_name /tmp/
+  RUN echo "\$(ls /tmp/$julia_depot_dir_name)"
+  """
+end
+
 function dockerfile_add_responder(
     runtime_path::String,
-    res::LocalPackageResponder,
+    res::Responder,
   )::String
   using_pkg_script = "using Pkg; "
-  add_module_script = "Pkg.develop(PackageSpec(path=\\\"$runtime_path/$(res.package_name)\\\")); "
+  package_name = get_package_name(res)
+  add_module_script = "Pkg.develop(PackageSpec(path=\\\"$runtime_path/$package_name\\\")); "
   instantiate_script = "Pkg.instantiate(); "
   """
   RUN julia -e \"$using_pkg_script$add_module_script$instantiate_script\"
   """
 end
 
-function dockerfile_add_environment(
-    responder::LocalPackageResponder,
+function dockerfile_create_julia_environment(
   )::String
-  test_running = get(ENV, "JOT_TEST_RUNNING", nothing)
-  jot_branch = if isnothing(test_running) || test_running == "false"
-    "main"
-  else
-    readchomp(`git branch --show-current`)
-  end
-  responder_package_path = "./$(responder.package_name)"
-  create_env_script = get_create_julia_environment_script(
-    responder_package_path, "."; jot_branch
-  )
-  create_env_statement = replace(create_env_script, "\n" => "; ") |> nest_quotes
   """
-  RUN julia -e \"$create_env_statement\"
+  RUN sh create_environment
   """
 end
 
@@ -143,7 +136,6 @@ function dockerfile_add_labels(labels::Labels)::String
 end
 
 function get_dockerfile_build_cmd(
-    dockerfile::String,
     image_full_name_plus_tag::String,
     no_cache::Bool,
     build_args::AbstractDict{String, String},

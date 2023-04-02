@@ -23,6 +23,11 @@ function lambda_respond(response::String, endpoint::String, aws_request_id::Stri
   )
 end
 
+function respond_to_jot_test_value(endpoint::String, aws_request_id::String)
+  response_json = JSON3.write(jot_test_string * jot_test_string_response_suffix)
+  lambda_respond(response_json, endpoint, aws_request_id)
+end
+
 function lambda_error(error::String, endpoint::String, aws_request_id::String)
   HTTP.request(
     "POST",
@@ -44,7 +49,7 @@ function start_runtime(
     ::Type{T};
     single_shot=false,
   ) where {T}
-  tmp_contents = readdir("/tmp")
+  # tmp_contents = readdir("/tmp")
   # println("$JOT_OBSERVATION Contents of tmp before starting loop $tmp_contents")
   # depot_contents = readdir("/var/runtime/julia_depot")
   # println("$JOT_OBSERVATION Contents of var/runtime/julia_depot before starting loop $depot_contents")
@@ -55,23 +60,26 @@ function start_runtime(
   println("$JOT_OBSERVATION Starting Julia runtime at $endpoint")
 
   while true
-    @info "$(endpoint)next"
     http = HTTP.request("GET", "$(endpoint)next"; verbose=3)
     body_raw = String(http.body)
-    println("HTTP headers")
-    println(http.headers)
     request_id = string(HTTP.header(http, "Lambda-Runtime-Aws-Request-Id"))
     println("$JOT_OBSERVATION $JOT_AWS_LAMBDA_REQUEST_ID : $request_id")
     println("Headers:")
     println(http.headers)
 
     println("$JOT_OBSERVATION Received invocation message, parsing to JSON ...")
-    body = try
-      JSON3.read(body_raw, T)
-    catch e
-      body_sample = length(body_raw) > 50 ? "$(body_raw[start:50])..." : body_raw
-      lambda_error("Unable to parse input JSON $body_sample", endpoint, request_id)
+    if body_raw == jot_test_json
+      println("$JOT_OBSERVATION Responding to jot test value ...")
+      respond_to_jot_test_value(endpoint, request_id)
       continue
+    else
+      body = try
+        JSON3.read(body_raw, T)
+      catch e
+        body_sample = length(body_raw) > 50 ? "$(body_raw[start:50])..." : body_raw
+        lambda_error("Unable to parse input JSON $body_sample", endpoint, request_id)
+        continue
+      end
     end
 
     println("$JOT_OBSERVATION ... invocation message parsed, calling responder function ...")

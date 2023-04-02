@@ -5,6 +5,8 @@ using Random
 # We want to add the two test packages to the global user environment; this way
 # they are available for the tests, but are not included in Jot's Project.toml
 const jot_path = abspath(joinpath(pwd(), ".."))
+const jot_test_build_dirs_path = expanduser("~/jot_test_build_dirs")
+
 Pkg.activate()
 Pkg.develop(PackageSpec(path=joinpath(jot_path, "test", "JotTest1")))
 using JotTest1
@@ -24,8 +26,6 @@ const jot_multi_test_tag_key = "JOT_MULTI_TEST_NUM"
   local_image = 2
   ecr_repo = 3
   lambda_function = 4
-  package_compiler_local = 5
-  package_compiler_lambda = 6
   to_end = 1000
 end
 
@@ -70,7 +70,6 @@ function run_tests(
     example_simple::Bool,
     example_components::Bool,
     multi_tests_list::Union{Nothing, Vector{Int64}},
-    compile_tests_list::Union{Nothing, Vector{Int64}},
     multi_tests_to::MultiTo,
     clean_up::Bool,
     clean_up_only::Bool,
@@ -80,7 +79,6 @@ function run_tests(
     example_simple = true
     example_components = true
     multi_tests_list = Vector{Int64}()
-    compile_tests_list = Vector{Int64}()
     clean_up = true
   end
 
@@ -95,15 +93,12 @@ function run_tests(
     ENV["JOT_TEST_RUNNING"] = "true"
     example_simple && run_example_simple_test(clean_up)
     example_components && run_example_components_test(clean_up)
-    if !isnothing(multi_tests_list) && !isnothing(compile_tests_list)
-      multi_tests_list = unique([multi_tests_list; compile_tests_list])
+    if !isnothing(multi_tests_list)
+      multi_tests_list = unique(multi_tests_list)
+      run_multi_tests(
+        multi_tests_list, multi_tests_to, clean_up
+      )
     end
-    compile_tests_list = if isnothing(compile_tests_list)
-      Vector{Int64}()
-      else compile_tests_list end
-    !isnothing(multi_tests_list) && run_multi_tests(
-      multi_tests_list, compile_tests_list, multi_tests_to, clean_up
-    )
     ENV["JOT_TEST_RUNNING"] = "false"
   end
 end
@@ -245,21 +240,20 @@ struct CreateLocalImageArgs
   use_function_test_data::Bool
   image_suffix::Union{Nothing, String}
   image_tag::Union{Nothing, String}
+  build_at_path::Union{Nothing, String}
+  run_tests_during_package_compile::Bool
 end
 
 mutable struct TestState
-  responder::Union{Nothing, AbstractResponder}
+  responder::Union{Nothing, Responder}
   local_image::Union{Nothing, LocalImage}
-  compiled_local_image::Union{Nothing, LocalImage}
   ecr_repo::Union{Nothing, ECRRepo}
   remote_image::Union{Nothing, RemoteImage}
-  compiled_remote_image::Union{Nothing, RemoteImage}
   lambda_function::Union{Nothing, LambdaFunction}
-  compiled_lambda_function::Union{Nothing, LambdaFunction}
 end
 
 get_empty_test_state() = TestState(
-  nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+  nothing, nothing, nothing, nothing, nothing
 )
 
 mutable struct SingleTestData
@@ -294,7 +288,9 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       "UpperCaseSuffix",
-      "latest"
+      "latest",
+      joinpath(jot_test_build_dirs_path, "test1_build_dir"),
+      false,
     ),
     get_empty_test_state(),
   )
@@ -321,7 +317,9 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       false,
       nothing,
-      "UpperCaseTag"
+      "UpperCaseTag",
+      joinpath(jot_test_build_dirs_path, "test2_build_dir"),
+      true,
     ),
     get_empty_test_state(),
   )
@@ -346,7 +344,9 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       nothing,
-      "latest"
+      "latest",
+      joinpath(jot_test_build_dirs_path, "test3_build_dir"),
+      false,
     ),
     get_empty_test_state(),
   )
@@ -376,7 +376,9 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       false,
       nothing,
-      "latest"
+      "latest",
+      joinpath(jot_test_build_dirs_path, "test4_build_dir"),
+      false,
     ),
     get_empty_test_state(),
   )
@@ -406,7 +408,9 @@ function get_multi_tests_data()::Vector{SingleTestData}
       ),
       true,
       nothing,
-      "latest"
+      "latest",
+      joinpath(jot_test_build_dirs_path, "test5_build_dir"),
+      false,
     ),
     get_empty_test_state(),
   )
@@ -420,9 +424,16 @@ function get_multi_tests_data()::Vector{SingleTestData}
   ]
 end
 
+function empty_build_directory!(build_dir::AbstractString)::Nothing
+  if ispath(build_dir)
+    foreach(readdir(build_dir; join=true)) do f
+      rm(f; recursive=true)
+    end
+  end
+end
+
 function run_multi_tests(
     test_list::Vector{Int64},
-    compile_list::Vector{Int64},
     multi_to::MultiTo,
     clean_up::Bool
   )
@@ -482,9 +493,6 @@ function run_multi_tests(
           if isnothing(test_data.test_state.remote_image)
             @info "REMOTE IMAGE NOT FOUND, SKIPPING LAMBDA FUNCTION TEST"
           else
-            skip_test_because_running_comparison_test_later = (
-              i in compile_list && continue_tests(multi_to, package_compiler_lambda)
-            )
             @testset "Lambda Function test" begin
               test_data.test_state.lambda_function = test_lambda_function(
                 test_data.test_state.ecr_repo,
@@ -492,45 +500,7 @@ function run_multi_tests(
                 aws_role,
                 test_data.responder_function_test_args,
                 test_data.create_local_image_args.use_function_test_data,
-                skip_test_because_running_comparison_test_later,
-              )
-            end
-          end
-        end
-
-        if continue_tests(multi_to, package_compiler_local)
-          if !(i in compile_list)
-            @info "--compile NOT SET FOR $i, SKIPPING LOCAL PACKAGE COMPILE TEST"
-          elseif isnothing(test_data.test_state.responder)
-            @info "RESPONDER NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
-          elseif isnothing(test_data.test_state.local_image)
-            @info "LOCAL IMAGE NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
-          else
-            @testset "Package compiler local test" begin
-              test_data.test_state.compiled_local_image = test_compiled_local_image(
-                test_data.test_state.responder,
-                test_data.create_local_image_args,
-                test_data.responder_function_test_args,
-                test_data.test_state.local_image,
-              )
-            end
-          end
-        end
-
-        if continue_tests(multi_to, package_compiler_lambda)
-          if !(i in compile_list)
-            @info "--compile NOT SET FOR $i, SKIPPING LAMBDA PACKAGE COMPILE TEST"
-          elseif isnothing(test_data.test_state.responder)
-            @info "RESPONDER NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
-          elseif isnothing(test_data.test_state.lambda_function)
-            @info "LAMBDA FUNCTION NOT FOUND, SKIPPING PACKAGE COMPILE TEST"
-          else
-            @testset "Package compiler lambda function test" begin
-              test_data.test_state.compiled_lambda_function = test_compiled_lambda_function(
-                test_data.test_state.compiled_local_image,
-                aws_role,
-                test_data.responder_function_test_args,
-                test_data.test_state.lambda_function,
+                test_data.create_local_image_args.run_tests_during_package_compile,
               )
             end
           end
@@ -546,7 +516,7 @@ function test_responder(
     res_func::Symbol,
     res_type::Type{IT},
     kwargs::Dict{Symbol, Any},
-  )::AbstractResponder{IT} where {IT}
+  )::Responder{IT} where {IT}
   this_res = get_responder(
     res_obj, res_func, IT; kwargs...
   )
@@ -556,10 +526,11 @@ function test_responder(
 end
 
 function test_local_image(
-    res::AbstractResponder,
+    res::Responder,
     create_local_image_args::CreateLocalImageArgs,
     responder_function_test_args::ResponderFunctionTestArgs,
   )::LocalImage
+  empty_build_directory!(create_local_image_args.build_at_path)
   function_test_data = if create_local_image_args.use_function_test_data
     to_function_test_data(responder_function_test_args)
   else
@@ -572,6 +543,8 @@ function test_local_image(
     user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
     image_suffix = create_local_image_args.image_suffix,
     image_tag = create_local_image_args.image_tag,
+    build_at_path = create_local_image_args.build_at_path,
+    run_tests_during_package_compile = create_local_image_args.run_tests_during_package_compile,
   )
   @test Jot.matches(res, local_image)
   @test Jot.is_jot_generated(local_image)
@@ -591,101 +564,15 @@ function test_local_image(
   # Run local test of container, with expected response
   @test run_local_image_test(
     local_image,
-    responder_function_test_args.good_arg,
-    responder_function_test_args.expected_response;
-    then_stop=true
+    to_function_test_data(responder_function_test_args),
+    then_stop=true,
   ) |> first
   sleep(1)
   local_image
 end
 
-function compare_local_image_test_times(
-    compiled::LocalImage,
-    uncompiled::LocalImage,
-    test_arg::Any,
-    expected_response::Any,
-    repeat_num::Int64,
-  )::Tuple{Float64, Float64}
-  total_run_time = 0.0
-  for num = 1:repeat_num
-    _, this_run_time = run_local_image_test(compiled, test_arg, expected_response)
-    @info "Test run $num with compiled local image took $this_run_time"
-    total_run_time += this_run_time
-  end
-  average_compiled_run_time = total_run_time / repeat_num
-  @info "Average compiled run time was $average_compiled_run_time"
-  total_run_time = 0.0
-  for num = 1:repeat_num
-    _, this_run_time = run_local_image_test(uncompiled, test_arg, expected_response)
-    @info "Test run $num with uncompiled local image took $this_run_time"
-    total_run_time += this_run_time
-  end
-  average_uncompiled_run_time = total_run_time / repeat_num
-  @info "Average uncompiled run time was $average_uncompiled_run_time"
-  return (average_compiled_run_time, average_uncompiled_run_time)
-end
-
-function compare_lambda_function_test_times(
-    compiled::LambdaFunction,
-    uncompiled::LambdaFunction,
-    function_test_data::FunctionTestData,
-    repeat_num::Int64,
-  )::Tuple{Float64, Float64}
-  total_run_time = 0.0
-  # Throw away first result, it's unrepresentative
-  _, _ = run_lambda_function_test(compiled, function_test_data)
-  for num = 1:repeat_num
-    _, test_log = run_lambda_function_test(compiled, function_test_data)
-    this_run_time = get_invocation_run_time(test_log)
-    @info "Test run $num with compiled local image took $this_run_time"
-    total_run_time += this_run_time
-  end
-  average_compiled_run_time = total_run_time / repeat_num
-  @info "Average compiled run time was $average_compiled_run_time"
-  total_run_time = 0.0
-  # Throw away first result, it's unrepresentative
-  _, _ = run_lambda_function_test(uncompiled, function_test_data)
-  for num = 1:repeat_num
-    _, test_log = run_lambda_function_test(uncompiled, function_test_data)
-    this_run_time = get_invocation_run_time(test_log)
-    @info "Test run $num with uncompiled local image took $this_run_time"
-    total_run_time += this_run_time
-  end
-  average_uncompiled_run_time = total_run_time / repeat_num
-  @info "Average uncompiled run time was $average_uncompiled_run_time"
-  return (average_compiled_run_time, average_uncompiled_run_time)
-end
-
-function test_compiled_local_image(
-    res::AbstractResponder,
-    create_local_image_args::CreateLocalImageArgs,
-    responder_function_test_args::ResponderFunctionTestArgs,
-    uncompiled_local_image::LocalImage;
-    repeat_num::Int64 = 5,
-  )::LocalImage
-  function_test_data = to_function_test_data(responder_function_test_args)
-  compiled_local_image = create_local_image(
-    res;
-    aws_config = create_local_image_args.use_aws_config ? aws_config : nothing,
-    function_test_data = function_test_data,
-    package_compile = true,
-    user_defined_labels = create_local_image_args.expected_labels.user_defined_labels,
-    image_suffix = create_local_image_args.image_suffix,
-    image_tag = create_local_image_args.image_tag,
-  )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_local_image_test_times(
-    compiled_local_image,
-    uncompiled_local_image,
-    responder_function_test_args.good_arg,
-    responder_function_test_args.expected_response,
-    repeat_num,
-  )
-  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
-  compiled_local_image
-end
-
 function test_ecr_repo(
-    res::AbstractResponder,
+    res::Responder,
     local_image::LocalImage,
     expected_labels::ExpectedLabels,
   )::Tuple{ECRRepo, RemoteImage}
@@ -718,68 +605,37 @@ function test_lambda_function(
     aws_role::AWSRole,
     responder_function_test_args::ResponderFunctionTestArgs,
     use_function_test_data::Bool,
-    skip_test::Bool,
+    run_tests_during_package_compile::Bool,
   )::LambdaFunction
   lambda_function = create_lambda_function(remote_image; role = aws_role)
   @test Jot.is_jot_generated(lambda_function)
   @test Jot.matches(remote_image, lambda_function)
   # Check that we can find it
   @test lambda_function in Jot.get_all_lambda_functions()
-  if !skip_test
-    # First invocation is exceptional, discard it
-    _ = run_lambda_function_test(
-      lambda_function,
-      to_function_test_data(responder_function_test_args);
-      check_function_state=true
-    )
-    sleep(5)
-    # Invoke it again
-    (result, log) = run_lambda_function_test(
-      lambda_function,
-      to_function_test_data(responder_function_test_args);
-      check_function_state=true
-    )
-    @test result
-    @info "Lambda function ran in $(get_invocation_run_time(log))"
-    # Unless FunctionTestData was not passed, check that there are no precopmiles
-    if use_function_test_data
-       @test count_precompile_statements(log) == 0
-    else
-       @test count_precompile_statements(log) > 0
-    end
-    # Create the same thing using a remote image
-    @test lambda_function == create_lambda_function(
-      remote_image;
-      role = aws_role,
-      function_name = "addl" * ecr_repo.repositoryName
-    )
-    @test_throws LambdaException invoke_function(
-      responder_function_test_args.invalid_arg, lambda_function; check_state=true
-    )
+  # Invoke the function
+  (result, log) = run_lambda_function_test(
+    lambda_function,
+    to_function_test_data(responder_function_test_args);
+    check_function_state=true
+  )
+  @test result
+  @info "Lambda function ran in $(get_invocation_run_time(log))"
+  # Unless FunctionTestData was not passed, check that there are no precopmiles
+  if use_function_test_data || run_tests_during_package_compile
+     @test count_precompile_statements(log) == 0
+  else
+     @test 0 <= count_precompile_statements(log) < 10
   end
+  # Create the same thing using a remote image
+  @test lambda_function == create_lambda_function(
+    remote_image;
+    role = aws_role,
+    function_name = "addl" * ecr_repo.repositoryName
+  )
+  @test_throws LambdaException invoke_function(
+    responder_function_test_args.invalid_arg, lambda_function; check_state=true
+  )
   lambda_function
-end
-
-function test_compiled_lambda_function(
-    compiled_local_image::LocalImage,
-    aws_role::AWSRole,
-    responder_function_test_args::ResponderFunctionTestArgs,
-    uncompiled_lambda_function::LambdaFunction,
-    repeat_num::Int64 = 5,
-  )::LambdaFunction
-  remote_image = push_to_ecr!(compiled_local_image)
-  ecr_repo = remote_image.ecr_repo
-  compiled_lambda_function = create_lambda_function(
-    remote_image; role = aws_role, function_name = "addl" * ecr_repo.repositoryName
-  )
-  (average_compiled_run_time, average_uncompiled_run_time) = compare_lambda_function_test_times(
-    compiled_lambda_function,
-    uncompiled_lambda_function,
-    to_function_test_data(responder_function_test_args),
-    repeat_num,
-  )
-  @test average_compiled_run_time < (average_uncompiled_run_time / 2)
-  compiled_lambda_function
 end
 
 function clean_up_multi_tests()
@@ -909,8 +765,6 @@ else
   components, args = parse_example_components_flag(args)
   run_all, args = parse_all_flag(args)
   multi_list, args = parse_tests_list(args, "--multi")
-  compile_list, args = parse_tests_list(args, "--compile")
-  @show compile_list
   multi_to, args = parse_multi_tests_to(args)
   clean_up, args = parse_clean_up_flag(args)
   clean_up_only, args = parse_clean_up_only_flag(args)
@@ -919,7 +773,7 @@ else
     error("Args $(join(args, ", ")) not recognized")
   end
   run_tests(
-    simple, components, multi_list, compile_list, multi_to, clean_up, clean_up_only, run_all
+    simple, components, multi_list, multi_to, clean_up, clean_up_only, run_all
   )
 end
 

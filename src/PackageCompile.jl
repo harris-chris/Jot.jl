@@ -1,6 +1,5 @@
 using PackageCompiler
 
-const PRECOMP_STATEMENTS_FNAME = "precompile_statements.jl"
 const SYSIMAGE_FNAME = "SysImage.so"
 
 """
@@ -16,44 +15,99 @@ struct FunctionTestData
   expected_response::Any
 end
 
+function get_jot_test_data()::FunctionTestData
+  FunctionTestData(jot_test_string, jot_test_string * jot_test_string_response_suffix)
+end
+
 function create_jot_single_run_launcher_script!(
-    responder::LocalPackageResponder,
+    responder::Responder,
+    run_tests::Bool,
+    single_run_timeout::Int64,
   )::String
+
   launcher_fname = "single_run_launcher.sh"
-  cd(responder.build_dir) do
-    bootstrap_prefix = """
-    #!/bin/bash
-    """
+  precompile_from_run_fname = "precompile_statements_from_run.jl"
+  precompile_from_tests_fname = "precompile_statements_from_tests.jl"
 
-    bootstrap_body = get_bootstrap_body(
-      responder,
-      ["--trace-compile=$PRECOMP_STATEMENTS_FNAME", "--project=."];
-      timeout = 60,
-    )
+  response_function_name = String(responder.response_function)
+  response_param_type = responder.response_function_param_type
+  package_name = get_package_name(responder)
 
-    bootstrap_all = bootstrap_prefix * bootstrap_body
+  julia_start_runtime_command =
+    "start_runtime(" *
+    join([
+      "\\\"\$LAMBDA_ENDPOINT\\\"",
+      "$package_name.$response_function_name",
+      "$response_param_type",
+    ], ", ") *
+    ")"
 
-    open(launcher_fname, "w") do f
-      write(f, bootstrap_all)
+  julia_exec_statements = [
+    "using Jot",
+    "using $package_name",
+    julia_start_runtime_command,
+  ]
+  julia_exec = join(julia_exec_statements, "; ")
+
+  run_julia_rie_cmd =
+    "timeout $(single_run_timeout)s " *
+    "./aws-lambda-rie julia " *
+    "--project=. " *
+    "--trace-compile=$precompile_from_run_fname " *
+    "-e \"$julia_exec\""
+
+  script_body = """
+  #!/bin/bash
+  LAMBDA_ENDPOINT="127.0.0.1:9001"
+  $run_julia_rie_cmd
+  """
+
+  tests_path = joinpath(package_name, "test", "runtests.jl")
+  addnl_for_tests = if run_tests
+    if !isfile(tests_path)
+      error(
+        "create_local_image has been called with run_tests_during_package_compile=" *
+        "true for $package_name but could not find a test/runtests.jl file"
+      )
     end
+    """
+    julia --project=$package_name \
+        --trace-compile=$precompile_from_tests_fname \
+        $tests_path
+    cat $precompile_from_tests_fname >> precompile_statements_temp.jl
+    cat $precompile_from_run_fname >> precompile_statements_temp.jl
+    mv precompile_statements_temp.jl $precompile_statements_fname
+    """
+  else
+    """
+    cat $precompile_from_run_fname >> $precompile_statements_fname
+    """
+  end
+
+  script_all = script_body * addnl_for_tests
+
+  open(launcher_fname, "w") do f
+    write(f, script_all)
   end
   launcher_fname
 end
 
 function create_precompile_statements_file!(
-    responder::LocalPackageResponder,
-    function_test_data::FunctionTestData,
+    responder::Responder,
+    function_test_data::Union{Nothing, FunctionTestData},
+    run_tests::Bool,
   )::String
-  launcher_script = create_jot_single_run_launcher_script!(responder)
+  precomp_timeout = 20; delay = 0.1
+  launcher_script = create_jot_single_run_launcher_script!(
+    responder, run_tests, precomp_timeout
+  )
+
   stdout_buffer = IOBuffer(); stderr_buffer = IOBuffer()
   launcher_started = Base.Event()
-  launcher_process = cd(responder.build_dir) do
-    launcher_cmd = pipeline(
-      `sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer
-    )
-    launcher_process = open(launcher_cmd)
-    launcher_process
-  end
+  launcher_cmd = pipeline(
+    `sh $launcher_script`; stdout=stdout_buffer, stderr=stderr_buffer
+  )
+  launcher_process = open(launcher_cmd)
   @info "Waiting for AWS RIE to start up ..."
 
   stdout_read = String(""); stderr_read = String("")
@@ -62,7 +116,7 @@ function create_precompile_statements_file!(
     stderr_read = stderr_read * String(take!(stderr_buffer))
     if was_port_in_use(stderr_read)
       error("Port 8080 was already in use by another process")
-    elseif did_launcher_run(stdout_read)
+    elseif did_launcher_run(stderr_read)
       @info "... AWS RIE has started up"
       break
     else
@@ -71,31 +125,32 @@ function create_precompile_statements_file!(
   end
 
   @info "Making local responder invocation ..."
-  response = send_local_request(function_test_data.test_argument; local_port = 8080)
+  test_data = isnothing(function_test_data) ? get_jot_test_data() : function_test_data
 
-  if response != function_test_data.expected_response
+  response = send_local_request(test_data.test_argument; local_port = 8080)
+  if response != test_data.expected_response
     error(
       "During package compilation, responder sent test response $response " *
-      "when $(function_test_data.expected_response) was expected"
+      "when response $(test_data.expected_response) was expected"
     )
   else
     @info "... invocation received correct response $response from RIE server"
   end
 
   # Wait for the precompile statements file to exist
-  @info "Waiting for $PRECOMP_STATEMENTS_FNAME to be generated..."
-  precomp_timeout = 20.; delay = 0.1
+  @info "Waiting for $precompile_statements_fname to be generated..."
   while true
-    isfile(joinpath(responder.build_dir, PRECOMP_STATEMENTS_FNAME)) && break
+    isfile(precompile_statements_fname) && break
     precomp_timeout = precomp_timeout - delay
     if precomp_timeout == 0.
-      error("Timed out waiting for $PRECOMP_STATEMENTS_FNAME to generate")
+      error("Timed out waiting for $precompile_statements_fname to generate")
     end
     sleep(delay)
   end
-  @info "... $PRECOMP_STATEMENTS_FNAME has been generated"
+  @info "... $precompile_statements_fname has been generated"
   kill(launcher_process)
-  PRECOMP_STATEMENTS_FNAME
+
+  precompile_statements_fname
 end
 
 function did_launcher_run(stdout_text::String)::Bool

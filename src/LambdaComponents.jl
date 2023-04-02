@@ -35,7 +35,7 @@ end
 
 """
     create_lambda_components(
-        res::AbstractResponder;
+        res::Responder;
         image_suffix::Union{Nothing, String} = nothing,
         aws_config::Union{Nothing, AWSConfig} = nothing,
         image_tag::String = "latest",
@@ -57,13 +57,11 @@ the entire process of creating a local image, pushing that image to ECR, and the
 function.
 """
 function create_lambda_components(
-    res::AbstractResponder;
+    res::Responder;
     image_suffix::Union{Nothing, String} = nothing,
     aws_config::Union{Nothing, AWSConfig} = nothing,
     image_tag::String = "latest",
     no_cache::Bool = false,
-    julia_base_version::String = "1.8.4",
-    julia_cpu_target::String = "x86-64",
     function_test_data::Union{Nothing, FunctionTestData} = nothing,
     user_defined_labels::AbstractDict{String, String} = OrderedDict{String, String}(),
     dockerfile_update::Function = x -> x,
@@ -73,8 +71,6 @@ function create_lambda_components(
                                    aws_config = aws_config,
                                    image_tag = image_tag,
                                    no_cache = no_cache,
-                                   julia_base_version = julia_base_version,
-                                   julia_cpu_target = julia_cpu_target,
                                    function_test_data = function_test_data,
                                    user_defined_labels = user_defined_labels,
                                    dockerfile_update = dockerfile_update)
@@ -142,9 +138,8 @@ end
 
 """
     run_test(
-        l::LambdaComponents;
-        function_argument::Any = "",
-        expected_response::Any = nothing,
+        l::LambdaComponents,
+        function_test_data::Union{Nothing, FunctionTestData} = nothing,
       )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog, Float64}}
 
 Tests the passed `LambdaComponents` instance.
@@ -158,23 +153,22 @@ Returns a tuple of {Test pass/fail, Test time taken in seconds}.
 """
 function run_test(
     l::LambdaComponents,
-    function_argument::Any = "",
-    expected_response::Any = nothing,
+    function_test_data::Union{Nothing, FunctionTestData} = nothing,
   )::Tuple{Bool, Union{Missing, LambdaFunctionInvocationLog, Float64}}
   if !isnothing(l.lambda_function)
-    run_lambda_function_test(l.lambda_function, function_argument, expected_response)
+    run_lambda_function_test(l.lambda_function, function_test_data)
   elseif !isnothing(l.local_image)
-    run_local_image_test(l.local_image, function_argument, expected_response)
+    run_local_image_test(l.local_image, function_test_data)
   else
     error("Unable to test LambdaComponents object; it has neither a local image or a lambda function")
   end
 end
 
-function matches(res::AbstractResponder, local_image::LocalImage)::Bool
+function matches(res::Responder, local_image::LocalImage)::Bool
   tree_hash = get_tree_hash(local_image)
   isnothing(tree_hash) ? false : (get_tree_hash(res) == tree_hash)
 end
-matches(local_image::LocalImage, res::AbstractResponder) = matches(res, local_image)
+matches(local_image::LocalImage, res::Responder) = matches(res, local_image)
 
 function matches(local_image::LocalImage, ecr_repo::ECRRepo)::Bool
   local_image.Repository == ecr_repo.repositoryUri
@@ -186,11 +180,11 @@ function matches(local_image::LocalImage, remote_image::RemoteImage)::Bool
 end
 matches(remote_image::RemoteImage, local_image::LocalImage) = matches(local_image, remote_image)
 
-function matches(res::AbstractResponder, remote_image::RemoteImage)::Bool
+function matches(res::Responder, remote_image::RemoteImage)::Bool
   tree_hash = get_tree_hash(remote_image)
   isnothing(tree_hash) ? false : get_tree_hash(res) == tree_hash
 end
-matches(remote_image::RemoteImage, res::AbstractResponder) = matches(res, remote_image)
+matches(remote_image::RemoteImage, res::Responder) = matches(res, remote_image)
 
 function matches(remote_image::RemoteImage, lambda_function::LambdaFunction)::Bool
   hash_only = split(remote_image.imageDigest, ':')[2]
