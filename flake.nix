@@ -16,6 +16,7 @@
           ];
           shellHook = ''
             [ -z "''${AWS_PROFILE}" ] && export AWS_PROFILE=personal
+            export JULIA_LOAD_PATH=@
             command -v fish &> /dev/null && fish
           '';
         };
