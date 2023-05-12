@@ -20,6 +20,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
 HTTP = "0.9"
+IsURL = "0.2"
 JSON3 = "1"
 OrderedCollections = "1"
 PackageCompiler = "2"
